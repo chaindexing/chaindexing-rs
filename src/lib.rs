@@ -13,12 +13,18 @@ pub use contracts::{Contract, ContractAddress, ContractEvent};
 pub use ethers::prelude::Chain;
 pub use event_handlers::EventHandler;
 pub use events::Event;
-pub use repos::{PostgresRepo, Repo};
+pub use repos::{PostgresRepo, PostgresRepoConn, PostgresRepoPool, Repo};
 
 use events_ingester::EventsIngester;
 
 #[cfg(feature = "postgres")]
 pub type ChaindexingRepo = PostgresRepo;
+
+#[cfg(feature = "postgres")]
+pub type ChaindexingRepoPool = PostgresRepoPool;
+
+#[cfg(feature = "postgres")]
+pub type ChaindexingRepoConn<'a> = PostgresRepoConn<'a>;
 
 pub struct Chaindexing;
 
@@ -40,9 +46,8 @@ impl Chaindexing {
             .flatten()
             .collect();
 
-        config
-            .repo
-            .create_contract_addresses(&contract_addresses)
-            .await;
+        let pool = &config.repo.get_pool().await;
+        let mut conn = ChaindexingRepo::get_conn(pool).await;
+        ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
     }
 }

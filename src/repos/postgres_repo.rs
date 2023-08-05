@@ -11,8 +11,8 @@ use futures_core::future::BoxFuture;
 
 use super::repo::{Migratable, MigrationList, Repo, SQLikeMigrations};
 
-type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
-type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
+pub type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
+pub type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
 
 #[derive(Clone)]
 pub struct PostgresRepo {
@@ -20,7 +20,7 @@ pub struct PostgresRepo {
 }
 
 #[async_trait::async_trait]
-impl<'a> Repo<Conn<'a>> for PostgresRepo {
+impl Repo for PostgresRepo {
     async fn new(url: &str) -> Self {
         let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(url);
         let pool = bb8::Pool::builder().build(manager).await.unwrap();
@@ -30,55 +30,21 @@ impl<'a> Repo<Conn<'a>> for PostgresRepo {
         Self { pool }
     }
 
-    async fn create_contract_addresses(&self, contract_addresses: &Vec<UnsavedContractAddress>) {
-        use crate::schema::chaindexing_contract_addresses::dsl::{
-            address, chaindexing_contract_addresses,
-        };
-
-        let mut conn = self.pool.get().await.unwrap();
-
-        diesel::insert_into(chaindexing_contract_addresses)
-            .values(contract_addresses)
-            .on_conflict(address)
-            .do_update()
-            .set(address.eq(excluded(address)))
-            .execute(&mut conn)
-            .await
-            .unwrap();
+    async fn get_pool(&self) -> Pool {
+        self.pool.clone()
     }
 
-    async fn stream_contract_addresses<'b, F>(&self, processor: F)
+    async fn get_conn<'a>(pool: &'a Pool) -> Conn<'a> {
+        pool.get().await.unwrap()
+    }
+
+    async fn run_in_transaction<'a, F>(conn: &mut Conn<'a>, repo_ops: F)
     where
-        F: Fn(Vec<ContractAddress>) -> BoxFuture<'b, ()> + Sync + std::marker::Send,
+        F: for<'b> FnOnce(&'b mut Conn<'a>) -> BoxFuture<'b, Result<(), ()>> + Send + Sync + 'a,
     {
-        use crate::schema::chaindexing_contract_addresses::dsl::*;
-
-        let mut conn = self.pool.get().await.unwrap();
-
-        diesel_streamer::stream_serial_table!(
-            chaindexing_contract_addresses,
-            id,
-            &mut conn,
-            processor
-        );
-    }
-    async fn create_events_and_update_last_ingested_block_number(
-        &self,
-        events: &Vec<Event>,
-        contract_addresses: &Vec<ContractAddress>,
-        block_number: i32,
-    ) {
-        let mut conn = self.pool.get().await.unwrap();
-
         conn.transaction::<(), Error, _>(|transaction_conn| {
             async move {
-                Self::create_events(transaction_conn, events).await;
-                Self::update_last_ingested_block_number(
-                    transaction_conn,
-                    contract_addresses,
-                    block_number,
-                )
-                .await;
+                (repo_ops)(transaction_conn).await.unwrap();
 
                 Ok(())
             }
@@ -87,13 +53,32 @@ impl<'a> Repo<Conn<'a>> for PostgresRepo {
         .await
         .unwrap();
     }
-}
 
-impl PostgresRepo {
-    async fn exec_raw_query(pool: &Pool, query: &str) {
-        let mut conn = pool.get().await.unwrap();
+    async fn create_contract_addresses<'a>(
+        conn: &mut Conn<'a>,
+        contract_addresses: &Vec<UnsavedContractAddress>,
+    ) {
+        use crate::schema::chaindexing_contract_addresses::dsl::{
+            address, chaindexing_contract_addresses,
+        };
 
-        sql_query(query).execute(&mut conn).await.unwrap();
+        diesel::insert_into(chaindexing_contract_addresses)
+            .values(contract_addresses)
+            .on_conflict(address)
+            .do_update()
+            .set(address.eq(excluded(address)))
+            .execute(conn)
+            .await
+            .unwrap();
+    }
+
+    async fn stream_contract_addresses<'b, F>(conn: &mut Conn, processor: F)
+    where
+        F: Fn(Vec<ContractAddress>) -> BoxFuture<'b, ()> + Sync + Send,
+    {
+        use crate::schema::chaindexing_contract_addresses::dsl::*;
+
+        diesel_streamer::stream_serial_table!(chaindexing_contract_addresses, id, conn, processor);
     }
 
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &Vec<Event>) {
@@ -121,6 +106,14 @@ impl PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
+    }
+}
+
+impl PostgresRepo {
+    async fn exec_raw_query(pool: &Pool, query: &str) {
+        let mut conn = pool.get().await.unwrap();
+
+        sql_query(query).execute(&mut conn).await.unwrap();
     }
 }
 

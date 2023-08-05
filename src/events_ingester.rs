@@ -4,13 +4,14 @@ use ethers::prelude::*;
 use ethers::providers::{Http, Provider, ProviderError};
 use ethers::types::{Address, Filter, Log};
 use futures_util::future::try_join_all;
+use futures_util::FutureExt;
 use tokio::time::interval;
 
 use crate::chains::JsonRpcUrl;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::Events;
-use crate::{Config, ContractAddress, Repo};
+use crate::{ChaindexingRepo, Config, ContractAddress, Repo};
 
 #[derive(Debug)]
 pub enum EventsIngesterError {
@@ -53,36 +54,57 @@ impl EventsIngester {
 
     async fn ingest(config: &Config, json_rpc_url: String) -> Result<(), EventsIngesterError> {
         let repo = &config.repo;
+        let pool = &repo.get_pool().await;
+        let mut conn = ChaindexingRepo::get_conn(pool).await;
+
         let current_block_number = json_rpc(&json_rpc_url).get_block_number().await?;
         let contracts = &config.contracts;
         let json_rpc_url_ = json_rpc_url.as_str();
         let blocks_per_batch = config.blocks_per_batch;
 
-        repo.stream_contract_addresses(|contract_addresses: Vec<ContractAddress>| {
-            Box::pin(async move {
-                let filters = build_filters(
-                    &contract_addresses,
-                    contracts,
-                    current_block_number.as_u64(),
-                    blocks_per_batch,
-                );
+        ChaindexingRepo::stream_contract_addresses(
+            &mut conn,
+            |contract_addresses: Vec<ContractAddress>| {
+                async move {
+                    let filters = build_filters(
+                        &contract_addresses,
+                        contracts,
+                        current_block_number.as_u64(),
+                        blocks_per_batch,
+                    );
 
-                dbg!(&filters);
+                    let logs = fetch_logs(&filters, &json_rpc(json_rpc_url_))
+                        .await
+                        .unwrap();
 
-                let logs = fetch_logs(&filters, &json_rpc(json_rpc_url_))
-                    .await
-                    .unwrap();
+                    let events = Events::new(&logs, contracts);
 
-                let events = Events::new(&logs, contracts);
+                    let mut conn_for_transaction = ChaindexingRepo::get_conn(pool).await;
 
-                repo.create_events_and_update_last_ingested_block_number(
-                    &events,
-                    &contract_addresses,
-                    current_block_number.as_u32() as i32,
-                )
-                .await;
-            })
-        })
+                    ChaindexingRepo::run_in_transaction(
+                        &mut conn_for_transaction,
+                        |transaction_conn| {
+                            async move {
+                                ChaindexingRepo::create_events(transaction_conn, &events.clone())
+                                    .await;
+
+                                ChaindexingRepo::update_last_ingested_block_number(
+                                    transaction_conn,
+                                    &contract_addresses.clone(),
+                                    current_block_number.as_u32() as i32,
+                                )
+                                .await;
+
+                                Ok(())
+                            }
+                            .boxed()
+                        },
+                    )
+                    .await;
+                }
+                .boxed()
+            },
+        )
         .await;
 
         Ok(())
