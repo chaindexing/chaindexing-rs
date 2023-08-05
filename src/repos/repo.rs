@@ -2,21 +2,39 @@ use derive_more::Display;
 use futures_core::future::BoxFuture;
 use futures_util::{stream, StreamExt};
 
-use crate::{contracts::UnsavedContractAddress, events::Event, ContractAddress};
+use crate::{
+    contracts::UnsavedContractAddress, events::Event, ChaindexingRepoConn, ChaindexingRepoPool,
+    ContractAddress,
+};
 
 #[derive(Debug, Display)]
 pub enum RepoError {}
 
 #[async_trait::async_trait]
-pub trait Repo<Conn>: Sync + Send + Migratable + Clone {
+pub trait Repo: Sync + Send + Migratable + Clone {
     async fn new(url: &str) -> Self;
-    async fn create_contract_addresses(&self, contract_addresses: &Vec<UnsavedContractAddress>);
-    async fn stream_contract_addresses<'a, F>(&self, _processor: F)
+    async fn get_pool(&self) -> ChaindexingRepoPool;
+    async fn get_conn<'a>(pool: &'a ChaindexingRepoPool) -> ChaindexingRepoConn<'a>;
+    async fn run_in_transaction<'a, F>(conn: &mut ChaindexingRepoConn<'a>, repo_ops: F)
+    where
+        F: for<'b> FnOnce(&'b mut ChaindexingRepoConn<'a>) -> BoxFuture<'b, Result<(), ()>>
+            + Send
+            + Sync
+            + 'a;
+
+    async fn create_contract_addresses<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        contract_addresses: &Vec<UnsavedContractAddress>,
+    );
+
+    async fn stream_contract_addresses<'a, F>(conn: &mut ChaindexingRepoConn<'a>, processor: F)
     where
         F: Fn(Vec<ContractAddress>) -> BoxFuture<'a, ()> + Sync + std::marker::Send;
-    async fn create_events_and_update_last_ingested_block_number(
-        &self,
-        events: &Vec<Event>,
+
+    async fn create_events<'a>(conn: &mut ChaindexingRepoConn<'a>, events: &Vec<Event>);
+
+    async fn update_last_ingested_block_number<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
         contract_addresses: &Vec<ContractAddress>,
         block_number: i32,
     );
