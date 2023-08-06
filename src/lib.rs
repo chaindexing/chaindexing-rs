@@ -13,7 +13,10 @@ pub use contracts::{Contract, ContractAddress, ContractEvent};
 pub use ethers::prelude::Chain;
 pub use event_handlers::EventHandler;
 pub use events::Event;
-pub use repos::{PostgresRepo, PostgresRepoConn, PostgresRepoPool, Repo};
+pub use repos::Repo;
+
+#[cfg(feature = "postgres")]
+pub use repos::{PostgresRepo, PostgresRepoConn, PostgresRepoPool};
 
 use events_ingester::EventsIngester;
 
