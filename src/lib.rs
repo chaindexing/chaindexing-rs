@@ -1,11 +1,11 @@
 mod chains;
 mod config;
 mod contracts;
+mod diesel;
 mod event_handlers;
 mod events;
 mod events_ingester;
 mod repos;
-mod schema;
 
 pub use chains::{Chains, JsonRpcUrl};
 pub use config::Config;

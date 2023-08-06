@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{contracts::Contracts, schema::chaindexing_events};
+use crate::{contracts::Contracts, diesel::schema::chaindexing_events};
 use diesel::{Insertable, Queryable};
 use ethers::{
     abi::{LogParam, Token},

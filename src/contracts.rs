@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::{event_handlers::EventHandler, schema::chaindexing_contract_addresses};
+use crate::{diesel::schema::chaindexing_contract_addresses, event_handlers::EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::{
