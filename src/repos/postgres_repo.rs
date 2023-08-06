@@ -98,7 +98,7 @@ impl Repo for PostgresRepo {
     ) {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
-        let ids = contract_addresses_list.into_iter().map(|c| c.id);
+        let ids = contract_addresses_list.iter().map(|c| c.id);
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq_any(ids))

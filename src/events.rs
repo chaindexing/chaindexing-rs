@@ -50,7 +50,7 @@ impl Event {
 
     fn log_params_to_parameters(log_params: &Vec<LogParam>) -> HashMap<String, Token> {
         log_params
-            .into_iter()
+            .iter()
             .fold(HashMap::new(), |mut parameters, log_param| {
                 parameters.insert(log_param.name.to_string(), log_param.value.clone());
 
@@ -65,7 +65,7 @@ impl Events {
     pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
 
-        logs.into_iter()
+        logs.iter()
             .map(|log| Event::new(log, &events_by_topics.get(&log.topics[0]).unwrap()))
             .collect()
     }

@@ -83,14 +83,14 @@ impl Contract {
 
     pub fn get_event_topics(&self) -> Vec<ContractEventTopic> {
         self.get_event_abis()
-            .into_iter()
+            .iter()
             .map(|abi| HumanReadableParser::parse_event(abi).unwrap().signature())
             .collect()
     }
 
     pub fn get_events(&self) -> Vec<ContractEvent> {
         self.get_event_abis()
-            .into_iter()
+            .iter()
             .map(|abi| ContractEvent::new(abi, &self.name))
             .collect()
     }
@@ -103,7 +103,7 @@ impl Contracts {
         contracts: &Vec<Contract>,
     ) -> HashMap<String, Vec<ContractEventTopic>> {
         contracts
-            .into_iter()
+            .iter()
             .fold(HashMap::new(), |mut topics_by_contract_name, contract| {
                 // embrace mutability because Rust helps avoid bugs
                 topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());

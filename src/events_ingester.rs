@@ -119,7 +119,7 @@ async fn fetch_logs(
     filters: &Vec<Filter>,
     json_rpc: &Provider<Http>,
 ) -> Result<Vec<Log>, EventsIngesterError> {
-    let logs_per_filter = try_join_all(filters.into_iter().map(|f| json_rpc.get_logs(&f))).await?;
+    let logs_per_filter = try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f))).await?;
 
     Ok(logs_per_filter.into_iter().flatten().collect())
 }
