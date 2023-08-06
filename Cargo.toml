@@ -1,26 +1,6 @@
-[package]
-name = "chaindexing"
-version = "0.1.1"
-edition = "2021"
-description = "EVM Chain Indexer"
-license = "MIT OR Apache-2.0"
+[workspace]
 
-[features]
-default = ["postgres"]
-postgres = []
-
-[dependencies]
-async-trait = "0.1"
-bb8 = "0.8"
-derive_more = "0.99"
-diesel = { version = "2", features = ["postgres", "uuid", "sqlite", "chrono", "r2d2", "serde_json"] }
-diesel-async = { version = "0.3", features = ["bb8", "postgres", "deadpool"] }
-diesel-streamer = { version = "0.1.8", features = ["async"] }
-ethers = "2.0"
-serde_json = "1"
-tokio-postgres = "0.7"
-tokio = "1.29"
-uuid = { version = "1", features = ["v4", "serde"] }
-futures-core = { version = "0.3", features = ["alloc"] }
-futures-util = "0.3"
-
+members = [
+  "chaindexing",
+  "chaindexing-tests",
+]
