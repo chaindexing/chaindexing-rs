@@ -58,7 +58,7 @@ impl Repo for PostgresRepo {
         conn: &mut Conn<'a>,
         contract_addresses: &Vec<UnsavedContractAddress>,
     ) {
-        use crate::schema::chaindexing_contract_addresses::dsl::{
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::{
             address, chaindexing_contract_addresses,
         };
 
@@ -76,13 +76,13 @@ impl Repo for PostgresRepo {
     where
         F: Fn(Vec<ContractAddress>) -> BoxFuture<'b, ()> + Sync + Send,
     {
-        use crate::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel_streamer::stream_serial_table!(chaindexing_contract_addresses, id, conn, processor);
     }
 
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &Vec<Event>) {
-        use crate::schema::chaindexing_events::dsl::*;
+        use crate::diesel::schema::chaindexing_events::dsl::*;
 
         diesel::insert_into(chaindexing_events)
             .values(events)
@@ -96,7 +96,7 @@ impl Repo for PostgresRepo {
         contract_addresses_list: &Vec<ContractAddress>,
         block_number: i32,
     ) {
-        use crate::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         let ids = contract_addresses_list.into_iter().map(|c| c.id);
 
