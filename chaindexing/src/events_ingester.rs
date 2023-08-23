@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use std::time::Duration;
 
+use ethers::prelude::Middleware;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider, ProviderError};
 use ethers::types::{Address, Filter, Log};
@@ -12,6 +14,23 @@ use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::Events;
 use crate::{ChaindexingRepo, Config, ContractAddress, Repo};
+
+#[async_trait::async_trait]
+pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
+    async fn get_block_number(&self) -> Result<U64, ProviderError>;
+    async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError>;
+}
+
+#[async_trait::async_trait]
+impl EventsIngesterJsonRpc for Provider<Http> {
+    async fn get_block_number(&self) -> Result<U64, ProviderError> {
+        Middleware::get_block_number(&self).await
+    }
+
+    async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError> {
+        Middleware::get_logs(&self, filter).await
+    }
+}
 
 #[derive(Debug)]
 pub enum EventsIngesterError {
@@ -43,7 +62,9 @@ impl EventsIngester {
 
                 try_join_all(config.chains.clone().into_iter().map(
                     |(_chain, JsonRpcUrl(json_rpc_url))| {
-                        EventsIngester::ingest(&config, json_rpc_url)
+                        let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
+
+                        EventsIngester::ingest(&config, json_rpc)
                     },
                 ))
                 .await
@@ -52,19 +73,23 @@ impl EventsIngester {
         });
     }
 
-    async fn ingest(config: &Config, json_rpc_url: String) -> Result<(), EventsIngesterError> {
+    async fn ingest(
+        config: &Config,
+        json_rpc: Arc<impl EventsIngesterJsonRpc>,
+    ) -> Result<(), EventsIngesterError> {
         let repo = &config.repo;
         let pool = &repo.get_pool().await;
         let mut conn = ChaindexingRepo::get_conn(pool).await;
 
-        let current_block_number = json_rpc(&json_rpc_url).get_block_number().await?;
+        let current_block_number = json_rpc.get_block_number().await?;
         let contracts = &config.contracts;
-        let json_rpc_url_ = json_rpc_url.as_str();
         let blocks_per_batch = config.blocks_per_batch;
 
         ChaindexingRepo::stream_contract_addresses(
             &mut conn,
             |contract_addresses: Vec<ContractAddress>| {
+                let json_rpc = json_rpc.clone();
+
                 async move {
                     let filters = build_filters(
                         &contract_addresses,
@@ -73,9 +98,7 @@ impl EventsIngester {
                         blocks_per_batch,
                     );
 
-                    let logs = fetch_logs(&filters, &json_rpc(json_rpc_url_))
-                        .await
-                        .unwrap();
+                    let logs = fetch_logs(&filters, &json_rpc).await.unwrap();
 
                     let events = Events::new(&logs, contracts);
 
@@ -111,13 +134,9 @@ impl EventsIngester {
     }
 }
 
-fn json_rpc(json_rpc_url: &str) -> Provider<Http> {
-    Provider::<Http>::try_from(json_rpc_url).unwrap()
-}
-
 async fn fetch_logs(
     filters: &Vec<Filter>,
-    json_rpc: &Provider<Http>,
+    json_rpc: &Arc<impl EventsIngesterJsonRpc>,
 ) -> Result<Vec<Log>, EventsIngesterError> {
     let logs_per_filter = try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f))).await?;
 
