@@ -8,11 +8,13 @@ use ethers::{
 };
 
 use crate::{Contract, ContractEvent};
+use uuid::Uuid;
 
 /// Ingested EVM Events
 #[derive(Debug, Clone, PartialEq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
+    id: Uuid,
     contract_address: String,
     contract_name: String,
     abi: String,
@@ -25,6 +27,7 @@ pub struct Event {
     transaction_index: i64,
     log_index: i64,
     removed: bool,
+    inserted_at: chrono::NaiveDateTime,
 }
 
 impl Event {
@@ -33,6 +36,7 @@ impl Event {
         let parameters = Self::log_params_to_parameters(&log_params);
 
         Self {
+            id: uuid::Uuid::new_v4(),
             contract_address: log.address.to_string(),
             contract_name: event.contract_name.to_owned(),
             abi: event.abi.clone(),
@@ -45,6 +49,7 @@ impl Event {
             transaction_index: log.transaction_index.unwrap().as_u64() as i64,
             log_index: log.log_index.unwrap().as_u64() as i64,
             removed: log.removed.unwrap(),
+            inserted_at: chrono::Utc::now().naive_utc(),
         }
     }
 

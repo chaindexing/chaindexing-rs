@@ -1,3 +1,7 @@
+use chaindexing_tests::db;
+
 fn main() {
-    println!("Test Chaindexing Here");
+    // Run once to setup database
+    // Useful in a CI environment running parallel tests
+    db::setup();
 }
