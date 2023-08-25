@@ -21,3 +21,4 @@ guide/build/
 .vscode
 
 .env
+postgres-data
