@@ -22,6 +22,12 @@ impl Config {
         }
     }
 
+    pub fn add_contract(mut self, contract: Contract) -> Self {
+        self.contracts.push(contract);
+
+        self
+    }
+
     pub fn with_blocks_per_batch(&self, blocks_per_batch: u64) -> Self {
         Self {
             blocks_per_batch,

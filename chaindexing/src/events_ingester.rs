@@ -7,13 +7,13 @@ use ethers::providers::{Http, Provider, ProviderError};
 use ethers::types::{Address, Filter, Log};
 use futures_util::future::try_join_all;
 use futures_util::FutureExt;
+use tokio::sync::Mutex;
 use tokio::time::interval;
 
-use crate::chains::JsonRpcUrl;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::Events;
-use crate::{ChaindexingRepo, Config, ContractAddress, Repo};
+use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo};
 
 #[async_trait::async_trait]
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
@@ -55,74 +55,81 @@ impl EventsIngester {
         let config = config.clone();
 
         tokio::spawn(async move {
+            let pool = config.repo.get_pool(2).await;
+            let conn = ChaindexingRepo::get_conn(&pool).await;
+            let conn = Arc::new(Mutex::new(conn));
+            let contracts = config.contracts.clone();
             let mut interval = interval(Duration::from_millis(config.ingestion_interval_ms));
 
             loop {
                 interval.tick().await;
 
-                try_join_all(config.chains.clone().into_iter().map(
-                    |(_chain, JsonRpcUrl(json_rpc_url))| {
-                        let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
+                try_join_all(
+                    config
+                        .chains
+                        .clone()
+                        .into_iter()
+                        .map(|(_chain, json_rpc_url)| {
+                            let json_rpc =
+                                Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
-                        EventsIngester::ingest(&config, json_rpc)
-                    },
-                ))
+                            Self::ingest(
+                                conn.clone(),
+                                &contracts,
+                                config.blocks_per_batch,
+                                json_rpc,
+                            )
+                        }),
+                )
                 .await
                 .unwrap();
             }
         });
     }
 
-    async fn ingest(
-        config: &Config,
-        json_rpc: Arc<impl EventsIngesterJsonRpc>,
+    pub async fn ingest<'a>(
+        conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
+        contracts: &Vec<Contract>,
+        blocks_per_batch: u64,
+        json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
     ) -> Result<(), EventsIngesterError> {
-        let repo = &config.repo;
-        let pool = &repo.get_pool().await;
-        let mut conn = ChaindexingRepo::get_conn(pool).await;
-
+        let conn_for_transaction = conn.clone();
+        let mut conn = conn.lock().await;
         let current_block_number = json_rpc.get_block_number().await?;
-        let contracts = &config.contracts;
-        let blocks_per_batch = config.blocks_per_batch;
 
         ChaindexingRepo::stream_contract_addresses(
             &mut conn,
-            |contract_addresses: Vec<ContractAddress>| {
+            move |contract_addresses: Vec<ContractAddress>| {
                 let json_rpc = json_rpc.clone();
+                let contracts = contracts.clone();
+                let conn = conn_for_transaction.clone();
 
                 async move {
                     let filters = build_filters(
                         &contract_addresses,
-                        contracts,
+                        &contracts,
                         current_block_number.as_u64(),
                         blocks_per_batch,
                     );
-
                     let logs = fetch_logs(&filters, &json_rpc).await.unwrap();
+                    let events = Events::new(&logs, &contracts);
+                    let mut conn = conn.lock().await;
 
-                    let events = Events::new(&logs, contracts);
+                    ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
+                        async move {
+                            ChaindexingRepo::create_events(conn, &events.clone()).await;
 
-                    let mut conn_for_transaction = ChaindexingRepo::get_conn(pool).await;
+                            ChaindexingRepo::update_last_ingested_block_number(
+                                conn,
+                                &contract_addresses.clone(),
+                                current_block_number.as_u32() as i32,
+                            )
+                            .await;
 
-                    ChaindexingRepo::run_in_transaction(
-                        &mut conn_for_transaction,
-                        |transaction_conn| {
-                            async move {
-                                ChaindexingRepo::create_events(transaction_conn, &events.clone())
-                                    .await;
-
-                                ChaindexingRepo::update_last_ingested_block_number(
-                                    transaction_conn,
-                                    &contract_addresses.clone(),
-                                    current_block_number.as_u32() as i32,
-                                )
-                                .await;
-
-                                Ok(())
-                            }
-                            .boxed()
-                        },
-                    )
+                            Ok(())
+                        }
+                        .boxed()
+                    })
                     .await;
                 }
                 .boxed()
