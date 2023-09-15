@@ -1,13 +1,16 @@
+use std::sync::Arc;
+
 use crate::{
     contracts::{ContractAddress, UnsavedContractAddress},
     events::Event,
 };
 use diesel_async::RunQueryDsl;
-use diesel_streamer::stream_serial_table;
 
 use diesel::{result::Error, sql_query, upsert::excluded, ExpressionMethods};
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use futures_core::future::BoxFuture;
+use diesel_streamer2::stream_async_serial_table;
+use futures_core::{future::BoxFuture, Stream};
+use tokio::sync::Mutex;
 
 use super::repo::{ExecutesRawQuery, Migratable, Migration, Repo, SQLikeMigrations};
 
@@ -26,6 +29,9 @@ pub struct PostgresRepo {
 
 #[async_trait::async_trait]
 impl ExecutesRawQuery for PostgresRepo {
+    type RawQueryConn<'a> =
+        bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
+
     async fn execute_raw_query<'a>(&self, conn: &mut Conn<'a>, query: &str) {
         sql_query(query).execute(conn).await.unwrap();
     }
@@ -33,6 +39,9 @@ impl ExecutesRawQuery for PostgresRepo {
 
 #[async_trait::async_trait]
 impl Repo for PostgresRepo {
+    type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
+    type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
+
     fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
@@ -93,13 +102,18 @@ impl Repo for PostgresRepo {
         chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
-    async fn stream_contract_addresses<'a, F>(conn: &mut Conn, processor: F)
-    where
-        F: Fn(Vec<ContractAddress>) -> BoxFuture<'a, ()> + Sync + Send,
-    {
+    async fn stream_contract_addresses<'a>(
+        conn: Arc<Mutex<Conn<'a>>>,
+    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
-        diesel_streamer::stream_serial_table!(chaindexing_contract_addresses, id, conn, processor);
+        stream_async_serial_table!(
+            chaindexing_contract_addresses,
+            id,
+            conn,
+            Arc<Mutex<Conn<'a>>>,
+            ContractAddress
+        )
     }
 
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &Vec<Event>) {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{contracts::Contracts, diesel::schema::chaindexing_events};
+use crate::{contracts::Contracts, diesel::schema::chaindexing_events, ContractAddress};
 use diesel::{Insertable, Queryable};
 use ethers::{
     abi::{LogParam, Token},
@@ -14,8 +14,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
-    id: Uuid,
-    contract_address: String,
+    pub id: Uuid,
+    pub contract_address: String,
     contract_name: String,
     abi: String,
     log_params: serde_json::Value,
@@ -23,9 +23,9 @@ pub struct Event {
     topics: serde_json::Value,
     block_hash: String,
     block_number: i64,
-    transaction_hash: String,
-    transaction_index: i64,
-    log_index: i64,
+    pub transaction_hash: String,
+    pub transaction_index: i64,
+    pub log_index: i64,
     removed: bool,
     inserted_at: chrono::NaiveDateTime,
 }
@@ -37,7 +37,7 @@ impl Event {
 
         Self {
             id: uuid::Uuid::new_v4(),
-            contract_address: log.address.to_string(),
+            contract_address: ContractAddress::address_to_string(&log.address),
             contract_name: event.contract_name.to_owned(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),

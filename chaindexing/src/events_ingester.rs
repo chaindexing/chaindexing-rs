@@ -7,6 +7,7 @@ use ethers::providers::{Http, Provider, ProviderError};
 use ethers::types::{Address, Filter, Log};
 use futures_util::future::try_join_all;
 use futures_util::FutureExt;
+use futures_util::StreamExt;
 use tokio::sync::Mutex;
 use tokio::time::interval;
 
@@ -87,55 +88,46 @@ impl EventsIngester {
         });
     }
 
+    // TODO: Can Arc<> or just raw Conn work?
     pub async fn ingest<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         contracts: &Vec<Contract>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
     ) -> Result<(), EventsIngesterError> {
-        let conn_for_transaction = conn.clone();
-        let mut conn = conn.lock().await;
         let current_block_number = json_rpc.get_block_number().await?;
 
-        ChaindexingRepo::stream_contract_addresses(
-            &mut conn,
-            move |contract_addresses: Vec<ContractAddress>| {
-                let json_rpc = json_rpc.clone();
-                let contracts = contracts.clone();
-                let conn = conn_for_transaction.clone();
+        let mut contract_addresses_streamer =
+            ChaindexingRepo::stream_contract_addresses(conn.clone()).await;
 
+        while let Some(contract_addresses) = contract_addresses_streamer.next().await {
+            let mut conn = conn.lock().await;
+            let filters = build_filters(
+                &contract_addresses,
+                &contracts,
+                current_block_number.as_u64(),
+                blocks_per_batch,
+            );
+            let logs = fetch_logs(&filters, &json_rpc).await.unwrap();
+            let events = Events::new(&logs, &contracts);
+
+            ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
                 async move {
-                    let filters = build_filters(
-                        &contract_addresses,
-                        &contracts,
-                        current_block_number.as_u64(),
-                        blocks_per_batch,
-                    );
-                    let logs = fetch_logs(&filters, &json_rpc).await.unwrap();
-                    let events = Events::new(&logs, &contracts);
-                    let mut conn = conn.lock().await;
+                    ChaindexingRepo::create_events(conn, &events.clone()).await;
 
-                    ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
-                        async move {
-                            ChaindexingRepo::create_events(conn, &events.clone()).await;
-
-                            ChaindexingRepo::update_last_ingested_block_number(
-                                conn,
-                                &contract_addresses.clone(),
-                                current_block_number.as_u32() as i32,
-                            )
-                            .await;
-
-                            Ok(())
-                        }
-                        .boxed()
-                    })
+                    ChaindexingRepo::update_last_ingested_block_number(
+                        conn,
+                        &contract_addresses.clone(),
+                        current_block_number.as_u32() as i32,
+                    )
                     .await;
+
+                    Ok(())
                 }
                 .boxed()
-            },
-        )
-        .await;
+            })
+            .await;
+        }
 
         Ok(())
     }
@@ -183,8 +175,8 @@ fn build_filter(
 
     Filter::new()
         // We could use multiple adddresses here but
-        // we'll rather not because it could lead to problems with the last_ingested_block_number
-        // because we stream the contracts upstream.
+        // we'll rather not because it would affect the correctness of
+        // last_ingested_block_number since we stream the contracts upstream.
         .address(contract_address.address.parse::<Address>().unwrap())
         .topic0(topics.to_vec())
         .from_block(last_ingested_block_number)
