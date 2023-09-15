@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+  schedule: [cron: "44 4 * * 6"]
+
+permissions:
+  contents: read
+
+env:
+  RUSTFLAGS: -Dwarnings
+  TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/chaindexing_tests
+
+jobs:
+  test:
+    name: Rust ${{matrix.rust}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [nightly, beta, stable, 1.56.1]
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+
+        ports:
+          - 5432:5432
+
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{matrix.rust}}
+      - name: Enable type layout randomization
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
+        if: matrix.rust == 'nightly'
+      - name: Enable nightly-only tests
+        run: echo RUSTFLAGS=${RUSTFLAGS}\ --cfg=async_trait_nightly_testing >> $GITHUB_ENV
+        if: matrix.rust == 'nightly'
+      - name: Setup Database
+        run: cargo run -p chaindexing_tests
+      - run: cargo test -p chaindexing_tests
+
+  # clippy:
+  #   name: Clippy
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name != 'pull_request'
+  #   timeout-minutes: 45
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: dtolnay/rust-toolchain@clippy
+  #     - run: cargo clippy --tests -- -Dclippy::all
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      # Check fmt
+      - name: "rustfmt --check"
+        # Workaround for rust-lang/cargo#7732
+        run: |
+          if ! rustfmt --check --edition 2021 $(git ls-files '*.rs'); then
+            printf "Please run \`rustfmt --edition 2021 \$(git ls-files '*.rs')\` to fix rustfmt errors.\n" >&2
+            exit 1
+          fi
+
+  outdated:
+    name: Outdated
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/install@cargo-outdated
+      - run: cargo outdated --workspace
+      # - run: cargo outdated --workspace --exit-code 1
