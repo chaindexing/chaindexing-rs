@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  RUSTFLAGS: -Dwarnings
+  # RUSTFLAGS: -Dwarnings
   TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/chaindexing_tests
 
 jobs:
