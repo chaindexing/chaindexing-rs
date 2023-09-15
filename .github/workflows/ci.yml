@@ -47,12 +47,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{matrix.rust}}
-      - name: Enable type layout randomization
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
-        if: matrix.rust == 'nightly'
-      - name: Enable nightly-only tests
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ --cfg=async_trait_nightly_testing >> $GITHUB_ENV
-        if: matrix.rust == 'nightly'
       - name: Setup Database
         run: cargo run -p chaindexing-tests
       - name: Run Tests
