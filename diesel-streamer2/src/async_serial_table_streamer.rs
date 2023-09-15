@@ -1,14 +1,14 @@
 #[allow(clippy::module_name_repetitions)]
 #[macro_export]
-macro_rules! stream_async_serial_table {
+macro_rules! get_async_serial_table_streamer {
     ( $query:expr ,   $cursor_field:expr,  $conn: expr,  $conn_type: ty, $table_struct: ty) => {{
-        use diesel_streamer2::stream_async_serial_table;
+        use diesel_streamer2::get_async_serial_table_streamer;
 
         let default_chunk_size = 100000;
         let default_from = None;
         let default_to = None;
 
-        stream_async_serial_table!(
+        get_async_serial_table_streamer!(
             $query,
             $cursor_field,
             $conn,
@@ -21,12 +21,12 @@ macro_rules! stream_async_serial_table {
     }};
 
     ( $query:expr, $cursor_field:expr, $conn: expr,  $conn_type: ty, $table_struct: ty,  $chunk_size: expr) => {{
-        use diesel_streamer2::stream_async_serial_table;
+        use diesel_streamer2::get_async_serial_table_streamer;
 
         let mut default_from = None;
         let default_to = None;
 
-        stream_async_serial_table!(
+        get_async_serial_table_streamer!(
             $query,
             $cursor_field,
             $conn,
@@ -39,11 +39,11 @@ macro_rules! stream_async_serial_table {
     }};
 
     ( $query:expr, $cursor_field:expr, $conn: expr,  $conn_type: ty, $table_struct: ty, $chunk_size: expr, $from: expr) => {{
-        use diesel_streamer2::stream_async_serial_table;
+        use diesel_streamer2::get_async_serial_table_streamer;
 
         let default_to = None;
 
-        stream_async_serial_table!(
+        get_async_serial_table_streamer!(
             $query,
             $cursor_field,
             $conn,
