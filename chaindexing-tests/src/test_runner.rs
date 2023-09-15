@@ -7,7 +7,7 @@ use dotenvy::dotenv;
 use std::env;
 use std::future::Future;
 
-pub async fn get_single_pool() -> ChaindexingRepoPool {
+pub async fn get_pool() -> ChaindexingRepoPool {
     new_repo().get_pool(1).await
 }
 

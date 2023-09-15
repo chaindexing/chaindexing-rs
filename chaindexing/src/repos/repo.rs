@@ -1,53 +1,46 @@
 use std::sync::Arc;
 
 use derive_more::Display;
-use futures_core::future::BoxFuture;
+use futures_core::{future::BoxFuture, Stream};
 use futures_util::{stream, StreamExt};
 use tokio::sync::Mutex;
 
-use crate::{
-    contracts::UnsavedContractAddress, events::Event, ChaindexingRepoConn, ChaindexingRepoPool,
-    ContractAddress,
-};
+use crate::{contracts::UnsavedContractAddress, events::Event, ContractAddress};
 
 #[derive(Debug, Display)]
 pub enum RepoError {}
 
 #[async_trait::async_trait]
-pub trait ExecutesRawQuery {
-    async fn execute_raw_query<'a>(&self, conn: &mut ChaindexingRepoConn<'a>, query: &str);
-}
-
-#[async_trait::async_trait]
 pub trait Repo: Sync + Send + Migratable + Clone {
-    fn new(url: &str) -> Self;
-    async fn get_pool(&self, max_size: u32) -> ChaindexingRepoPool;
-    async fn get_conn<'a>(pool: &'a ChaindexingRepoPool) -> ChaindexingRepoConn<'a>;
+    type Pool;
+    type Conn<'a>;
 
-    async fn run_in_transaction<'a, F>(conn: &mut ChaindexingRepoConn<'a>, repo_ops: F)
+    fn new(url: &str) -> Self;
+    async fn get_pool(&self, max_size: u32) -> Self::Pool;
+    async fn get_conn<'a>(pool: &'a Self::Pool) -> Self::Conn<'a>;
+
+    async fn run_in_transaction<'a, F>(conn: &mut Self::Conn<'a>, repo_ops: F)
     where
-        F: for<'b> FnOnce(&'b mut ChaindexingRepoConn<'a>) -> BoxFuture<'b, Result<(), ()>>
+        F: for<'b> FnOnce(&'b mut Self::Conn<'a>) -> BoxFuture<'b, Result<(), ()>>
             + Send
             + Sync
             + 'a;
 
     async fn create_contract_addresses<'a>(
-        conn: &mut ChaindexingRepoConn<'a>,
+        conn: &mut Self::Conn<'a>,
         contract_addresses: &Vec<UnsavedContractAddress>,
     );
-    async fn get_all_contract_addresses<'a>(
-        conn: &mut ChaindexingRepoConn<'a>,
-    ) -> Vec<ContractAddress>;
+    async fn get_all_contract_addresses<'a>(conn: &mut Self::Conn<'a>) -> Vec<ContractAddress>;
 
-    async fn stream_contract_addresses<'a, F>(conn: &mut ChaindexingRepoConn<'a>, processor: F)
-    where
-        F: Fn(Vec<ContractAddress>) -> BoxFuture<'a, ()> + Sync + Send;
+    async fn stream_contract_addresses<'a>(
+        conn: Arc<Mutex<Self::Conn<'a>>>,
+    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
 
-    async fn create_events<'a>(conn: &mut ChaindexingRepoConn<'a>, events: &Vec<Event>);
-    async fn get_all_events<'a>(conn: &mut ChaindexingRepoConn<'a>) -> Vec<Event>;
+    async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
+    async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
 
     async fn update_last_ingested_block_number<'a>(
-        conn: &mut ChaindexingRepoConn<'a>,
+        conn: &mut Self::Conn<'a>,
         contract_addresses: &Vec<ContractAddress>,
         block_number: i32,
     );
@@ -56,11 +49,17 @@ pub trait Repo: Sync + Send + Migratable + Clone {
 pub type Migration = &'static str;
 
 #[async_trait::async_trait]
+pub trait ExecutesRawQuery {
+    type RawQueryConn<'a>: Send;
+    async fn execute_raw_query<'a>(&self, conn: &mut Self::RawQueryConn<'a>, query: &str);
+}
+
+#[async_trait::async_trait]
 pub trait Migratable: ExecutesRawQuery + Sync + Send {
     fn create_contract_addresses_migration() -> Vec<Migration>;
     fn create_events_migration() -> Vec<Migration>;
 
-    async fn migrate<'a>(&self, conn: &mut ChaindexingRepoConn<'a>) {
+    async fn migrate<'a>(&self, conn: &mut Self::RawQueryConn<'a>) {
         let conn = Arc::new(Mutex::new(conn));
 
         stream::iter(

@@ -6,7 +6,7 @@ use diesel::{Identifiable, Insertable, Queryable};
 use ethers::{
     abi::{Event, HumanReadableParser},
     prelude::Chain,
-    types::H256,
+    types::{Address, H256},
 };
 
 pub type ContractEventTopic = H256;
@@ -159,4 +159,14 @@ pub struct ContractAddress {
     start_block_number: i32,
     pub address: String,
     pub contract_name: String,
+}
+
+impl ContractAddress {
+    pub fn address_to_string(address: &Address) -> String {
+        serde_json::to_value(address)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
 }

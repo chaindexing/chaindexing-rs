@@ -1,64 +1,148 @@
 #[cfg(test)]
 mod tests {
+    use ethers::types::U64;
     use std::sync::Arc;
-
-    use crate::{factory, test_runner};
-    use chaindexing::{Chain, Chaindexing, Contract, EventsIngester, PostgresRepo, Repo};
     use tokio::sync::Mutex;
 
+    use crate::factory::{
+        bayc_contract, empty_json_rpc, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER,
+    };
+    use crate::{
+        json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
+    };
+    use chaindexing::{Chaindexing, EventsIngester, PostgresRepo, Repo};
+
     #[tokio::test]
-    pub async fn does_nothing_when_there_are_no_contracts() {
-        let pool = test_runner::get_single_pool().await;
+    pub async fn creates_contract_events() {
+        let pool = test_runner::get_pool().await;
 
-        test_runner::run_test(
-            &pool,
-            |conn| async move {
-                let conn = Arc::new(Mutex::new(conn));
+        test_runner::run_test(&pool, |mut conn| async move {
+            let contracts = vec![bayc_contract()];
+            let json_rpc = Arc::new(json_rpc_with_logs!(BAYC_CONTRACT_ADDRESS, 3));
 
-                let json_rpc = Arc::new(factory::empty_json_rpc());
+            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
+            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
-                let contracts = vec![
-                Contract::new("BoredApeYachtClub")
-                .add_event("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)", factory::TestEventHandler)
-                .add_address(
-                    "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
-                    &Chain::Mainnet,
-                    17773490,
-                )
-            ];
+            let conn = Arc::new(Mutex::new(conn));
+            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc)
+                .await
+                .unwrap();
 
-                let blocks_per_batch = 10;
-
-                EventsIngester::ingest(conn.clone(), &contracts, blocks_per_batch, json_rpc)
-                    .await
-                    .unwrap();
-
-                let mut conn = conn.lock().await;
-
-                Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
-
-                let _contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
-
-                // assert_eq!(contract_addresses, vec![]);
-
-                let all_events = PostgresRepo::get_all_events(&mut conn).await;
-                assert_eq!(all_events, vec![]);
-            },
-        ).await;
+            let mut conn = conn.lock().await;
+            let ingested_events = PostgresRepo::get_all_events(&mut conn).await;
+            let first_event = ingested_events.first().unwrap();
+            assert_eq!(
+                first_event.contract_address,
+                BAYC_CONTRACT_ADDRESS.to_lowercase()
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
-    pub async fn creates_events_of_interest_from_contracts() {}
+    pub async fn starts_from_start_block_number() {
+        let pool = test_runner::get_pool().await;
+
+        test_runner::run_test(&pool, |mut conn| async move {
+            let contracts = vec![bayc_contract()];
+
+            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
+            let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
+            let bayc_contract_address = contract_addresses.first().unwrap();
+            assert_eq!(
+                bayc_contract_address.last_ingested_block_number as u32,
+                BAYC_CONTRACT_START_BLOCK_NUMBER
+            );
+            let json_rpc = Arc::new(json_rpc_with_filter_stubber!(
+                BAYC_CONTRACT_ADDRESS,
+                |filter: &Filter| {
+                    assert_eq!(
+                        filter.get_from_block().unwrap().as_u32(),
+                        BAYC_CONTRACT_START_BLOCK_NUMBER
+                    );
+                }
+            ));
+
+            let conn = Arc::new(Mutex::new(conn));
+            EventsIngester::ingest(conn, &contracts, 10, json_rpc)
+                .await
+                .unwrap();
+        })
+        .await;
+    }
 
     #[tokio::test]
-    pub async fn checkpoints_contract_addresses_last_ingested_block_number() {}
+    pub async fn checkpoints_last_ingested_block_to_current_block() {
+        let pool = test_runner::get_pool().await;
 
-    #[tokio::test]
-    pub async fn starts_from_start_block_number() {}
+        test_runner::run_test(&pool, |mut conn| async move {
+            let contracts = vec![bayc_contract()];
+            static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
+            let json_rpc = Arc::new(json_rpc_with_logs!(
+                BAYC_CONTRACT_ADDRESS,
+                CURRENT_BLOCK_NUMBER
+            ));
 
+            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
+
+            let conn = Arc::new(Mutex::new(conn));
+            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc)
+                .await
+                .unwrap();
+
+            let mut conn = conn.lock().await;
+            let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
+            let bayc_contract_address = contract_addresses.first().unwrap();
+            assert_eq!(
+                bayc_contract_address.last_ingested_block_number as u32,
+                CURRENT_BLOCK_NUMBER
+            );
+        })
+        .await;
+    }
+
+    // TODO:
     #[tokio::test]
     pub async fn continues_from_last_ingested_block_number() {}
 
     #[tokio::test]
-    pub async fn does_nothing_when_there_are_no_events_from_contracts() {}
+    pub async fn does_nothing_when_there_are_no_contracts() {
+        let pool = test_runner::get_pool().await;
+
+        test_runner::run_test(&pool, |conn| async move {
+            let contracts = vec![];
+            let json_rpc = Arc::new(empty_json_rpc());
+            let blocks_per_batch = 10;
+            let conn = Arc::new(Mutex::new(conn));
+            EventsIngester::ingest(conn.clone(), &contracts, blocks_per_batch, json_rpc)
+                .await
+                .unwrap();
+            let mut conn = conn.lock().await;
+            let all_events = PostgresRepo::get_all_events(&mut conn).await;
+            assert_eq!(all_events, vec![]);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    pub async fn does_nothing_when_there_are_no_events_from_contracts() {
+        let pool = test_runner::get_pool().await;
+
+        test_runner::run_test(&pool, |mut conn| async move {
+            let contracts = vec![bayc_contract()];
+            let json_rpc = Arc::new(json_rpc_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
+
+            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
+            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
+
+            let conn = Arc::new(Mutex::new(conn));
+            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc)
+                .await
+                .unwrap();
+
+            let mut conn = conn.lock().await;
+            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
+        })
+        .await;
+    }
 }
