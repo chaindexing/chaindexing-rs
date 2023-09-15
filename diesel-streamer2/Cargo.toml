@@ -1,0 +1,25 @@
+[package]
+name = "diesel-streamer2"
+version = "0.1.1"
+edition = "2021"
+description = "EVM Chain Indexer"
+license = "MIT OR Apache-2.0"
+
+[features]
+default = ["postgres"]
+postgres = []
+
+[dependencies]
+async-trait = "0.1"
+bb8 = "0.8"
+derive_more = "0.99"
+chrono = { version = "0.4", features = ["serde"] }
+ethers = "2.0"
+serde_json = "1"
+tokio-postgres = "0.7"
+tokio = "1.29"
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-core = { version = "0.3", features = ["alloc"] }
+futures-util = "0.3"
+
+
