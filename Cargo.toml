@@ -2,6 +2,5 @@
 resolver = "2"
 members = [
   "chaindexing",
-  "chaindexing-tests",
-  "diesel-streamer2"
+  "chaindexing-tests"
 ]

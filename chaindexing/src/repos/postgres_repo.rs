@@ -8,7 +8,7 @@ use diesel_async::RunQueryDsl;
 
 use diesel::{result::Error, sql_query, upsert::excluded, ExpressionMethods};
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use diesel_streamer2::get_async_serial_table_streamer;
+use diesel_streamer::get_serial_table_async_stream;
 use futures_core::{future::BoxFuture, Stream};
 use tokio::sync::Mutex;
 
@@ -107,7 +107,7 @@ impl Repo for PostgresRepo {
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
-        get_async_serial_table_streamer!(
+        get_serial_table_async_stream!(
             chaindexing_contract_addresses,
             id,
             conn,
@@ -125,7 +125,7 @@ impl Repo for PostgresRepo {
 
         const CHUNK_SIZE: i32 = 500;
 
-        get_async_serial_table_streamer!(
+        get_serial_table_async_stream!(
             chaindexing_events,
             block_number,
             conn,
