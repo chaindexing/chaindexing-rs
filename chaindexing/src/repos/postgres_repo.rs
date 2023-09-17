@@ -102,7 +102,7 @@ impl Repo for PostgresRepo {
         chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
-    async fn get_contract_addresses_streamer<'a>(
+    async fn get_contract_addresses_stream<'a>(
         conn: Arc<Mutex<Conn<'a>>>,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
@@ -117,7 +117,7 @@ impl Repo for PostgresRepo {
         )
     }
 
-    async fn get_events_streamer<'a>(
+    async fn get_events_stream<'a>(
         conn: Arc<Mutex<Conn<'a>>>,
         from: i64,
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {

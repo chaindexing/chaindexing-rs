@@ -96,10 +96,10 @@ impl EventsIngester {
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = json_rpc.get_block_number().await?;
 
-        let mut contract_addresses_streamer =
-            ChaindexingRepo::get_contract_addresses_streamer(conn.clone()).await;
+        let mut contract_addresses_stream =
+            ChaindexingRepo::get_contract_addresses_stream(conn.clone()).await;
 
-        while let Some(contract_addresses) = contract_addresses_streamer.next().await {
+        while let Some(contract_addresses) = contract_addresses_stream.next().await {
             let mut conn = conn.lock().await;
             let filters = build_filters(
                 &contract_addresses,

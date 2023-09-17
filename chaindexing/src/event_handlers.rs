@@ -40,10 +40,10 @@ impl EventHandlers {
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
     ) {
-        let mut contract_addresses_streamer =
-            ChaindexingRepo::get_contract_addresses_streamer(conn.clone()).await;
+        let mut contract_addresses_stream =
+            ChaindexingRepo::get_contract_addresses_stream(conn.clone()).await;
 
-        while let Some(contract_addresses) = contract_addresses_streamer.next().await {
+        while let Some(contract_addresses) = contract_addresses_stream.next().await {
             stream::iter(contract_addresses)
                 .for_each(|contract_address| {
                     let conn = conn.clone();
@@ -66,13 +66,13 @@ impl EventHandlers {
         contract_address: &ContractAddress,
         event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
     ) {
-        let mut events_streamer = ChaindexingRepo::get_events_streamer(
+        let mut events_stream = ChaindexingRepo::get_events_stream(
             conn.clone(),
             contract_address.last_handled_block_number,
         )
         .await;
 
-        while let Some(mut events) = events_streamer.next().await {
+        while let Some(mut events) = events_stream.next().await {
             events.sort_by_key(|e| (e.block_number, e.log_index));
 
             join_all(events.iter().map(|event| {

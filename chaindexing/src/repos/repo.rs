@@ -35,13 +35,13 @@ pub trait Repo: Sync + Send + Migratable + Clone {
         contract_addresses: &Vec<UnsavedContractAddress>,
     );
     async fn get_all_contract_addresses<'a>(conn: &mut Self::Conn<'a>) -> Vec<ContractAddress>;
-    async fn get_contract_addresses_streamer<'a>(
+    async fn get_contract_addresses_stream<'a>(
         conn: Arc<Mutex<Self::Conn<'a>>>,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
 
     async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
-    async fn get_events_streamer<'a>(
+    async fn get_events_stream<'a>(
         conn: Arc<Mutex<Self::Conn<'a>>>,
         from: i64,
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
