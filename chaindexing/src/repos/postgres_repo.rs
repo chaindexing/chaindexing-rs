@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    contracts::{ContractAddress, UnsavedContractAddress},
+    contracts::{ContractAddress, ContractAddressID, ContractAddresses, UnsavedContractAddress},
     events::Event,
 };
 use diesel_async::RunQueryDsl;
@@ -112,7 +112,28 @@ impl Repo for PostgresRepo {
             id,
             conn,
             Arc<Mutex<Conn<'a>>>,
-            ContractAddress
+            ContractAddress,
+            i32
+        )
+    }
+
+    async fn get_events_streamer<'a>(
+        conn: Arc<Mutex<Conn<'a>>>,
+        from: i64,
+    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
+        use crate::diesel::schema::chaindexing_events::dsl::*;
+
+        const CHUNK_SIZE: i32 = 500;
+
+        get_async_serial_table_streamer!(
+            chaindexing_events,
+            block_number,
+            conn,
+            Arc<Mutex<Conn<'a>>>,
+            Event,
+            i64,
+            CHUNK_SIZE,
+            Some(from)
         )
     }
 
@@ -134,16 +155,31 @@ impl Repo for PostgresRepo {
 
     async fn update_last_ingested_block_number<'a>(
         conn: &mut Conn<'a>,
-        contract_addresses_list: &Vec<ContractAddress>,
-        block_number: i32,
+        contract_addresses: &Vec<ContractAddress>,
+        block_number: i64,
     ) {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
-        let ids = contract_addresses_list.iter().map(|c| c.id);
+        let ids = ContractAddresses::get_ids(contract_addresses);
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq_any(ids))
             .set(last_ingested_block_number.eq(block_number))
+            .execute(conn)
+            .await
+            .unwrap();
+    }
+
+    async fn update_last_handled_block_number<'a>(
+        conn: &mut Conn<'a>,
+        ContractAddressID(contract_address_id): ContractAddressID,
+        block_number: i64,
+    ) {
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
+
+        diesel::update(chaindexing_contract_addresses)
+            .filter(id.eq(contract_address_id))
+            .set(last_handled_block_number.eq(block_number))
             .execute(conn)
             .await
             .unwrap();

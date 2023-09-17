@@ -54,9 +54,8 @@ pub struct EventsIngester;
 impl EventsIngester {
     pub fn start(config: &Config) {
         let config = config.clone();
-
         tokio::spawn(async move {
-            let pool = config.repo.get_pool(2).await;
+            let pool = config.repo.get_pool(1).await;
             let conn = ChaindexingRepo::get_conn(&pool).await;
             let conn = Arc::new(Mutex::new(conn));
             let contracts = config.contracts.clone();
@@ -118,7 +117,7 @@ impl EventsIngester {
                     ChaindexingRepo::update_last_ingested_block_number(
                         conn,
                         &contract_addresses.clone(),
-                        current_block_number.as_u32() as i32,
+                        current_block_number.as_u64() as i64,
                     )
                     .await;
 
@@ -152,11 +151,11 @@ pub fn build_filters(
 
     contract_addresses
         .iter()
-        .map(|ca| {
+        .map(|contract_address| {
             build_filter(
-                ca,
+                contract_address,
                 topics_by_contract_name
-                    .get(ca.contract_name.as_str())
+                    .get(contract_address.contract_name.as_str())
                     .unwrap(),
                 current_block_number,
                 blocks_per_batch,

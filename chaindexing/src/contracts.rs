@@ -46,7 +46,7 @@ impl Contract {
         }
     }
 
-    pub fn add_address(&self, address: &str, chain: &Chain, start_block_number: u32) -> Self {
+    pub fn add_address(&self, address: &str, chain: &Chain, start_block_number: i64) -> Self {
         let mut addresses = self.addresses.clone();
 
         addresses.push(UnsavedContractAddress::new(
@@ -99,6 +99,24 @@ impl Contract {
 pub struct Contracts;
 
 impl Contracts {
+    pub fn get_all_event_handlers_by_event_abi(
+        contracts: &Vec<Contract>,
+    ) -> HashMap<EventAbi, Arc<dyn EventHandler>> {
+        contracts.iter().fold(
+            HashMap::new(),
+            |mut event_handlers_by_event_abi, contract| {
+                contract
+                    .event_handlers
+                    .iter()
+                    .for_each(|(event_abi, event_handler)| {
+                        event_handlers_by_event_abi.insert(event_abi, event_handler.clone());
+                    });
+
+                event_handlers_by_event_abi
+            },
+        )
+    }
+
     pub fn group_event_topics_by_names(
         contracts: &Vec<Contract>,
     ) -> HashMap<String, Vec<ContractEventTopic>> {
@@ -129,44 +147,63 @@ pub struct UnsavedContractAddress {
     contract_name: String,
     address: String,
     chain_id: i32,
-    start_block_number: i32,
-    last_ingested_block_number: i32,
+    start_block_number: i64,
+    last_ingested_block_number: i64,
+    last_handled_block_number: i64,
 }
 
 impl UnsavedContractAddress {
-    pub fn new(contract_name: &str, address: &str, chain: &Chain, start_block_number: u32) -> Self {
+    pub fn new(contract_name: &str, address: &str, chain: &Chain, start_block_number: i64) -> Self {
         UnsavedContractAddress {
             contract_name: contract_name.to_string(),
             address: address.to_string(),
             chain_id: *chain as i32,
-            start_block_number: start_block_number as i32,
-            last_ingested_block_number: start_block_number as i32,
+            start_block_number: start_block_number,
+            last_ingested_block_number: start_block_number,
+            last_handled_block_number: start_block_number,
         }
     }
 }
 
+pub struct ContractAddressID(pub i32);
+
+impl ContractAddressID {
+    pub fn value(self) -> i32 {
+        self.0
+    }
+}
 /// Answers: Where is a given EVM contract located
 /// N/B: The order has to match ./schema.rs to stop diesel from mixing up fields...lol
 #[derive(Debug, Clone, PartialEq, Queryable, Identifiable)]
 #[diesel(table_name = chaindexing_contract_addresses)]
 #[diesel(primary_key(id))]
 pub struct ContractAddress {
-    pub id: i32,
+    id: i32,
     chain_id: i32,
-    // TODO: Update to i64
-    pub last_ingested_block_number: i32,
-    // TODO: Update to i64
-    start_block_number: i32,
+    pub last_ingested_block_number: i64,
+    pub last_handled_block_number: i64,
+    start_block_number: i64,
     pub address: String,
     pub contract_name: String,
 }
 
 impl ContractAddress {
+    pub fn id(&self) -> ContractAddressID {
+        ContractAddressID(self.id)
+    }
     pub fn address_to_string(address: &Address) -> String {
         serde_json::to_value(address)
             .unwrap()
             .as_str()
             .unwrap()
             .to_string()
+    }
+}
+
+pub struct ContractAddresses;
+
+impl ContractAddresses {
+    pub fn get_ids(contract_addresses: &Vec<ContractAddress>) -> Vec<i32> {
+        contract_addresses.iter().map(|c| c.id).collect()
     }
 }

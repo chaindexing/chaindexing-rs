@@ -1,10 +1,10 @@
 #[allow(clippy::module_name_repetitions)]
 #[macro_export]
 macro_rules! get_async_serial_table_streamer {
-    ( $query:expr ,   $cursor_field:expr,  $conn: expr,  $conn_type: ty, $table_struct: ty) => {{
+    ( $query:expr, $cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $fromToType:ty) => {{
         use diesel_streamer2::get_async_serial_table_streamer;
 
-        let default_chunk_size = 100000;
+        let default_chunk_size = 500;
         let default_from = None;
         let default_to = None;
 
@@ -14,13 +14,14 @@ macro_rules! get_async_serial_table_streamer {
             $conn,
             $conn_type,
             $table_struct,
+            $fromToType,
             default_chunk_size,
             default_from,
             default_to
         )
     }};
 
-    ( $query:expr, $cursor_field:expr, $conn: expr,  $conn_type: ty, $table_struct: ty,  $chunk_size: expr) => {{
+    ($query:expr, $cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $fromToType:ty, $chunk_size:expr) => {{
         use diesel_streamer2::get_async_serial_table_streamer;
 
         let mut default_from = None;
@@ -32,13 +33,14 @@ macro_rules! get_async_serial_table_streamer {
             $conn,
             $conn_type,
             $table_struct,
+            $fromToType,
             $chunk_size,
             default_from,
             default_to
         )
     }};
 
-    ( $query:expr, $cursor_field:expr, $conn: expr,  $conn_type: ty, $table_struct: ty, $chunk_size: expr, $from: expr) => {{
+    ($query:expr, $cursor_field:expr, $conn: expr, $conn_type:ty, $table_struct:ty, $fromToType:ty, $chunk_size:expr, $from: expr) => {{
         use diesel_streamer2::get_async_serial_table_streamer;
 
         let default_to = None;
@@ -49,13 +51,14 @@ macro_rules! get_async_serial_table_streamer {
             $conn,
             $conn_type,
             $table_struct,
+            $fromToType,
             $chunk_size,
             $from,
             default_to
         )
     }};
 
-    ($query:expr, $cursor_field:expr, $conn: expr,  $conn_type: ty, $table_struct: ty,  $chunk_size:expr, $from:expr, $to:expr) => {{
+    ($query:expr, $cursor_field:expr, $conn: expr, $conn_type:ty, $table_struct:ty, $fromToType:ty, $chunk_size:expr, $from: expr, $to: expr) => {{
         use std::{
             future::Future,
             pin::Pin,
@@ -75,21 +78,23 @@ macro_rules! get_async_serial_table_streamer {
 
         enum SerialTableStreamerState<'a> {
             GetFromAndToFuture,
-            PollFromAndToFuture(Pin<Box<dyn Future<Output = (i32, i32)> + Send + 'a>>),
-            GetDataStreamFuture((i32, i32)),
+            PollFromAndToFuture(
+                Pin<Box<dyn Future<Output = ($fromToType, $fromToType)> + Send + 'a>>,
+            ),
+            GetDataStreamFuture(($fromToType, $fromToType)),
             PollDataStreamFuture(
                 (
                     Pin<Box<dyn Future<Output = DataStream> + Send + 'a>>,
-                    i32,
-                    i32,
+                    $fromToType,
+                    $fromToType,
                 ),
             ),
         };
 
         pin_project!(
             pub struct SerialTableStreamer<'a> {
-                from: Option<i32>,
-                to: Option<i32>,
+                from: Option<$fromToType>,
+                to: Option<$fromToType>,
                 chunk_size: i32,
                 conn: $conn_type,
                 state: SerialTableStreamerState<'a>,
@@ -128,11 +133,11 @@ macro_rules! get_async_serial_table_streamer {
                             async move {
                                 let mut conn = conn.lock().await;
 
-                                let from = match to {
-                                    Some(to) => to,
+                                let from = match from {
+                                    Some(from) => from,
                                     None => $query
                                         .select(min($cursor_field))
-                                        .get_result::<Option<i32>>(&mut conn)
+                                        .get_result::<Option<$fromToType>>(&mut conn)
                                         .await
                                         .unwrap()
                                         .unwrap_or(0),
@@ -142,7 +147,7 @@ macro_rules! get_async_serial_table_streamer {
                                     Some(to) => to,
                                     None => $query
                                         .select(max($cursor_field))
-                                        .get_result::<Option<i32>>(&mut conn)
+                                        .get_result::<Option<$fromToType>>(&mut conn)
                                         .await
                                         .unwrap()
                                         .unwrap_or(0),
@@ -157,7 +162,7 @@ macro_rules! get_async_serial_table_streamer {
                         Poll::Pending
                     }
                     SerialTableStreamerState::PollFromAndToFuture(from_and_to_future) => {
-                        let (from, to): (i32, i32) =
+                        let (from, to): ($fromToType, $fromToType) =
                             futures_util::ready!(from_and_to_future.as_mut().poll(cx));
 
                         *this.state = SerialTableStreamerState::GetDataStreamFuture((from, to));
@@ -174,7 +179,7 @@ macro_rules! get_async_serial_table_streamer {
                             Poll::Ready(None)
                         } else {
                             let conn = this.conn.clone();
-                            let chunk_limit = from + *this.chunk_size;
+                            let chunk_limit = from + (*this.chunk_size as $fromToType);
 
                             let mut data_stream_future = async move {
                                 let mut conn = conn.lock().await;
