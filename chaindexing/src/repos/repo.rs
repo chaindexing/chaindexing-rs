@@ -5,7 +5,11 @@ use futures_core::{future::BoxFuture, Stream};
 use futures_util::{stream, StreamExt};
 use tokio::sync::Mutex;
 
-use crate::{contracts::UnsavedContractAddress, events::Event, ContractAddress};
+use crate::{
+    contracts::{ContractAddressID, UnsavedContractAddress},
+    events::Event,
+    ContractAddress,
+};
 
 #[derive(Debug, Display)]
 pub enum RepoError {}
@@ -31,18 +35,26 @@ pub trait Repo: Sync + Send + Migratable + Clone {
         contract_addresses: &Vec<UnsavedContractAddress>,
     );
     async fn get_all_contract_addresses<'a>(conn: &mut Self::Conn<'a>) -> Vec<ContractAddress>;
-
     async fn get_contract_addresses_streamer<'a>(
         conn: Arc<Mutex<Self::Conn<'a>>>,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
 
     async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
+    async fn get_events_streamer<'a>(
+        conn: Arc<Mutex<Self::Conn<'a>>>,
+        from: i64,
+    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
 
     async fn update_last_ingested_block_number<'a>(
         conn: &mut Self::Conn<'a>,
         contract_addresses: &Vec<ContractAddress>,
-        block_number: i32,
+        block_number: i64,
+    );
+    async fn update_last_handled_block_number<'a>(
+        conn: &mut Self::Conn<'a>,
+        contract_address_id: ContractAddressID,
+        block_number: i64,
     );
 }
 
@@ -87,8 +99,9 @@ impl SQLikeMigrations {
                 address TEXT  NOT NULL,
                 contract_name TEXT NOT NULL,
                 chain_id INTEGER NOT NULL,
-                start_block_number INTEGER NOT NULL,
-                last_ingested_block_number INTEGER NULL
+                start_block_number BIGINT NOT NULL,
+                last_ingested_block_number BIGINT NULL,
+                last_handled_block_number BIGINT NULL
         )",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_contract_addresses_address_index
         ON chaindexing_contract_addresses(address)",
