@@ -11,7 +11,7 @@ pub use chains::Chains;
 pub use config::Config;
 pub use contracts::{Contract, ContractAddress, ContractEvent};
 pub use ethers::prelude::Chain;
-pub use event_handlers::EventHandler;
+pub use event_handlers::{EventHandler, EventHandlers};
 pub use events::Event;
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
 pub use repos::*;
@@ -40,8 +40,8 @@ impl Chaindexing {
         config.repo.migrate(&mut conn).await;
 
         Self::create_initial_contract_addresses(&mut conn, &config.contracts).await;
-
         EventsIngester::start(config);
+        EventHandlers::start(config);
 
         Ok(())
     }

@@ -17,7 +17,7 @@ pub struct EventHandlers;
 impl EventHandlers {
     /// 0.1 version
     /// Allow restarting from the beginning i.e. Let users compute
-    pub fn start(config: Config) {
+    pub fn start(config: &Config) {
         // get all events
         let config = config.clone();
         tokio::spawn(async move {
