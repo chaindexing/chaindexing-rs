@@ -101,7 +101,7 @@ impl EventsIngester {
             ChaindexingRepo::get_contract_addresses_stream(conn.clone()).await;
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
-            let contract_addresses = Self::get_only_uningested_contract_addresses(
+            let contract_addresses = Self::filter_uningested_contract_addresses(
                 &contract_addresses,
                 current_block_number,
             );
@@ -164,7 +164,7 @@ impl EventsIngester {
         .await;
     }
 
-    fn get_only_uningested_contract_addresses(
+    fn filter_uningested_contract_addresses(
         contract_addresses: &Vec<ContractAddress>,
         current_block_number: u64,
     ) -> Vec<ContractAddress> {
