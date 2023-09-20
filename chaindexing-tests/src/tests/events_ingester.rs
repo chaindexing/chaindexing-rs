@@ -18,7 +18,11 @@ mod tests {
 
         test_runner::run_test(&pool, |mut conn| async move {
             let contracts = vec![bayc_contract()];
-            let json_rpc = Arc::new(json_rpc_with_logs!(BAYC_CONTRACT_ADDRESS, 3));
+            static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
+            let json_rpc = Arc::new(json_rpc_with_logs!(
+                BAYC_CONTRACT_ADDRESS,
+                CURRENT_BLOCK_NUMBER
+            ));
 
             assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
@@ -72,7 +76,7 @@ mod tests {
     }
 
     #[tokio::test]
-    pub async fn checkpoints_last_ingested_block_to_current_block() {
+    pub async fn checkpoints_last_ingested_block_to_the_ingested_block_in_a_given_batch() {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
@@ -86,16 +90,19 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc)
+            let blocks_per_batch = 10;
+            EventsIngester::ingest(conn.clone(), &contracts, blocks_per_batch, json_rpc)
                 .await
                 .unwrap();
 
             let mut conn = conn.lock().await;
             let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
+            let last_ingested_block_number =
+                bayc_contract_address.last_ingested_block_number as u64;
             assert_eq!(
-                bayc_contract_address.last_ingested_block_number as u32,
-                CURRENT_BLOCK_NUMBER
+                last_ingested_block_number,
+                BAYC_CONTRACT_START_BLOCK_NUMBER as u64 + blocks_per_batch
             );
         })
         .await;

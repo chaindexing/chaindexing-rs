@@ -1,11 +1,12 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use ethers::prelude::Middleware;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider, ProviderError};
-use ethers::types::{Address, Filter, Log};
-use futures_util::future::try_join_all;
+use ethers::types::{Address, Filter as EthersFilter, Log};
+use futures_util::future::{join_all, try_join_all};
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
@@ -19,7 +20,7 @@ use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo}
 #[async_trait::async_trait]
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
     async fn get_block_number(&self) -> Result<U64, ProviderError>;
-    async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError>;
+    async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
 }
 
 #[async_trait::async_trait]
@@ -28,7 +29,7 @@ impl EventsIngesterJsonRpc for Provider<Http> {
         Middleware::get_block_number(&self).await
     }
 
-    async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError> {
+    async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
         Middleware::get_logs(&self, filter).await
     }
 }
@@ -94,32 +95,33 @@ impl EventsIngester {
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
     ) -> Result<(), EventsIngesterError> {
-        let current_block_number = json_rpc.get_block_number().await?;
+        let current_block_number = (json_rpc.get_block_number().await?).as_u64();
 
         let mut contract_addresses_stream =
             ChaindexingRepo::get_contract_addresses_stream(conn.clone()).await;
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
+            let contract_addresses = Self::get_only_uningested_contract_addresses(
+                &contract_addresses,
+                current_block_number,
+            );
+
             let mut conn = conn.lock().await;
-            let filters = build_filters(
+            let filters = Filters::build(
                 &contract_addresses,
                 &contracts,
-                current_block_number.as_u64(),
+                current_block_number,
                 blocks_per_batch,
             );
-            let logs = fetch_logs(&filters, &json_rpc).await.unwrap();
+            let logs = Self::fetch_logs(&filters, &json_rpc).await.unwrap();
             let events = Events::new(&logs, &contracts);
 
             ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
                 async move {
                     ChaindexingRepo::create_events(conn, &events.clone()).await;
 
-                    ChaindexingRepo::update_last_ingested_block_number(
-                        conn,
-                        &contract_addresses.clone(),
-                        current_block_number.as_u64() as i64,
-                    )
-                    .await;
+                    Self::update_last_ingested_block_numbers(conn, &contract_addresses, &filters)
+                        .await;
 
                     Ok(())
                 }
@@ -130,57 +132,144 @@ impl EventsIngester {
 
         Ok(())
     }
+
+    async fn update_last_ingested_block_numbers<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        contract_addresses: &Vec<ContractAddress>,
+        filters: &Vec<Filter>,
+    ) {
+        let filters_by_contract_address_id = Filters::group_by_contract_address_id(filters);
+
+        let conn = Arc::new(Mutex::new(conn));
+        join_all(contract_addresses.iter().map(|contract_address| {
+            let filters = filters_by_contract_address_id
+                .get(&contract_address.id)
+                .unwrap();
+
+            let conn = conn.clone();
+            async move {
+                if let Some(latest_filter) = Filters::get_latest(filters) {
+                    let last_ingested_block_number = latest_filter.value.get_to_block().unwrap();
+
+                    let mut conn = conn.lock().await;
+                    ChaindexingRepo::update_last_ingested_block_number(
+                        &mut conn,
+                        &contract_address,
+                        last_ingested_block_number.as_u64() as i64,
+                    )
+                    .await
+                }
+            }
+        }))
+        .await;
+    }
+
+    fn get_only_uningested_contract_addresses(
+        contract_addresses: &Vec<ContractAddress>,
+        current_block_number: u64,
+    ) -> Vec<ContractAddress> {
+        contract_addresses
+            .to_vec()
+            .into_iter()
+            .filter(|ca| current_block_number > ca.last_ingested_block_number as u64)
+            .collect()
+    }
+
+    async fn fetch_logs(
+        filters: &Vec<Filter>,
+        json_rpc: &Arc<impl EventsIngesterJsonRpc>,
+    ) -> Result<Vec<Log>, EventsIngesterError> {
+        let logs_per_filter =
+            try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f.value))).await?;
+
+        Ok(logs_per_filter.into_iter().flatten().collect())
+    }
 }
 
-async fn fetch_logs(
-    filters: &Vec<Filter>,
-    json_rpc: &Arc<impl EventsIngesterJsonRpc>,
-) -> Result<Vec<Log>, EventsIngesterError> {
-    let logs_per_filter = try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f))).await?;
-
-    Ok(logs_per_filter.into_iter().flatten().collect())
+#[derive(Clone, Debug)]
+struct Filter {
+    contract_address_id: i32,
+    value: EthersFilter,
 }
 
-pub fn build_filters(
-    contract_addresses: &Vec<ContractAddress>,
-    contracts: &Vec<Contract>,
-    current_block_number: u64,
-    blocks_per_batch: u64,
-) -> Vec<Filter> {
-    let topics_by_contract_name = Contracts::group_event_topics_by_names(contracts);
+impl Filter {
+    fn build(
+        contract_address: &ContractAddress,
+        topics: &Vec<ContractEventTopic>,
+        current_block_number: u64,
+        blocks_per_batch: u64,
+    ) -> Filter {
+        let last_ingested_block_number = contract_address.last_ingested_block_number as u64;
 
-    contract_addresses
-        .iter()
-        .map(|contract_address| {
-            build_filter(
-                contract_address,
-                topics_by_contract_name
+        Filter {
+            contract_address_id: contract_address.id,
+            value: EthersFilter::new()
+                // We could use multiple adddresses here but
+                // we'll rather not because it would affect the correctness of
+                // last_ingested_block_number since we stream the contracts upstream.
+                .address(contract_address.address.parse::<Address>().unwrap())
+                .topic0(topics.to_vec())
+                .from_block(last_ingested_block_number)
+                .to_block(std::cmp::min(
+                    last_ingested_block_number + blocks_per_batch,
+                    current_block_number,
+                )),
+        }
+    }
+}
+
+struct Filters;
+
+impl Filters {
+    fn build(
+        contract_addresses: &Vec<ContractAddress>,
+        contracts: &Vec<Contract>,
+        current_block_number: u64,
+        blocks_per_batch: u64,
+    ) -> Vec<Filter> {
+        let topics_by_contract_name = Contracts::group_event_topics_by_names(contracts);
+
+        contract_addresses
+            .iter()
+            .map(|contract_address| {
+                let topics_by_contract_name = topics_by_contract_name
                     .get(contract_address.contract_name.as_str())
-                    .unwrap(),
-                current_block_number,
-                blocks_per_batch,
-            )
-        })
-        .collect()
-}
+                    .unwrap();
 
-fn build_filter(
-    contract_address: &ContractAddress,
-    topics: &Vec<ContractEventTopic>,
-    current_block_number: u64,
-    blocks_per_batch: u64,
-) -> Filter {
-    let last_ingested_block_number = contract_address.last_ingested_block_number as u64;
+                Filter::build(
+                    contract_address,
+                    topics_by_contract_name,
+                    current_block_number,
+                    blocks_per_batch,
+                )
+            })
+            .collect()
+    }
 
-    Filter::new()
-        // We could use multiple adddresses here but
-        // we'll rather not because it would affect the correctness of
-        // last_ingested_block_number since we stream the contracts upstream.
-        .address(contract_address.address.parse::<Address>().unwrap())
-        .topic0(topics.to_vec())
-        .from_block(last_ingested_block_number)
-        .to_block(std::cmp::min(
-            last_ingested_block_number + blocks_per_batch,
-            current_block_number,
-        ))
+    fn group_by_contract_address_id(filters: &Vec<Filter>) -> HashMap<i32, Vec<Filter>> {
+        let empty_filter_group = vec![];
+
+        filters.iter().fold(
+            HashMap::new(),
+            |mut filters_by_contract_address_id, filter| {
+                let mut filter_group = filters_by_contract_address_id
+                    .get(&filter.contract_address_id)
+                    .unwrap_or(&empty_filter_group)
+                    .to_vec();
+
+                filter_group.push(filter.clone());
+
+                filters_by_contract_address_id.insert(filter.contract_address_id, filter_group);
+
+                filters_by_contract_address_id
+            },
+        )
+    }
+
+    fn get_latest(filters: &Vec<Filter>) -> Option<Filter> {
+        let mut filters = filters.clone();
+        filters.sort_by_key(|f| f.value.get_to_block());
+
+        filters.last().cloned()
+    }
 }

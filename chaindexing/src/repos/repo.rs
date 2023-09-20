@@ -48,7 +48,7 @@ pub trait Repo: Sync + Send + Migratable + Clone {
 
     async fn update_last_ingested_block_number<'a>(
         conn: &mut Self::Conn<'a>,
-        contract_addresses: &Vec<ContractAddress>,
+        contract_address: &ContractAddress,
         block_number: i64,
     );
     async fn update_last_handled_block_number<'a>(

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    contracts::{ContractAddress, ContractAddressID, ContractAddresses, UnsavedContractAddress},
+    contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
 };
 use diesel_async::RunQueryDsl;
@@ -154,16 +154,14 @@ impl Repo for PostgresRepo {
     }
 
     async fn update_last_ingested_block_number<'a>(
-        conn: &mut Conn<'a>,
-        contract_addresses: &Vec<ContractAddress>,
+        conn: &mut Self::Conn<'a>,
+        contract_address: &ContractAddress,
         block_number: i64,
     ) {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
-        let ids = ContractAddresses::get_ids(contract_addresses);
-
         diesel::update(chaindexing_contract_addresses)
-            .filter(id.eq_any(ids))
+            .filter(id.eq(contract_address.id))
             .set(last_ingested_block_number.eq(block_number))
             .execute(conn)
             .await

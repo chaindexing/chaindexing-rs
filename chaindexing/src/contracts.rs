@@ -123,7 +123,6 @@ impl Contracts {
         contracts
             .iter()
             .fold(HashMap::new(), |mut topics_by_contract_name, contract| {
-                // embrace mutability because Rust helps avoid bugs
                 topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
 
                 topics_by_contract_name
@@ -178,7 +177,7 @@ impl ContractAddressID {
 #[diesel(table_name = chaindexing_contract_addresses)]
 #[diesel(primary_key(id))]
 pub struct ContractAddress {
-    id: i32,
+    pub id: i32,
     chain_id: i32,
     pub last_ingested_block_number: i64,
     pub last_handled_block_number: i64,
@@ -197,13 +196,5 @@ impl ContractAddress {
             .as_str()
             .unwrap()
             .to_string()
-    }
-}
-
-pub struct ContractAddresses;
-
-impl ContractAddresses {
-    pub fn get_ids(contract_addresses: &Vec<ContractAddress>) -> Vec<i32> {
-        contract_addresses.iter().map(|c| c.id).collect()
     }
 }
