@@ -83,14 +83,19 @@ impl EventHandlers {
             .await;
 
             let mut conn = conn.lock().await;
-            let last_handled_event_block_number = events.last().unwrap().block_number;
 
-            ChaindexingRepo::update_last_handled_block_number(
-                &mut conn,
-                contract_address.id(),
-                last_handled_event_block_number,
-            )
-            .await;
+            if let Some(Event {
+                block_number: last_handled_event_block_number,
+                ..
+            }) = events.last()
+            {
+                ChaindexingRepo::update_last_handled_block_number(
+                    &mut conn,
+                    contract_address.id(),
+                    *last_handled_event_block_number,
+                )
+                .await;
+            }
         }
     }
 }
