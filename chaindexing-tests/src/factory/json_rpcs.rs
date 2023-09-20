@@ -24,7 +24,7 @@ macro_rules! json_rpc_with_logs {
     ($contract_address:expr) => {{
         use crate::json_rpc_with_logs;
 
-        json_rpc_with_logs!($contract_address, 3)
+        json_rpc_with_logs!($contract_address, 17774490)
     }};
     ($contract_address:expr, $current_block_number:expr) => {{
         use chaindexing::EventsIngesterJsonRpc;
