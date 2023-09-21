@@ -153,7 +153,7 @@ impl Repo for PostgresRepo {
         chaindexing_events.load(conn).await.unwrap()
     }
 
-    async fn update_last_ingested_block_number<'a>(
+    async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,
         contract_address: &ContractAddress,
         block_number: i64,
@@ -162,7 +162,7 @@ impl Repo for PostgresRepo {
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq(contract_address.id))
-            .set(last_ingested_block_number.eq(block_number))
+            .set(next_block_number_to_ingest_from.eq(block_number))
             .execute(conn)
             .await
             .unwrap();

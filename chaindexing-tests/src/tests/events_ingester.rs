@@ -54,7 +54,7 @@ mod tests {
             let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
             assert_eq!(
-                bayc_contract_address.last_ingested_block_number as u32,
+                bayc_contract_address.next_block_number_to_ingest_from as u32,
                 BAYC_CONTRACT_START_BLOCK_NUMBER
             );
             let json_rpc = Arc::new(json_rpc_with_filter_stubber!(
@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[tokio::test]
-    pub async fn checkpoints_last_ingested_block_to_the_ingested_block_in_a_given_batch() {
+    pub async fn updates_next_block_number_to_ingest_from_for_a_given_batch() {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
@@ -98,11 +98,11 @@ mod tests {
             let mut conn = conn.lock().await;
             let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
-            let last_ingested_block_number =
-                bayc_contract_address.last_ingested_block_number as u64;
+            let next_block_number_to_ingest_from =
+                bayc_contract_address.next_block_number_to_ingest_from as u64;
             assert_eq!(
-                last_ingested_block_number,
-                BAYC_CONTRACT_START_BLOCK_NUMBER as u64 + blocks_per_batch
+                next_block_number_to_ingest_from,
+                BAYC_CONTRACT_START_BLOCK_NUMBER as u64 + blocks_per_batch + 1
             );
         })
         .await;
@@ -110,7 +110,7 @@ mod tests {
 
     // TODO:
     #[tokio::test]
-    pub async fn continues_from_last_ingested_block_number() {}
+    pub async fn continues_from_next_block_number_to_ingest_from() {}
 
     #[tokio::test]
     pub async fn does_nothing_when_there_are_no_contracts() {

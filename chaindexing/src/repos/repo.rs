@@ -46,7 +46,7 @@ pub trait Repo: Sync + Send + Migratable + Clone {
         from: i64,
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
 
-    async fn update_last_ingested_block_number<'a>(
+    async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,
         contract_address: &ContractAddress,
         block_number: i64,
@@ -100,7 +100,7 @@ impl SQLikeMigrations {
                 contract_name TEXT NOT NULL,
                 chain_id INTEGER NOT NULL,
                 start_block_number BIGINT NOT NULL,
-                last_ingested_block_number BIGINT NULL,
+                next_block_number_to_ingest_from BIGINT NULL,
                 last_handled_block_number BIGINT NULL
         )",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_contract_addresses_address_index
