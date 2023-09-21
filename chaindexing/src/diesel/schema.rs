@@ -5,7 +5,7 @@ diesel::table! {
       id -> Int4,
       chain_id -> Int4,
       next_block_number_to_ingest_from -> Int8,
-      last_handled_block_number -> Int8,
+      next_block_number_to_handle -> Int8,
       start_block_number -> Int8,
       address -> Text,
       contract_name -> Text,

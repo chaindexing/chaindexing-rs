@@ -168,7 +168,7 @@ impl Repo for PostgresRepo {
             .unwrap();
     }
 
-    async fn update_last_handled_block_number<'a>(
+    async fn update_next_block_number_to_handle<'a>(
         conn: &mut Conn<'a>,
         ContractAddressID(contract_address_id): ContractAddressID,
         block_number: i64,
@@ -177,7 +177,7 @@ impl Repo for PostgresRepo {
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq(contract_address_id))
-            .set(last_handled_block_number.eq(block_number))
+            .set(next_block_number_to_handle.eq(block_number))
             .execute(conn)
             .await
             .unwrap();

@@ -51,7 +51,7 @@ pub trait Repo: Sync + Send + Migratable + Clone {
         contract_address: &ContractAddress,
         block_number: i64,
     );
-    async fn update_last_handled_block_number<'a>(
+    async fn update_next_block_number_to_handle<'a>(
         conn: &mut Self::Conn<'a>,
         contract_address_id: ContractAddressID,
         block_number: i64,
@@ -101,7 +101,7 @@ impl SQLikeMigrations {
                 chain_id INTEGER NOT NULL,
                 start_block_number BIGINT NOT NULL,
                 next_block_number_to_ingest_from BIGINT NULL,
-                last_handled_block_number BIGINT NULL
+                next_block_number_to_handle BIGINT NULL
         )",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_contract_addresses_address_index
         ON chaindexing_contract_addresses(address)",

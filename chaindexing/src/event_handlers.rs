@@ -68,7 +68,7 @@ impl EventHandlers {
     ) {
         let mut events_stream = ChaindexingRepo::get_events_stream(
             conn.clone(),
-            contract_address.last_handled_block_number,
+            contract_address.next_block_number_to_handle,
         )
         .await;
 
@@ -84,15 +84,12 @@ impl EventHandlers {
 
             let mut conn = conn.lock().await;
 
-            if let Some(Event {
-                block_number: last_handled_event_block_number,
-                ..
-            }) = events.last()
-            {
-                ChaindexingRepo::update_last_handled_block_number(
+            if let Some(Event { block_number, .. }) = events.last() {
+                let next_block_number_to_handle = block_number + 1;
+                ChaindexingRepo::update_next_block_number_to_handle(
                     &mut conn,
                     contract_address.id(),
-                    *last_handled_event_block_number,
+                    next_block_number_to_handle,
                 )
                 .await;
             }
