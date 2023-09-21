@@ -105,7 +105,6 @@ impl EventsIngester {
                 &contract_addresses,
                 current_block_number,
             );
-
             let mut conn = conn.lock().await;
             let filters = Filters::build(
                 &contract_addresses,
@@ -114,6 +113,7 @@ impl EventsIngester {
                 blocks_per_batch,
             );
             let logs = Self::fetch_logs(&filters, &json_rpc).await.unwrap();
+
             let events = Events::new(&logs, &contracts);
 
             ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {

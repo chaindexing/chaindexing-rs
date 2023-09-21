@@ -31,14 +31,14 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(log: &Log, event: &ContractEvent) -> Self {
+    pub fn new(log: &Log, event: &ContractEvent, contract_name: &str) -> Self {
         let log_params = event.value.parse_log(log.clone().into()).unwrap().params;
         let parameters = Self::log_params_to_parameters(&log_params);
 
         Self {
             id: uuid::Uuid::new_v4(),
             contract_address: ContractAddress::address_to_string(&log.address),
-            contract_name: event.contract_name.to_owned(),
+            contract_name: contract_name.to_string(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),
             parameters: serde_json::to_value(parameters).unwrap(),
@@ -69,9 +69,16 @@ pub struct Events;
 impl Events {
     pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
+        let contracts_by_addresses = Contracts::group_by_addresses(contracts);
 
         logs.iter()
-            .map(|log| Event::new(log, &events_by_topics.get(&log.topics[0]).unwrap()))
+            .map(|log| {
+                Event::new(
+                    log,
+                    &events_by_topics.get(&log.topics[0]).unwrap(),
+                    &contracts_by_addresses.get(&log.address).unwrap().name,
+                )
+            })
             .collect()
     }
 }
