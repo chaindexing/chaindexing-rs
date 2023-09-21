@@ -120,8 +120,12 @@ impl EventsIngester {
                 async move {
                     ChaindexingRepo::create_events(conn, &events.clone()).await;
 
-                    Self::update_last_ingested_block_numbers(conn, &contract_addresses, &filters)
-                        .await;
+                    Self::update_next_block_numbers_to_ingest_from(
+                        conn,
+                        &contract_addresses,
+                        &filters,
+                    )
+                    .await;
 
                     Ok(())
                 }
@@ -133,7 +137,7 @@ impl EventsIngester {
         Ok(())
     }
 
-    async fn update_last_ingested_block_numbers<'a>(
+    async fn update_next_block_numbers_to_ingest_from<'a>(
         conn: &mut ChaindexingRepoConn<'a>,
         contract_addresses: &Vec<ContractAddress>,
         filters: &Vec<Filter>,
@@ -149,13 +153,14 @@ impl EventsIngester {
             let conn = conn.clone();
             async move {
                 if let Some(latest_filter) = Filters::get_latest(filters) {
-                    let last_ingested_block_number = latest_filter.value.get_to_block().unwrap();
+                    let next_block_number_to_ingest_from =
+                        latest_filter.value.get_to_block().unwrap() + 1;
 
                     let mut conn = conn.lock().await;
-                    ChaindexingRepo::update_last_ingested_block_number(
+                    ChaindexingRepo::update_next_block_number_to_ingest_from(
                         &mut conn,
                         &contract_address,
-                        last_ingested_block_number.as_u64() as i64,
+                        next_block_number_to_ingest_from.as_u64() as i64,
                     )
                     .await
                 }
@@ -171,7 +176,7 @@ impl EventsIngester {
         contract_addresses
             .to_vec()
             .into_iter()
-            .filter(|ca| current_block_number > ca.last_ingested_block_number as u64)
+            .filter(|ca| current_block_number > ca.next_block_number_to_ingest_from as u64)
             .collect()
     }
 
@@ -199,19 +204,20 @@ impl Filter {
         current_block_number: u64,
         blocks_per_batch: u64,
     ) -> Filter {
-        let last_ingested_block_number = contract_address.last_ingested_block_number as u64;
+        let next_block_number_to_ingest_from =
+            contract_address.next_block_number_to_ingest_from as u64;
 
         Filter {
             contract_address_id: contract_address.id,
             value: EthersFilter::new()
                 // We could use multiple adddresses here but
                 // we'll rather not because it would affect the correctness of
-                // last_ingested_block_number since we stream the contracts upstream.
+                // next_block_number_to_ingest_from since we stream the contracts upstream.
                 .address(contract_address.address.parse::<Address>().unwrap())
                 .topic0(topics.to_vec())
-                .from_block(last_ingested_block_number)
+                .from_block(next_block_number_to_ingest_from)
                 .to_block(std::cmp::min(
-                    last_ingested_block_number + blocks_per_batch,
+                    next_block_number_to_ingest_from + blocks_per_batch,
                     current_block_number,
                 )),
         }

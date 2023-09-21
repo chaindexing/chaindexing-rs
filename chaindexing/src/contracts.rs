@@ -161,7 +161,7 @@ pub struct UnsavedContractAddress {
     address: String,
     chain_id: i32,
     start_block_number: i64,
-    last_ingested_block_number: i64,
+    next_block_number_to_ingest_from: i64,
     last_handled_block_number: i64,
 }
 
@@ -172,7 +172,7 @@ impl UnsavedContractAddress {
             address: address.to_string(),
             chain_id: *chain as i32,
             start_block_number: start_block_number,
-            last_ingested_block_number: start_block_number,
+            next_block_number_to_ingest_from: start_block_number,
             last_handled_block_number: start_block_number,
         }
     }
@@ -193,7 +193,7 @@ impl ContractAddressID {
 pub struct ContractAddress {
     pub id: i32,
     chain_id: i32,
-    pub last_ingested_block_number: i64,
+    pub next_block_number_to_ingest_from: i64,
     pub last_handled_block_number: i64,
     start_block_number: i64,
     pub address: String,

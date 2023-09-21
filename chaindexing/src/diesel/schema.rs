@@ -4,7 +4,7 @@ diesel::table! {
   chaindexing_contract_addresses (id) {
       id -> Int4,
       chain_id -> Int4,
-      last_ingested_block_number -> Int8,
+      next_block_number_to_ingest_from -> Int8,
       last_handled_block_number -> Int8,
       start_block_number -> Int8,
       address -> Text,
