@@ -1,12 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::{diesel::schema::chaindexing_contract_addresses, event_handlers::EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::{
-    abi::{Event, HumanReadableParser},
+    abi::{Address, Event, HumanReadableParser},
     prelude::Chain,
-    types::{Address, H256},
+    types::H256,
 };
 
 pub type ContractEventTopic = H256;
@@ -14,15 +14,13 @@ pub type ContractEventTopic = H256;
 #[derive(Debug, Clone)]
 pub struct ContractEvent {
     pub abi: String,
-    pub contract_name: String,
     pub value: Event,
 }
 
 impl ContractEvent {
-    pub fn new(abi: &str, contract_name: &str) -> Self {
+    pub fn new(abi: &str) -> Self {
         Self {
             abi: abi.to_string(),
-            contract_name: contract_name.to_string(),
             value: HumanReadableParser::parse_event(abi).unwrap(),
         }
     }
@@ -88,10 +86,10 @@ impl Contract {
             .collect()
     }
 
-    pub fn get_events(&self) -> Vec<ContractEvent> {
+    pub fn build_events(&self) -> Vec<ContractEvent> {
         self.get_event_abis()
             .iter()
-            .map(|abi| ContractEvent::new(abi, &self.name))
+            .map(|abi| ContractEvent::new(abi))
             .collect()
     }
 }
@@ -129,14 +127,30 @@ impl Contracts {
             })
     }
 
-    pub fn group_events_by_topics<'a>(
-        contracts: &'a Vec<Contract>,
+    pub fn group_events_by_topics(
+        contracts: &Vec<Contract>,
     ) -> HashMap<ContractEventTopic, ContractEvent> {
         contracts
             .iter()
-            .flat_map(|c| c.get_events())
+            .flat_map(|c| c.build_events())
             .map(|e| (e.value.signature(), e))
             .collect()
+    }
+
+    pub fn group_by_addresses<'a>(contracts: &'a Vec<Contract>) -> HashMap<Address, &'a Contract> {
+        contracts
+            .iter()
+            .fold(HashMap::new(), |mut contracts_by_addresses, contract| {
+                contract
+                    .addresses
+                    .iter()
+                    .for_each(|UnsavedContractAddress { address, .. }| {
+                        contracts_by_addresses
+                            .insert(Address::from_str(&*address.as_str()).unwrap(), contract);
+                    });
+
+                contracts_by_addresses
+            })
     }
 }
 
