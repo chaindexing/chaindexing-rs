@@ -106,7 +106,7 @@ impl EventsIngester {
                 current_block_number,
             );
             let mut conn = conn.lock().await;
-            let filters = Filters::build(
+            let filters = Filters::new(
                 &contract_addresses,
                 &contracts,
                 current_block_number,
@@ -198,7 +198,7 @@ struct Filter {
 }
 
 impl Filter {
-    fn build(
+    fn new(
         contract_address: &ContractAddress,
         topics: &Vec<ContractEventTopic>,
         current_block_number: u64,
@@ -227,7 +227,7 @@ impl Filter {
 struct Filters;
 
 impl Filters {
-    fn build(
+    fn new(
         contract_addresses: &Vec<ContractAddress>,
         contracts: &Vec<Contract>,
         current_block_number: u64,
@@ -242,7 +242,7 @@ impl Filters {
                     .get(contract_address.contract_name.as_str())
                     .unwrap();
 
-                Filter::build(
+                Filter::new(
                     contract_address,
                     topics_by_contract_name,
                     current_block_number,
