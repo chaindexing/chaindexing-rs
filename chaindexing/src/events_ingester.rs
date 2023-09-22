@@ -15,7 +15,7 @@ use tokio::time::interval;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::Events;
-use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo};
+use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo, Streamable};
 
 #[async_trait::async_trait]
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
@@ -98,7 +98,7 @@ impl EventsIngester {
         let current_block_number = (json_rpc.get_block_number().await?).as_u64();
 
         let mut contract_addresses_stream =
-            ChaindexingRepo::get_contract_addresses_stream(conn.clone()).await;
+            ChaindexingRepo::get_contract_addresses_stream(conn.clone());
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             let contract_addresses = Self::filter_uningested_contract_addresses(

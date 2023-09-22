@@ -15,7 +15,7 @@ use crate::{
 pub enum RepoError {}
 
 #[async_trait::async_trait]
-pub trait Repo: Sync + Send + Migratable + Clone {
+pub trait Repo: Sync + Send + Migratable + Streamable + Clone {
     type Pool;
     type Conn<'a>;
 
@@ -35,16 +35,9 @@ pub trait Repo: Sync + Send + Migratable + Clone {
         contract_addresses: &Vec<UnsavedContractAddress>,
     );
     async fn get_all_contract_addresses<'a>(conn: &mut Self::Conn<'a>) -> Vec<ContractAddress>;
-    async fn get_contract_addresses_stream<'a>(
-        conn: Arc<Mutex<Self::Conn<'a>>>,
-    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
 
     async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
-    async fn get_events_stream<'a>(
-        conn: Arc<Mutex<Self::Conn<'a>>>,
-        from: i64,
-    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
 
     async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,
@@ -64,6 +57,17 @@ pub type Migration = &'static str;
 pub trait ExecutesRawQuery {
     type RawQueryConn<'a>: Send;
     async fn execute_raw_query<'a>(&self, conn: &mut Self::RawQueryConn<'a>, query: &str);
+}
+
+pub trait Streamable {
+    type StreamConn<'a>;
+    fn get_contract_addresses_stream<'a>(
+        conn: Arc<Mutex<Self::StreamConn<'a>>>,
+    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
+    fn get_events_stream<'a>(
+        conn: Arc<Mutex<Self::StreamConn<'a>>>,
+        from: i64,
+    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
 }
 
 #[async_trait::async_trait]
