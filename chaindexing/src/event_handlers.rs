@@ -5,7 +5,7 @@ use futures_util::{stream, StreamExt};
 use tokio::{sync::Mutex, time::interval};
 
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
-use crate::{ChaindexingRepoConn, ContractAddress};
+use crate::{ChaindexingRepoConn, ContractAddress, Streamable};
 
 #[async_trait::async_trait]
 pub trait EventHandler: Send + Sync {
@@ -38,7 +38,7 @@ impl EventHandlers {
         event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
     ) {
         let mut contract_addresses_stream =
-            ChaindexingRepo::get_contract_addresses_stream(conn.clone()).await;
+            ChaindexingRepo::get_contract_addresses_stream(conn.clone());
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             stream::iter(contract_addresses)
@@ -66,8 +66,7 @@ impl EventHandlers {
         let mut events_stream = ChaindexingRepo::get_events_stream(
             conn.clone(),
             contract_address.next_block_number_to_handle,
-        )
-        .await;
+        );
 
         while let Some(mut events) = events_stream.next().await {
             events.sort_by_key(|e| (e.block_number, e.log_index));

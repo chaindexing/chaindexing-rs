@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::{
     contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
+    Streamable,
 };
 use diesel_async::RunQueryDsl;
 
@@ -27,19 +28,11 @@ pub struct PostgresRepo {
     url: String,
 }
 
-#[async_trait::async_trait]
-impl ExecutesRawQuery for PostgresRepo {
-    type RawQueryConn<'a> =
-        bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
-
-    async fn execute_raw_query<'a>(&self, conn: &mut Conn<'a>, query: &str) {
-        sql_query(query).execute(conn).await.unwrap();
-    }
-}
+type PgPooledConn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
 
 #[async_trait::async_trait]
 impl Repo for PostgresRepo {
-    type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
+    type Conn<'a> = PgPooledConn<'a>;
     type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
 
     fn new(url: &str) -> Self {
@@ -102,41 +95,6 @@ impl Repo for PostgresRepo {
         chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
-    async fn get_contract_addresses_stream<'a>(
-        conn: Arc<Mutex<Conn<'a>>>,
-    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        get_serial_table_async_stream!(
-            chaindexing_contract_addresses,
-            id,
-            conn,
-            Arc<Mutex<Conn<'a>>>,
-            ContractAddress,
-            i32
-        )
-    }
-
-    async fn get_events_stream<'a>(
-        conn: Arc<Mutex<Conn<'a>>>,
-        from: i64,
-    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_events::dsl::*;
-
-        const CHUNK_SIZE: i32 = 500;
-
-        get_serial_table_async_stream!(
-            chaindexing_events,
-            block_number,
-            conn,
-            Arc<Mutex<Conn<'a>>>,
-            Event,
-            i64,
-            CHUNK_SIZE,
-            Some(from)
-        )
-    }
-
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &Vec<Event>) {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
@@ -181,6 +139,54 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
+    }
+}
+
+impl Streamable for PostgresRepo {
+    type StreamConn<'a> = PgPooledConn<'a>;
+
+    fn get_contract_addresses_stream<'a>(
+        conn: Arc<Mutex<Self::StreamConn<'a>>>,
+    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
+
+        get_serial_table_async_stream!(
+            chaindexing_contract_addresses,
+            id,
+            conn,
+            Arc<Mutex<PgPooledConn<'a>>>,
+            ContractAddress,
+            i32
+        )
+    }
+
+    fn get_events_stream<'a>(
+        conn: Arc<Mutex<Self::StreamConn<'a>>>,
+        from: i64,
+    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
+        use crate::diesel::schema::chaindexing_events::dsl::*;
+
+        const CHUNK_SIZE: i32 = 500;
+
+        get_serial_table_async_stream!(
+            chaindexing_events,
+            block_number,
+            conn,
+            Arc<Mutex<PgPooledConn<'a>>>,
+            Event,
+            i64,
+            CHUNK_SIZE,
+            Some(from)
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl ExecutesRawQuery for PostgresRepo {
+    type RawQueryConn<'a> = PgPooledConn<'a>;
+
+    async fn execute_raw_query<'a>(&self, conn: &mut Conn<'a>, query: &str) {
+        sql_query(query).execute(conn).await.unwrap();
     }
 }
 
