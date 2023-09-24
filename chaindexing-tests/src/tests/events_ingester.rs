@@ -5,12 +5,13 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::factory::{
-        bayc_contract, empty_json_rpc, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER,
+        bayc_contract, empty_json_rpc, TestContractState, BAYC_CONTRACT_ADDRESS,
+        BAYC_CONTRACT_START_BLOCK_NUMBER,
     };
     use crate::{
         json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
     };
-    use chaindexing::{Chaindexing, EventsIngester, PostgresRepo, Repo};
+    use chaindexing::{Chaindexing, Contract, EventsIngester, PostgresRepo, Repo};
 
     #[tokio::test]
     pub async fn creates_contract_events() {
@@ -117,7 +118,7 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let contracts = vec![];
+            let contracts: Vec<Contract<TestContractState>> = vec![];
             let json_rpc = Arc::new(empty_json_rpc());
             let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));

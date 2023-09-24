@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{contracts::Contracts, diesel::schema::chaindexing_events, ContractAddress};
+use crate::{
+    contracts::Contracts, diesel::schema::chaindexing_events, ContractAddress, ContractState,
+};
 use diesel::{Insertable, Queryable};
 use ethers::{
     abi::{LogParam, Token},
@@ -16,7 +18,7 @@ use uuid::Uuid;
 pub struct Event {
     pub id: Uuid,
     pub contract_address: String,
-    contract_name: String,
+    pub contract_name: String,
     pub abi: String,
     log_params: serde_json::Value,
     parameters: serde_json::Value,
@@ -53,6 +55,10 @@ impl Event {
         }
     }
 
+    pub fn match_contract_address(&self, contract_address: &String) -> bool {
+        self.contract_address.to_lowercase() == *contract_address.to_lowercase()
+    }
+
     fn log_params_to_parameters(log_params: &Vec<LogParam>) -> HashMap<String, Token> {
         log_params
             .iter()
@@ -67,7 +73,10 @@ impl Event {
 pub struct Events;
 
 impl Events {
-    pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>) -> Vec<Event> {
+    pub fn new<State: ContractState>(
+        logs: &Vec<Log>,
+        contracts: &Vec<Contract<State>>,
+    ) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
         let contracts_by_addresses = Contracts::group_by_addresses(contracts);
 

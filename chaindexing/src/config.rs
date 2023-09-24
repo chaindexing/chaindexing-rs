@@ -1,28 +1,28 @@
-use crate::{ChaindexingRepo, Chains, Contract};
+use crate::{ChaindexingRepo, Chains, Contract, ContractState};
 
 #[derive(Clone)]
-pub struct Config {
+pub struct Config<State: ContractState> {
     pub chains: Chains,
     pub repo: ChaindexingRepo,
-    pub contracts: Vec<Contract>,
+    pub contracts: Vec<Contract<State>>,
     pub blocks_per_batch: u64,
     pub handler_interval_ms: u64,
     pub ingestion_interval_ms: u64,
 }
 
-impl Config {
-    pub fn new(repo: ChaindexingRepo, chains: Chains, contracts: Vec<Contract>) -> Self {
+impl<State: ContractState> Config<State> {
+    pub fn new(repo: ChaindexingRepo, chains: Chains) -> Self {
         Self {
             repo,
             chains,
-            contracts,
+            contracts: vec![],
             blocks_per_batch: 20,
             handler_interval_ms: 10000,
             ingestion_interval_ms: 10000,
         }
     }
 
-    pub fn add_contract(mut self, contract: Contract) -> Self {
+    pub fn add_contract(mut self, contract: Contract<State>) -> Self {
         self.contracts.push(contract);
 
         self
