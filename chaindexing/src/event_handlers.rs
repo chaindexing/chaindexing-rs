@@ -40,13 +40,10 @@ impl EventHandlers {
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler<State = State>>>,
     ) {
-        dbg!("About to fetch Contract Addresses");
         let mut contract_addresses_stream =
             ChaindexingRepo::get_contract_addresses_stream(conn.clone());
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
-            dbg!("Streaming Contract Addresses");
-
             stream::iter(contract_addresses)
                 .for_each(|contract_address| {
                     let conn = conn.clone();
