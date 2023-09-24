@@ -15,7 +15,9 @@ use tokio::time::interval;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::Events;
-use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo, Streamable};
+use crate::{
+    ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, ContractState, Repo, Streamable,
+};
 
 #[async_trait::async_trait]
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
@@ -53,7 +55,7 @@ impl From<ProviderError> for EventsIngesterError {
 pub struct EventsIngester;
 
 impl EventsIngester {
-    pub fn start(config: &Config) {
+    pub fn start<State: ContractState>(config: &Config<State>) {
         let config = config.clone();
         tokio::spawn(async move {
             let pool = config.repo.get_pool(1).await;
@@ -89,9 +91,9 @@ impl EventsIngester {
     }
 
     // TODO: Can Arc<> or just raw Conn work?
-    pub async fn ingest<'a>(
+    pub async fn ingest<'a, State: ContractState>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-        contracts: &Vec<Contract>,
+        contracts: &Vec<Contract<State>>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
     ) -> Result<(), EventsIngesterError> {
@@ -227,9 +229,9 @@ impl Filter {
 struct Filters;
 
 impl Filters {
-    fn new(
+    fn new<State: ContractState>(
         contract_addresses: &Vec<ContractAddress>,
-        contracts: &Vec<Contract>,
+        contracts: &Vec<Contract<State>>,
         current_block_number: u64,
         blocks_per_batch: u64,
     ) -> Vec<Filter> {

@@ -11,6 +11,9 @@ use ethers::{
 
 pub type ContractEventTopic = H256;
 
+use std::fmt::Debug;
+pub trait ContractState: Debug + Sync + Send + Clone + 'static {}
+
 #[derive(Debug, Clone)]
 pub struct ContractEvent {
     pub abi: String,
@@ -29,13 +32,13 @@ impl ContractEvent {
 type EventAbi = &'static str;
 
 #[derive(Clone)]
-pub struct Contract {
+pub struct Contract<State: ContractState> {
     pub addresses: Vec<UnsavedContractAddress>,
     pub name: String,
-    pub event_handlers: HashMap<EventAbi, Arc<dyn EventHandler>>,
+    pub event_handlers: HashMap<EventAbi, Arc<dyn EventHandler<State = State>>>,
 }
 
-impl Contract {
+impl<State: ContractState> Contract<State> {
     pub fn new(name: &str) -> Self {
         Self {
             addresses: vec![],
@@ -63,7 +66,7 @@ impl Contract {
     pub fn add_event(
         &self,
         event_abi: EventAbi,
-        event_handler: impl EventHandler + 'static,
+        event_handler: impl EventHandler<State = State> + 'static,
     ) -> Self {
         let mut event_handlers = self.event_handlers.clone();
 
@@ -97,9 +100,9 @@ impl Contract {
 pub struct Contracts;
 
 impl Contracts {
-    pub fn get_all_event_handlers_by_event_abi(
-        contracts: &Vec<Contract>,
-    ) -> HashMap<EventAbi, Arc<dyn EventHandler>> {
+    pub fn get_all_event_handlers_by_event_abi<State: ContractState>(
+        contracts: &Vec<Contract<State>>,
+    ) -> HashMap<EventAbi, Arc<dyn EventHandler<State = State>>> {
         contracts.iter().fold(
             HashMap::new(),
             |mut event_handlers_by_event_abi, contract| {
@@ -115,8 +118,8 @@ impl Contracts {
         )
     }
 
-    pub fn group_event_topics_by_names(
-        contracts: &Vec<Contract>,
+    pub fn group_event_topics_by_names<State: ContractState>(
+        contracts: &Vec<Contract<State>>,
     ) -> HashMap<String, Vec<ContractEventTopic>> {
         contracts
             .iter()
@@ -127,8 +130,8 @@ impl Contracts {
             })
     }
 
-    pub fn group_events_by_topics(
-        contracts: &Vec<Contract>,
+    pub fn group_events_by_topics<State: ContractState>(
+        contracts: &Vec<Contract<State>>,
     ) -> HashMap<ContractEventTopic, ContractEvent> {
         contracts
             .iter()
@@ -137,7 +140,9 @@ impl Contracts {
             .collect()
     }
 
-    pub fn group_by_addresses<'a>(contracts: &'a Vec<Contract>) -> HashMap<Address, &'a Contract> {
+    pub fn group_by_addresses<'a, State: ContractState>(
+        contracts: &'a Vec<Contract<State>>,
+    ) -> HashMap<Address, &'a Contract<State>> {
         contracts
             .iter()
             .fold(HashMap::new(), |mut contracts_by_addresses, contract| {
@@ -162,7 +167,7 @@ pub struct UnsavedContractAddress {
     chain_id: i32,
     start_block_number: i64,
     next_block_number_to_ingest_from: i64,
-    next_block_number_to_handle: i64,
+    next_block_number_to_handle_from: i64,
 }
 
 impl UnsavedContractAddress {
@@ -173,7 +178,7 @@ impl UnsavedContractAddress {
             chain_id: *chain as i32,
             start_block_number: start_block_number,
             next_block_number_to_ingest_from: start_block_number,
-            next_block_number_to_handle: start_block_number,
+            next_block_number_to_handle_from: start_block_number,
         }
     }
 }
@@ -194,7 +199,7 @@ pub struct ContractAddress {
     pub id: i32,
     chain_id: i32,
     pub next_block_number_to_ingest_from: i64,
-    pub next_block_number_to_handle: i64,
+    pub next_block_number_to_handle_from: i64,
     start_block_number: i64,
     pub address: String,
     pub contract_name: String,
