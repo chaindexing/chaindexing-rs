@@ -33,7 +33,7 @@ pub struct ApprovalForAllTestEventHandler;
 #[async_trait::async_trait]
 impl EventHandler for ApprovalForAllTestEventHandler {
     type State = TestContractState;
-    async fn handle_event(&self, event: Event) -> Option<Vec<Self::State>> {
+    async fn handle_event(&self, _event: Event) -> Option<Vec<Self::State>> {
         None
     }
 }
