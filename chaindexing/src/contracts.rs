@@ -11,9 +11,6 @@ use ethers::{
 
 pub type ContractEventTopic = H256;
 
-use std::fmt::Debug;
-pub trait ContractState: Debug + Sync + Send + Clone + 'static {}
-
 #[derive(Debug, Clone)]
 pub struct ContractEvent {
     pub abi: String,

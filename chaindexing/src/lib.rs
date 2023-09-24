@@ -1,6 +1,7 @@
 mod chains;
 mod config;
 mod contracts;
+mod contract_states;
 mod diesel;
 mod event_handlers;
 mod events;
@@ -9,7 +10,8 @@ mod repos;
 
 pub use chains::Chains;
 pub use config::Config;
-pub use contracts::{Contract, ContractAddress, ContractEvent, ContractState};
+pub use contract_states::ContractState;
+pub use contracts::{Contract, ContractAddress, ContractEvent};
 pub use ethers::prelude::Chain;
 pub use event_handlers::{AllEventHandlers, EventHandler, EventHandlers};
 pub use events::Event;
