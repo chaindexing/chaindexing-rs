@@ -60,13 +60,11 @@ impl Event {
     }
 
     fn log_params_to_parameters(log_params: &Vec<LogParam>) -> HashMap<String, Token> {
-        log_params
-            .iter()
-            .fold(HashMap::new(), |mut parameters, log_param| {
-                parameters.insert(log_param.name.to_string(), log_param.value.clone());
+        log_params.iter().fold(HashMap::new(), |mut parameters, log_param| {
+            parameters.insert(log_param.name.to_string(), log_param.value.clone());
 
-                parameters
-            })
+            parameters
+        })
     }
 }
 

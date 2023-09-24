@@ -68,21 +68,11 @@ impl EventsIngester {
                 interval.tick().await;
 
                 try_join_all(
-                    config
-                        .chains
-                        .clone()
-                        .into_iter()
-                        .map(|(_chain, json_rpc_url)| {
-                            let json_rpc =
-                                Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
+                    config.chains.clone().into_iter().map(|(_chain, json_rpc_url)| {
+                        let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
-                            Self::ingest(
-                                conn.clone(),
-                                &contracts,
-                                config.blocks_per_batch,
-                                json_rpc,
-                            )
-                        }),
+                        Self::ingest(conn.clone(), &contracts, config.blocks_per_batch, json_rpc)
+                    }),
                 )
                 .await
                 .unwrap();
@@ -148,9 +138,7 @@ impl EventsIngester {
 
         let conn = Arc::new(Mutex::new(conn));
         join_all(contract_addresses.iter().map(|contract_address| {
-            let filters = filters_by_contract_address_id
-                .get(&contract_address.id)
-                .unwrap();
+            let filters = filters_by_contract_address_id.get(&contract_address.id).unwrap();
 
             let conn = conn.clone();
             async move {
@@ -240,9 +228,8 @@ impl Filters {
         contract_addresses
             .iter()
             .map(|contract_address| {
-                let topics_by_contract_name = topics_by_contract_name
-                    .get(contract_address.contract_name.as_str())
-                    .unwrap();
+                let topics_by_contract_name =
+                    topics_by_contract_name.get(contract_address.contract_name.as_str()).unwrap();
 
                 Filter::new(
                     contract_address,

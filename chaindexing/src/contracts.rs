@@ -89,10 +89,7 @@ impl<State: ContractState> Contract<State> {
     }
 
     pub fn build_events(&self) -> Vec<ContractEvent> {
-        self.get_event_abis()
-            .iter()
-            .map(|abi| ContractEvent::new(abi))
-            .collect()
+        self.get_event_abis().iter().map(|abi| ContractEvent::new(abi)).collect()
     }
 }
 
@@ -105,12 +102,9 @@ impl Contracts {
         contracts.iter().fold(
             HashMap::new(),
             |mut event_handlers_by_event_abi, contract| {
-                contract
-                    .event_handlers
-                    .iter()
-                    .for_each(|(event_abi, event_handler)| {
-                        event_handlers_by_event_abi.insert(event_abi, event_handler.clone());
-                    });
+                contract.event_handlers.iter().for_each(|(event_abi, event_handler)| {
+                    event_handlers_by_event_abi.insert(event_abi, event_handler.clone());
+                });
 
                 event_handlers_by_event_abi
             },
@@ -120,13 +114,11 @@ impl Contracts {
     pub fn group_event_topics_by_names<State: ContractState>(
         contracts: &Vec<Contract<State>>,
     ) -> HashMap<String, Vec<ContractEventTopic>> {
-        contracts
-            .iter()
-            .fold(HashMap::new(), |mut topics_by_contract_name, contract| {
-                topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
+        contracts.iter().fold(HashMap::new(), |mut topics_by_contract_name, contract| {
+            topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
 
-                topics_by_contract_name
-            })
+            topics_by_contract_name
+        })
     }
 
     pub fn group_events_by_topics<State: ContractState>(
@@ -142,19 +134,14 @@ impl Contracts {
     pub fn group_by_addresses<'a, State: ContractState>(
         contracts: &'a Vec<Contract<State>>,
     ) -> HashMap<Address, &'a Contract<State>> {
-        contracts
-            .iter()
-            .fold(HashMap::new(), |mut contracts_by_addresses, contract| {
-                contract
-                    .addresses
-                    .iter()
-                    .for_each(|UnsavedContractAddress { address, .. }| {
-                        contracts_by_addresses
-                            .insert(Address::from_str(&*address.as_str()).unwrap(), contract);
-                    });
-
+        contracts.iter().fold(HashMap::new(), |mut contracts_by_addresses, contract| {
+            contract.addresses.iter().for_each(|UnsavedContractAddress { address, .. }| {
                 contracts_by_addresses
-            })
+                    .insert(Address::from_str(&*address.as_str()).unwrap(), contract);
+            });
+
+            contracts_by_addresses
+        })
     }
 }
 
@@ -209,10 +196,6 @@ impl ContractAddress {
         ContractAddressID(self.id)
     }
     pub fn address_to_string(address: &Address) -> String {
-        serde_json::to_value(address)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string()
+        serde_json::to_value(address).unwrap().as_str().unwrap().to_string()
     }
 }

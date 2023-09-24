@@ -29,9 +29,7 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc)
-                .await
-                .unwrap();
+            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc).await.unwrap();
 
             let mut conn = conn.lock().await;
             let ingested_events = PostgresRepo::get_all_events(&mut conn).await;
@@ -69,9 +67,7 @@ mod tests {
             ));
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn, &contracts, 10, json_rpc)
-                .await
-                .unwrap();
+            EventsIngester::ingest(conn, &contracts, 10, json_rpc).await.unwrap();
         })
         .await;
     }
@@ -144,9 +140,7 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc)
-                .await
-                .unwrap();
+            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc).await.unwrap();
 
             let mut conn = conn.lock().await;
             assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());

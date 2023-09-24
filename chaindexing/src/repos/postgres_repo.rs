@@ -44,11 +44,7 @@ impl Repo for PostgresRepo {
     async fn get_pool(&self, max_size: u32) -> Pool {
         let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(&self.url);
 
-        bb8::Pool::builder()
-            .max_size(max_size)
-            .build(manager)
-            .await
-            .unwrap()
+        bb8::Pool::builder().max_size(max_size).build(manager).await.unwrap()
     }
 
     async fn get_conn<'a>(pool: &'a Pool) -> Conn<'a> {

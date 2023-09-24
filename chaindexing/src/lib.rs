@@ -1,7 +1,7 @@
 mod chains;
 mod config;
-mod contracts;
 mod contract_states;
+mod contracts;
 mod diesel;
 mod event_handlers;
 mod events;
@@ -54,12 +54,8 @@ impl Chaindexing {
         conn: &mut ChaindexingRepoConn<'a>,
         contracts: &Vec<Contract<State>>,
     ) {
-        let contract_addresses = contracts
-            .clone()
-            .into_iter()
-            .map(|c| c.addresses)
-            .flatten()
-            .collect();
+        let contract_addresses =
+            contracts.clone().into_iter().map(|c| c.addresses).flatten().collect();
 
         ChaindexingRepo::create_contract_addresses(conn, &contract_addresses).await;
     }

@@ -30,9 +30,7 @@ pub fn database_url() -> String {
 fn get_db_name_and_raw_url(url: &str) -> (String, String) {
     let mut url_split = url.split('/').collect::<Vec<&str>>();
 
-    let db_name = url_split
-        .pop()
-        .expect("DATABASE NAME needs to be specified. See: sample.env");
+    let db_name = url_split.pop().expect("DATABASE NAME needs to be specified. See: sample.env");
     let db_raw_url = url_split.join("/");
 
     (db_name.to_string(), db_raw_url)
