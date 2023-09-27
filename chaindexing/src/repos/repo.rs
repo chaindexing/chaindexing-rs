@@ -69,7 +69,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 
 #[async_trait::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
-    async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
+    async fn load_data_list_from_raw_query<Data: Send + DeserializeOwned>(
         conn: &Self::RawQueryClient,
         query: &str,
     ) -> Vec<Data>;

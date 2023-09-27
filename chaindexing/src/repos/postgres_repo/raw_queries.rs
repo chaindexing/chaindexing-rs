@@ -26,7 +26,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
 #[async_trait::async_trait]
 impl LoadsDataWithRawQuery for PostgresRepo {
-    async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
+    async fn load_data_list_from_raw_query<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,
         query: &str,
     ) -> Vec<Data> {

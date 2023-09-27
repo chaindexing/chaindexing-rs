@@ -50,7 +50,8 @@ pub trait ContractState:
             table_name = Self::table_name(),
         );
 
-        let states: Vec<Self> = ChaindexingRepo::load_data_from_raw_query(client, &raw_query).await;
+        let states: Vec<Self> =
+            ChaindexingRepo::load_data_list_from_raw_query(client, &raw_query).await;
 
         Ok(states)
     }
