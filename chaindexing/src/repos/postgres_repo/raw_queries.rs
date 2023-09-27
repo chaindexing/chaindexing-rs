@@ -31,7 +31,12 @@ impl LoadsDataWithRawQuery for PostgresRepo {
         query: &str,
     ) -> Vec<Data> {
         let json_aggregate = get_json_aggregate(client, query).await;
-        serde_json::from_value(json_aggregate).unwrap()
+
+        if json_aggregate.as_object().is_some() {
+            serde_json::from_value(json_aggregate).unwrap()
+        } else {
+            vec![]
+        }
     }
 }
 
