@@ -1,7 +1,8 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::{
-    diesel::schema::chaindexing_contract_addresses, event_handlers::EventHandler, ContractState,
+    diesels::schema::chaindexing_contract_addresses, event_handlers::EventHandler,
+    ContractStateMigrations,
 };
 use diesel::{Identifiable, Insertable, Queryable};
 
@@ -31,16 +32,18 @@ impl ContractEvent {
 type EventAbi = &'static str;
 
 #[derive(Clone)]
-pub struct Contract<State: ContractState> {
+pub struct Contract {
     pub addresses: Vec<UnsavedContractAddress>,
     pub name: String,
-    pub event_handlers: HashMap<EventAbi, Arc<dyn EventHandler<State = State>>>,
+    pub event_handlers: HashMap<EventAbi, Arc<dyn EventHandler>>,
+    pub state_migrations: Vec<Arc<dyn ContractStateMigrations>>,
 }
 
-impl<State: ContractState> Contract<State> {
+impl Contract {
     pub fn new(name: &str) -> Self {
         Self {
             addresses: vec![],
+            state_migrations: vec![],
             name: name.to_string(),
             event_handlers: HashMap::new(),
         }
@@ -63,18 +66,19 @@ impl<State: ContractState> Contract<State> {
     }
 
     pub fn add_event(
-        &self,
+        mut self,
         event_abi: EventAbi,
-        event_handler: impl EventHandler<State = State> + 'static,
+        event_handler: impl EventHandler + 'static,
     ) -> Self {
-        let mut event_handlers = self.event_handlers.clone();
+        self.event_handlers.insert(event_abi, Arc::new(event_handler));
 
-        event_handlers.insert(event_abi, Arc::new(event_handler));
+        self
+    }
 
-        Self {
-            event_handlers,
-            ..self.clone()
-        }
+    pub fn add_state_migrations(mut self, state: impl ContractStateMigrations + 'static) -> Self {
+        self.state_migrations.push(Arc::new(state));
+
+        self
     }
 
     pub fn get_event_abis(&self) -> Vec<EventAbi> {
@@ -96,9 +100,9 @@ impl<State: ContractState> Contract<State> {
 pub struct Contracts;
 
 impl Contracts {
-    pub fn get_all_event_handlers_by_event_abi<State: ContractState>(
-        contracts: &Vec<Contract<State>>,
-    ) -> HashMap<EventAbi, Arc<dyn EventHandler<State = State>>> {
+    pub fn get_all_event_handlers_by_event_abi(
+        contracts: &Vec<Contract>,
+    ) -> HashMap<EventAbi, Arc<dyn EventHandler>> {
         contracts.iter().fold(
             HashMap::new(),
             |mut event_handlers_by_event_abi, contract| {
@@ -111,8 +115,8 @@ impl Contracts {
         )
     }
 
-    pub fn group_event_topics_by_names<State: ContractState>(
-        contracts: &Vec<Contract<State>>,
+    pub fn group_event_topics_by_names(
+        contracts: &Vec<Contract>,
     ) -> HashMap<String, Vec<ContractEventTopic>> {
         contracts.iter().fold(HashMap::new(), |mut topics_by_contract_name, contract| {
             topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
@@ -121,8 +125,8 @@ impl Contracts {
         })
     }
 
-    pub fn group_events_by_topics<State: ContractState>(
-        contracts: &Vec<Contract<State>>,
+    pub fn group_events_by_topics(
+        contracts: &Vec<Contract>,
     ) -> HashMap<ContractEventTopic, ContractEvent> {
         contracts
             .iter()
@@ -131,9 +135,7 @@ impl Contracts {
             .collect()
     }
 
-    pub fn group_by_addresses<'a, State: ContractState>(
-        contracts: &'a Vec<Contract<State>>,
-    ) -> HashMap<Address, &'a Contract<State>> {
+    pub fn group_by_addresses<'a>(contracts: &'a Vec<Contract>) -> HashMap<Address, &'a Contract> {
         contracts.iter().fold(HashMap::new(), |mut contracts_by_addresses, contract| {
             contract.addresses.iter().for_each(|UnsavedContractAddress { address, .. }| {
                 contracts_by_addresses

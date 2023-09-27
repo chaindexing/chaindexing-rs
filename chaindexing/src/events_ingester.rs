@@ -6,7 +6,7 @@ use ethers::prelude::Middleware;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider, ProviderError};
 use ethers::types::{Address, Filter as EthersFilter, Log};
-use futures_util::future::{join_all, try_join_all};
+use futures_util::future::try_join_all;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
@@ -15,9 +15,7 @@ use tokio::time::interval;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::Events;
-use crate::{
-    ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, ContractState, Repo, Streamable,
-};
+use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo, Streamable};
 
 #[async_trait::async_trait]
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
@@ -55,7 +53,7 @@ impl From<ProviderError> for EventsIngesterError {
 pub struct EventsIngester;
 
 impl EventsIngester {
-    pub fn start<State: ContractState>(config: &Config<State>) {
+    pub fn start(config: &Config) {
         let config = config.clone();
         tokio::spawn(async move {
             let pool = config.repo.get_pool(1).await;
@@ -67,23 +65,21 @@ impl EventsIngester {
             loop {
                 interval.tick().await;
 
-                try_join_all(
-                    config.chains.clone().into_iter().map(|(_chain, json_rpc_url)| {
-                        let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
+                for (_chain, json_rpc_url) in config.chains.clone() {
+                    let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
-                        Self::ingest(conn.clone(), &contracts, config.blocks_per_batch, json_rpc)
-                    }),
-                )
-                .await
-                .unwrap();
+                    Self::ingest(conn.clone(), &contracts, config.blocks_per_batch, json_rpc)
+                        .await
+                        .unwrap();
+                }
             }
         });
     }
 
-    // TODO: Can Arc<> or just raw Conn work?
-    pub async fn ingest<'a, State: ContractState>(
+    // TODO: Can Arc<> or just raw &mut Conn work?
+    pub async fn ingest<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-        contracts: &Vec<Contract<State>>,
+        contracts: &Vec<Contract>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
     ) -> Result<(), EventsIngesterError> {
@@ -136,27 +132,21 @@ impl EventsIngester {
     ) {
         let filters_by_contract_address_id = Filters::group_by_contract_address_id(filters);
 
-        let conn = Arc::new(Mutex::new(conn));
-        join_all(contract_addresses.iter().map(|contract_address| {
+        for contract_address in contract_addresses {
             let filters = filters_by_contract_address_id.get(&contract_address.id).unwrap();
 
-            let conn = conn.clone();
-            async move {
-                if let Some(latest_filter) = Filters::get_latest(filters) {
-                    let next_block_number_to_ingest_from =
-                        latest_filter.value.get_to_block().unwrap() + 1;
+            if let Some(latest_filter) = Filters::get_latest(filters) {
+                let next_block_number_to_ingest_from =
+                    latest_filter.value.get_to_block().unwrap() + 1;
 
-                    let mut conn = conn.lock().await;
-                    ChaindexingRepo::update_next_block_number_to_ingest_from(
-                        &mut conn,
-                        &contract_address,
-                        next_block_number_to_ingest_from.as_u64() as i64,
-                    )
-                    .await
-                }
+                ChaindexingRepo::update_next_block_number_to_ingest_from(
+                    conn,
+                    &contract_address,
+                    next_block_number_to_ingest_from.as_u64() as i64,
+                )
+                .await
             }
-        }))
-        .await;
+        }
     }
 
     fn filter_uningested_contract_addresses(
@@ -217,9 +207,9 @@ impl Filter {
 struct Filters;
 
 impl Filters {
-    fn new<State: ContractState>(
+    fn new(
         contract_addresses: &Vec<ContractAddress>,
-        contracts: &Vec<Contract<State>>,
+        contracts: &Vec<Contract>,
         current_block_number: u64,
         blocks_per_batch: u64,
     ) -> Vec<Filter> {

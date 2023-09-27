@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use derive_more::Display;
 use futures_core::{future::BoxFuture, Stream};
-use futures_util::{stream, StreamExt};
+use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -15,7 +15,9 @@ use crate::{
 pub enum RepoError {}
 
 #[async_trait::async_trait]
-pub trait Repo: Sync + Send + Migratable + Streamable + Clone {
+pub trait Repo:
+    Sync + Send + Migratable + Streamable + ExecutesWithRawQuery + LoadsDataWithRawQuery + Clone
+{
     type Pool;
     type Conn<'a>;
 
@@ -54,9 +56,23 @@ pub trait Repo: Sync + Send + Migratable + Streamable + Clone {
 pub type Migration = &'static str;
 
 #[async_trait::async_trait]
-pub trait ExecutesRawQuery {
-    type RawQueryConn<'a>: Send;
-    async fn execute_raw_query<'a>(&self, conn: &mut Self::RawQueryConn<'a>, query: &str);
+pub trait HasRawQueryClient {
+    type RawQueryClient: Send + Sync;
+
+    async fn get_raw_query_client(&self) -> Self::RawQueryClient;
+}
+
+#[async_trait::async_trait]
+pub trait ExecutesWithRawQuery: HasRawQueryClient {
+    async fn execute_raw_query(client: &Self::RawQueryClient, query: &str);
+}
+
+#[async_trait::async_trait]
+pub trait LoadsDataWithRawQuery: HasRawQueryClient {
+    async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
+        conn: &Self::RawQueryClient,
+        query: &str,
+    ) -> Vec<Data>;
 }
 
 pub trait Streamable {
@@ -70,34 +86,36 @@ pub trait Streamable {
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
 }
 
+pub trait RepoMigrations: Migratable {
+    fn create_contract_addresses_migration() -> &'static [Migration];
+    fn create_events_migration() -> &'static [Migration];
+
+    fn get_all_internal_migrations() -> Vec<Migration> {
+        [
+            Self::create_contract_addresses_migration(),
+            Self::create_events_migration(),
+        ]
+        .concat()
+    }
+}
+
 #[async_trait::async_trait]
-pub trait Migratable: ExecutesRawQuery + Sync + Send {
-    fn create_contract_addresses_migration() -> Vec<Migration>;
-    fn create_events_migration() -> Vec<Migration>;
-
-    async fn migrate<'a>(&self, conn: &mut Self::RawQueryConn<'a>) {
-        let conn = Arc::new(Mutex::new(conn));
-
-        stream::iter(
-            Self::create_contract_addresses_migration()
-                .into_iter()
-                .chain(Self::create_events_migration()),
-        )
-        .for_each(|migration| async {
-            let conn = conn.clone();
-            let mut conn = conn.lock().await;
-
-            self.execute_raw_query(&mut conn, migration).await;
-        })
-        .await;
+pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
+    async fn migrate(client: &Self::RawQueryClient, migrations: Vec<Migration>)
+    where
+        Self: Sized,
+    {
+        for migration in migrations {
+            Self::execute_raw_query(client, migration).await;
+        }
     }
 }
 
 pub struct SQLikeMigrations;
 
 impl SQLikeMigrations {
-    pub fn create_contract_addresses() -> Vec<Migration> {
-        vec![
+    pub fn create_contract_addresses() -> &'static [Migration] {
+        &[
             "CREATE TABLE IF NOT EXISTS chaindexing_contract_addresses (
                 id  SERIAL PRIMARY KEY,
                 address TEXT  NOT NULL,
@@ -112,8 +130,8 @@ impl SQLikeMigrations {
         ]
     }
 
-    pub fn create_events() -> Vec<Migration> {
-        vec![
+    pub fn create_events() -> &'static [Migration] {
+        &[
             "CREATE TABLE IF NOT EXISTS chaindexing_events (
                 id uuid PRIMARY KEY,
                 contract_address TEXT NOT NULL,
