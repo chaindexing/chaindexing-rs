@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+mod migrations;
+mod raw_queries;
+
 use crate::{
     contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
@@ -7,13 +10,13 @@ use crate::{
 };
 use diesel_async::RunQueryDsl;
 
-use diesel::{result::Error, sql_query, upsert::excluded, ExpressionMethods};
+use diesel::{result::Error, upsert::excluded, ExpressionMethods};
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use diesel_streamer::get_serial_table_async_stream;
 use futures_core::{future::BoxFuture, Stream};
 use tokio::sync::Mutex;
 
-use super::repo::{ExecutesRawQuery, Migratable, Migration, Repo, SQLikeMigrations};
+use super::repo::Repo;
 
 pub type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
 pub type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
@@ -22,6 +25,8 @@ pub use diesel_async::{
     scoped_futures::ScopedFutureExt as PostgresRepoTransactionExt,
     AsyncConnection as PostgresRepoAsyncConnection,
 };
+
+pub use raw_queries::PostgresRepoRawQueryClient;
 
 #[derive(Clone)]
 pub struct PostgresRepo {
@@ -71,7 +76,7 @@ impl Repo for PostgresRepo {
         conn: &mut Conn<'a>,
         contract_addresses: &Vec<UnsavedContractAddress>,
     ) {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::{
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::{
             address, chaindexing_contract_addresses,
         };
 
@@ -86,13 +91,13 @@ impl Repo for PostgresRepo {
     }
 
     async fn get_all_contract_addresses<'a>(conn: &mut Conn<'a>) -> Vec<ContractAddress> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
 
         chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &Vec<Event>) {
-        use crate::diesel::schema::chaindexing_events::dsl::*;
+        use crate::diesels::schema::chaindexing_events::dsl::*;
 
         diesel::insert_into(chaindexing_events)
             .values(events)
@@ -102,7 +107,7 @@ impl Repo for PostgresRepo {
     }
 
     async fn get_all_events<'a>(conn: &mut Conn<'a>) -> Vec<Event> {
-        use crate::diesel::schema::chaindexing_events::dsl::*;
+        use crate::diesels::schema::chaindexing_events::dsl::*;
 
         chaindexing_events.load(conn).await.unwrap()
     }
@@ -112,7 +117,7 @@ impl Repo for PostgresRepo {
         contract_address: &ContractAddress,
         block_number: i64,
     ) {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq(contract_address.id))
@@ -127,7 +132,7 @@ impl Repo for PostgresRepo {
         ContractAddressID(contract_address_id): ContractAddressID,
         block_number: i64,
     ) {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq(contract_address_id))
@@ -144,7 +149,7 @@ impl Streamable for PostgresRepo {
     fn get_contract_addresses_stream<'a>(
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
 
         get_serial_table_async_stream!(
             chaindexing_contract_addresses,
@@ -160,7 +165,7 @@ impl Streamable for PostgresRepo {
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
         from: i64,
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_events::dsl::*;
+        use crate::diesels::schema::chaindexing_events::dsl::*;
 
         const CHUNK_SIZE: i32 = 500;
 
@@ -174,24 +179,5 @@ impl Streamable for PostgresRepo {
             CHUNK_SIZE,
             Some(from)
         )
-    }
-}
-
-#[async_trait::async_trait]
-impl ExecutesRawQuery for PostgresRepo {
-    type RawQueryConn<'a> = PgPooledConn<'a>;
-
-    async fn execute_raw_query<'a>(&self, conn: &mut Conn<'a>, query: &str) {
-        sql_query(query).execute(conn).await.unwrap();
-    }
-}
-
-impl Migratable for PostgresRepo {
-    fn create_contract_addresses_migration() -> Vec<Migration> {
-        SQLikeMigrations::create_contract_addresses()
-    }
-
-    fn create_events_migration() -> Vec<Migration> {
-        SQLikeMigrations::create_events()
     }
 }

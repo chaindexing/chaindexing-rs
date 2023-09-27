@@ -1,16 +1,21 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use futures_util::future::join_all;
-use futures_util::{stream, StreamExt};
+use futures_util::StreamExt;
 use tokio::{sync::Mutex, time::interval};
 
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
-use crate::{ChaindexingRepoConn, ContractAddress, ContractState, Streamable};
+use crate::{
+    ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ContractAddress, ContractStateError,
+    HasRawQueryClient, Streamable,
+};
 
 #[async_trait::async_trait]
 pub trait EventHandler: Send + Sync {
-    type State: ContractState;
-    async fn handle_event(&self, event: Event) -> Option<Vec<Self::State>>;
+    async fn handle_event(
+        &self,
+        event: Event,
+        raw_query_client: &ChaindexingRepoRawQueryClient,
+    ) -> Result<(), ContractStateError>;
 }
 
 pub trait AllEventHandlers {}
@@ -18,11 +23,14 @@ pub trait AllEventHandlers {}
 pub struct EventHandlers;
 
 impl EventHandlers {
-    pub fn start<State: ContractState>(config: &Config<State>) {
+    pub fn start(config: &Config) {
         let config = config.clone();
         tokio::spawn(async move {
             let pool = config.repo.get_pool(1).await;
             let conn = ChaindexingRepo::get_conn(&pool).await;
+
+            let raw_query_client = config.repo.get_raw_query_client().await;
+
             let conn = Arc::new(Mutex::new(conn));
             let mut interval = interval(Duration::from_millis(config.handler_interval_ms));
             let event_handlers_by_event_abi =
@@ -31,40 +39,42 @@ impl EventHandlers {
             loop {
                 interval.tick().await;
 
-                Self::handle_events(conn.clone(), &event_handlers_by_event_abi).await;
+                Self::handle_events(
+                    conn.clone(),
+                    &event_handlers_by_event_abi,
+                    &raw_query_client,
+                )
+                .await;
             }
         });
     }
 
-    pub async fn handle_events<'a, State: ContractState>(
+    pub async fn handle_events<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-        event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler<State = State>>>,
+        event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
+        raw_query_client: &ChaindexingRepoRawQueryClient,
     ) {
         let mut contract_addresses_stream =
             ChaindexingRepo::get_contract_addresses_stream(conn.clone());
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
-            stream::iter(contract_addresses)
-                .for_each(|contract_address| {
-                    let conn = conn.clone();
-
-                    async move {
-                        Self::handle_event_for_contract_address(
-                            conn,
-                            &contract_address,
-                            event_handlers_by_event_abi,
-                        )
-                        .await
-                    }
-                })
-                .await;
+            for contract_address in contract_addresses {
+                Self::handle_event_for_contract_address(
+                    conn.clone(),
+                    &contract_address,
+                    event_handlers_by_event_abi,
+                    raw_query_client,
+                )
+                .await
+            }
         }
     }
 
-    pub async fn handle_event_for_contract_address<'a, State: ContractState>(
+    pub async fn handle_event_for_contract_address<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         contract_address: &ContractAddress,
-        event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler<State = State>>>,
+        event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
+        raw_query_client: &ChaindexingRepoRawQueryClient,
     ) {
         let mut events_stream = ChaindexingRepo::get_events_stream(
             conn.clone(),
@@ -79,17 +89,15 @@ impl EventHandlers {
                 .collect();
             events.sort_by_key(|e| (e.block_number, e.log_index));
 
-            join_all(events.iter().map(|event| {
+            for event in events.clone() {
                 let event_handler = event_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
 
-                event_handler.handle_event(event.clone())
-            }))
-            .await;
-
-            let mut conn = conn.lock().await;
+                event_handler.handle_event(event.clone(), raw_query_client).await.unwrap();
+            }
 
             if let Some(Event { block_number, .. }) = events.last() {
                 let next_block_number_to_handle_from = block_number + 1;
+                let mut conn = conn.lock().await;
                 ChaindexingRepo::update_next_block_number_to_handle_from(
                     &mut conn,
                     contract_address.id(),
