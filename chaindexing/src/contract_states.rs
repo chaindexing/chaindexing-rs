@@ -135,7 +135,7 @@ pub trait ContractStateMigrations: Send + Sync {
                 if user_migration.starts_with("CREATE TABLE IF NOT EXISTS") {
                     let create_state_table_migration =
                         append_block_fields_migration(&user_migration);
-                    let create_chaindexing_state_table_migration =
+                    let create_immutable_state_table_migration =
                         append_block_fields_migration(&user_migration).replace(
                             "CREATE TABLE IF NOT EXISTS ",
                             format!("CREATE TABLE IF NOT EXISTS {}", IMMUTABLE_TABLE_NAME_PREFIX)
@@ -144,7 +144,7 @@ pub trait ContractStateMigrations: Send + Sync {
 
                     vec![
                         create_state_table_migration,
-                        create_chaindexing_state_table_migration,
+                        create_immutable_state_table_migration,
                     ]
                 } else {
                     vec![user_migration.to_string()]
