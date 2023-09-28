@@ -53,8 +53,6 @@ pub trait Repo:
     );
 }
 
-pub type Migration = &'static str;
-
 #[async_trait::async_trait]
 pub trait HasRawQueryClient {
     type RawQueryClient: Send + Sync;
@@ -87,10 +85,10 @@ pub trait Streamable {
 }
 
 pub trait RepoMigrations: Migratable {
-    fn create_contract_addresses_migration() -> &'static [Migration];
-    fn create_events_migration() -> &'static [Migration];
+    fn create_contract_addresses_migration() -> &'static [&'static str];
+    fn create_events_migration() -> &'static [&'static str];
 
-    fn get_all_internal_migrations() -> Vec<Migration> {
+    fn get_all_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_contract_addresses_migration(),
             Self::create_events_migration(),
@@ -101,7 +99,7 @@ pub trait RepoMigrations: Migratable {
 
 #[async_trait::async_trait]
 pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
-    async fn migrate(client: &Self::RawQueryClient, migrations: Vec<Migration>)
+    async fn migrate(client: &Self::RawQueryClient, migrations: Vec<&'static str>)
     where
         Self: Sized,
     {
@@ -114,7 +112,7 @@ pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
 pub struct SQLikeMigrations;
 
 impl SQLikeMigrations {
-    pub fn create_contract_addresses() -> &'static [Migration] {
+    pub fn create_contract_addresses() -> &'static [&'static str] {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_contract_addresses (
                 id  SERIAL PRIMARY KEY,
@@ -130,7 +128,7 @@ impl SQLikeMigrations {
         ]
     }
 
-    pub fn create_events() -> &'static [Migration] {
+    pub fn create_events() -> &'static [&'static str] {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_events (
                 id uuid PRIMARY KEY,
