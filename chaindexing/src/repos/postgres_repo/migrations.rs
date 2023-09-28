@@ -1,11 +1,11 @@
-use crate::{Migratable, Migration, PostgresRepo, RepoMigrations, SQLikeMigrations};
+use crate::{Migratable, PostgresRepo, RepoMigrations, SQLikeMigrations};
 
 impl RepoMigrations for PostgresRepo {
-    fn create_contract_addresses_migration() -> &'static [Migration] {
+    fn create_contract_addresses_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_contract_addresses()
     }
 
-    fn create_events_migration() -> &'static [Migration] {
+    fn create_events_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_events()
     }
 }
