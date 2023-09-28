@@ -50,7 +50,7 @@ jobs:
       - name: Setup Database
         run: cargo run -p chaindexing-tests
       - name: Run Tests
-        run: cargo test -p chaindexing-tests
+        run: cargo test
 
   # clippy:
   #   name: Clippy
