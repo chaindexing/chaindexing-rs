@@ -56,19 +56,37 @@ pub trait Repo:
 #[async_trait::async_trait]
 pub trait HasRawQueryClient {
     type RawQueryClient: Send + Sync;
+    type RawQueryTxnClient<'a>: Send + Sync;
 
     async fn get_raw_query_client(&self) -> Self::RawQueryClient;
+    async fn get_raw_query_txn_client<'a>(
+        client: &'a mut Self::RawQueryClient,
+    ) -> Self::RawQueryTxnClient<'a>;
 }
 
 #[async_trait::async_trait]
 pub trait ExecutesWithRawQuery: HasRawQueryClient {
     async fn execute_raw_query(client: &Self::RawQueryClient, query: &str);
+    async fn execute_raw_query_in_txn<'a>(client: &Self::RawQueryTxnClient<'a>, query: &str);
+    async fn commit_raw_query_txns<'a>(client: Self::RawQueryTxnClient<'a>);
 }
 
 #[async_trait::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
+    async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
+        client: &Self::RawQueryClient,
+        query: &str,
+    ) -> Option<Data>;
+    async fn load_data_from_raw_query_with_txn_client<'a, Data: Send + DeserializeOwned>(
+        client: &Self::RawQueryTxnClient<'a>,
+        query: &str,
+    ) -> Option<Data>;
     async fn load_data_list_from_raw_query<Data: Send + DeserializeOwned>(
         conn: &Self::RawQueryClient,
+        query: &str,
+    ) -> Vec<Data>;
+    async fn load_data_list_from_raw_query_with_txn_client<'a, Data: Send + DeserializeOwned>(
+        conn: &Self::RawQueryTxnClient<'a>,
         query: &str,
     ) -> Vec<Data>;
 }
@@ -99,12 +117,12 @@ pub trait RepoMigrations: Migratable {
 
 #[async_trait::async_trait]
 pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
-    async fn migrate(client: &Self::RawQueryClient, migrations: Vec<&'static str>)
+    async fn migrate(client: &Self::RawQueryClient, migrations: Vec<impl AsRef<str> + Send + Sync>)
     where
         Self: Sized,
     {
         for migration in migrations {
-            Self::execute_raw_query(client, migration).await;
+            Self::execute_raw_query(client, migration.as_ref()).await;
         }
     }
 }
@@ -115,7 +133,7 @@ impl SQLikeMigrations {
     pub fn create_contract_addresses() -> &'static [&'static str] {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_contract_addresses (
-                id  SERIAL PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 address TEXT  NOT NULL,
                 contract_name TEXT NOT NULL,
                 chain_id INTEGER NOT NULL,

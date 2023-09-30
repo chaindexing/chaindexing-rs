@@ -26,7 +26,7 @@ pub use diesel_async::{
     AsyncConnection as PostgresRepoAsyncConnection,
 };
 
-pub use raw_queries::PostgresRepoRawQueryClient;
+pub use raw_queries::{PostgresRepoRawQueryClient, PostgresRepoRawQueryTxnClient};
 
 #[derive(Clone)]
 pub struct PostgresRepo {
