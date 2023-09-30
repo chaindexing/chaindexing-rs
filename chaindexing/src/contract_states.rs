@@ -97,7 +97,6 @@ pub trait ContractState:
         serde_map_to_string_map(map)
     }
 
-    // Every operation should respect the Event context
     async fn create<'a>(
         &self,
         event: &Event,
@@ -273,12 +272,12 @@ impl StateVersions {
         ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
     }
     fn extract_part_from_event(event: &Event) -> HashMap<String, String> {
-        // TODO: Add ChainID
         HashMap::from([
             (
                 "state_version_contract_address".to_string(),
                 event.contract_address.to_owned(),
             ),
+            ("state_chain_id".to_string(), event.chain_id.to_string()),
             (
                 "state_version_transaction_hash".to_string(),
                 event.transaction_hash.to_owned(),
