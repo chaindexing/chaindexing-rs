@@ -126,6 +126,7 @@ fn remaining_state_versions_migration() -> String {
 
 fn remaining_state_fields_migration() -> String {
     "state_version_contract_address TEXT NOT NULL,
+    state_chain_id INTEGER NOT NULL,
     state_version_block_hash TEXT NOT NULL,
     state_version_block_number BIGINT NOT NULL,
     state_version_transaction_hash TEXT NOT NULL,
