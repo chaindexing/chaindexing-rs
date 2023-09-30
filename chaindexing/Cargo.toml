@@ -2,7 +2,7 @@
 name = "chaindexing"
 version = "0.1.5"
 edition = "2021"
-description = "EVM Chain Indexer"
+description = "EVM Chain Indexer for RDBMS"
 license = "MIT OR Apache-2.0"
 
 [features]
