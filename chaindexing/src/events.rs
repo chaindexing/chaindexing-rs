@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{contracts::Contracts, diesels::schema::chaindexing_events, ContractAddress};
+use crate::contracts::{ContractAddress, ContractAddresses, Contracts};
+use crate::diesels::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
-use ethers::{
-    abi::{LogParam, Token},
-    types::Log,
-};
+use ethers::abi::{LogParam, Token};
+use ethers::types::Log;
 
 use crate::{Contract, ContractEvent};
 use uuid::Uuid;
@@ -15,6 +14,7 @@ use uuid::Uuid;
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
     pub id: Uuid,
+    pub chain_id: i32,
     pub contract_address: String,
     pub contract_name: String,
     pub abi: String,
@@ -31,12 +31,13 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(log: &Log, event: &ContractEvent, contract_name: &str) -> Self {
+    pub fn new(log: &Log, event: &ContractEvent, contract_name: &str, chain_id: i32) -> Self {
         let log_params = event.value.parse_log(log.clone().into()).unwrap().params;
         let parameters = Self::log_params_to_parameters(&log_params);
 
         Self {
             id: uuid::Uuid::new_v4(),
+            chain_id,
             contract_address: ContractAddress::address_to_string(&log.address),
             contract_name: contract_name.to_string(),
             abi: event.abi.clone(),
@@ -81,14 +82,23 @@ impl Events {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
         let contracts_by_addresses = Contracts::group_by_addresses(contracts);
 
+        let contract_addresses = Contracts::get_contract_addresses(contracts);
+        let contract_addresses_by_addresses =
+            ContractAddresses::group_by_addresses(&contract_addresses);
+
         logs.iter()
-            .map(|log| {
-                Event::new(
-                    log,
-                    &events_by_topics.get(&log.topics[0]).unwrap(),
-                    &contracts_by_addresses.get(&log.address).unwrap().name,
-                )
-            })
+            .map(
+                |log @ Log {
+                     topics, address, ..
+                 }| {
+                    Event::new(
+                        log,
+                        &events_by_topics.get(&topics[0]).unwrap(),
+                        &contracts_by_addresses.get(&address).unwrap().name,
+                        contract_addresses_by_addresses.get(&address).unwrap().chain_id,
+                    )
+                },
+            )
             .collect()
     }
 }

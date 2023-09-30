@@ -15,6 +15,7 @@ diesel::table! {
 diesel::table! {
   chaindexing_events (id) {
       id -> Uuid,
+      chain_id -> Int4,
       contract_address -> Text,
       contract_name -> Text,
       abi -> Text,

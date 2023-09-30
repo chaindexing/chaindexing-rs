@@ -150,6 +150,7 @@ impl SQLikeMigrations {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_events (
                 id uuid PRIMARY KEY,
+                chain_id INTEGER NOT NULL,
                 contract_address TEXT NOT NULL,
                 contract_name TEXT NOT NULL,
                 abi TEXT NOT NULL,
