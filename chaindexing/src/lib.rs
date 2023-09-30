@@ -15,7 +15,7 @@ pub use contracts::{Contract, ContractAddress, ContractEvent};
 pub use diesel;
 pub use diesel::prelude::QueryableByName;
 pub use ethers::prelude::Chain;
-pub use event_handlers::{AllEventHandlers, EventHandler, EventHandlers};
+pub use event_handlers::{EventHandler, EventHandlers};
 pub use events::Event;
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
 pub use repos::*;
@@ -36,6 +36,9 @@ pub type ChaindexingRepoConn<'a> = PostgresRepoConn<'a>;
 
 #[cfg(feature = "postgres")]
 pub type ChaindexingRepoRawQueryClient = PostgresRepoRawQueryClient;
+
+#[cfg(feature = "postgres")]
+pub type ChaindexingRepoRawQueryTxnClient<'a> = PostgresRepoRawQueryTxnClient<'a>;
 
 #[cfg(feature = "postgres")]
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
@@ -77,7 +80,7 @@ impl Chaindexing {
         let states = contracts.iter().flat_map(|c| c.state_migrations.clone());
 
         for state in states {
-            ChaindexingRepo::migrate(raw_query_client, state.migrations()).await;
+            ChaindexingRepo::migrate(raw_query_client, state.get_migrations()).await;
         }
     }
 

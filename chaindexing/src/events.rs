@@ -21,7 +21,7 @@ pub struct Event {
     log_params: serde_json::Value,
     parameters: serde_json::Value,
     topics: serde_json::Value,
-    block_hash: String,
+    pub block_hash: String,
     pub block_number: i64,
     pub transaction_hash: String,
     pub transaction_index: i64,
@@ -55,6 +55,10 @@ impl Event {
 
     pub fn get_params(&self) -> HashMap<String, Token> {
         serde_json::from_value(self.parameters.clone()).unwrap()
+    }
+
+    pub fn not_removed(&self) -> bool {
+        !self.removed
     }
 
     pub fn match_contract_address(&self, contract_address: &String) -> bool {
