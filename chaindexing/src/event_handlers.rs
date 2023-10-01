@@ -57,7 +57,7 @@ impl EventHandlers {
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             for contract_address in contract_addresses {
-                Self::handle_event_for_contract_address(
+                Self::handle_events_for_contract_address(
                     conn.clone(),
                     &contract_address,
                     event_handlers_by_event_abi,
@@ -68,7 +68,7 @@ impl EventHandlers {
         }
     }
 
-    pub async fn handle_event_for_contract_address<'a>(
+    pub async fn handle_events_for_contract_address<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         contract_address: &ContractAddress,
         event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,

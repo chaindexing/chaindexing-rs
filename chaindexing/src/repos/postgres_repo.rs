@@ -1,4 +1,3 @@
-use derive_more::Display;
 use std::sync::Arc;
 
 mod migrations;
@@ -29,11 +28,6 @@ pub use diesel_async::{
 
 pub use raw_queries::{PostgresRepoRawQueryClient, PostgresRepoRawQueryTxnClient};
 
-#[derive(Clone, Debug, Display)]
-pub enum PostgresRepoError {
-    RepoNotMigrated,
-}
-
 #[derive(Clone)]
 pub struct PostgresRepo {
     url: String,
@@ -45,7 +39,6 @@ type PgPooledConn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<A
 impl Repo for PostgresRepo {
     type Conn<'a> = PgPooledConn<'a>;
     type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
-    type RepoError = PostgresRepoError;
 
     fn new(url: &str) -> Self {
         Self {
