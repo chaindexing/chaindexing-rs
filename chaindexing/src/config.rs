@@ -1,12 +1,11 @@
-use crate::{ChaindexingRepo, Chains, Contract};
+use crate::{ChaindexingRepo, Chains, Contract, MinConfirmationCount};
 
 #[derive(Clone)]
 pub struct Config {
     pub chains: Chains,
     pub repo: ChaindexingRepo,
     pub contracts: Vec<Contract>,
-    /// Tolerance for chain re-organization
-    pub min_confirmation_count: u8,
+    pub min_confirmation_count: MinConfirmationCount,
     pub blocks_per_batch: u64,
     pub handler_interval_ms: u64,
     pub ingestion_interval_ms: u64,
@@ -19,7 +18,7 @@ impl Config {
             repo,
             chains,
             contracts: vec![],
-            min_confirmation_count: 40,
+            min_confirmation_count: MinConfirmationCount::new(40),
             blocks_per_batch: 20,
             handler_interval_ms: 10000,
             ingestion_interval_ms: 10000,
@@ -40,7 +39,7 @@ impl Config {
     }
 
     pub fn with_min_confirmation_count(mut self, min_confirmation_count: u8) -> Self {
-        self.min_confirmation_count = min_confirmation_count;
+        self.min_confirmation_count = MinConfirmationCount::new(min_confirmation_count);
 
         self
     }

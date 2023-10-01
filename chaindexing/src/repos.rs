@@ -6,6 +6,6 @@ pub use postgres_repo::{
     PostgresRepoRawQueryClient, PostgresRepoRawQueryTxnClient,
 };
 pub use repo::{
-    ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, Migratable, Repo,
+    ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, Migratable, Repo, RepoError,
     RepoMigrations, SQLikeMigrations, Streamable,
 };

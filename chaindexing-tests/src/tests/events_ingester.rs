@@ -10,7 +10,9 @@ mod tests {
     use crate::{
         json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
     };
-    use chaindexing::{Chaindexing, EventsIngester, PostgresRepo, Repo};
+    use chaindexing::{
+        Chain, Chaindexing, EventsIngester, MinConfirmationCount, PostgresRepo, Repo,
+    };
 
     #[tokio::test]
     pub async fn creates_contract_events() {
@@ -28,7 +30,17 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc).await.unwrap();
+            EventsIngester::ingest(
+                conn.clone(),
+                &contracts,
+                10,
+                json_rpc,
+                &Chain::Mainnet,
+                &MinConfirmationCount::new(1),
+                false,
+            )
+            .await
+            .unwrap();
 
             let mut conn = conn.lock().await;
             let ingested_events = PostgresRepo::get_all_events(&mut conn).await;
@@ -66,7 +78,17 @@ mod tests {
             ));
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn, &contracts, 10, json_rpc).await.unwrap();
+            EventsIngester::ingest(
+                conn,
+                &contracts,
+                10,
+                json_rpc,
+                &Chain::Mainnet,
+                &MinConfirmationCount::new(1),
+                false,
+            )
+            .await
+            .unwrap();
         })
         .await;
     }
@@ -87,9 +109,18 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let blocks_per_batch = 10;
-            EventsIngester::ingest(conn.clone(), &contracts, blocks_per_batch, json_rpc)
-                .await
-                .unwrap();
+
+            EventsIngester::ingest(
+                conn.clone(),
+                &contracts,
+                blocks_per_batch,
+                json_rpc,
+                &Chain::Mainnet,
+                &MinConfirmationCount::new(1),
+                false,
+            )
+            .await
+            .unwrap();
 
             let mut conn = conn.lock().await;
             let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
@@ -117,9 +148,17 @@ mod tests {
             let json_rpc = Arc::new(empty_json_rpc());
             let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn.clone(), &contracts, blocks_per_batch, json_rpc)
-                .await
-                .unwrap();
+            EventsIngester::ingest(
+                conn.clone(),
+                &contracts,
+                blocks_per_batch,
+                json_rpc,
+                &Chain::Mainnet,
+                &MinConfirmationCount::new(1),
+                false,
+            )
+            .await
+            .unwrap();
             let mut conn = conn.lock().await;
             assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
         })
@@ -138,7 +177,17 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
-            EventsIngester::ingest(conn.clone(), &contracts, 10, json_rpc).await.unwrap();
+            EventsIngester::ingest(
+                conn.clone(),
+                &contracts,
+                10,
+                json_rpc,
+                &Chain::Mainnet,
+                &MinConfirmationCount::new(1),
+                false,
+            )
+            .await
+            .unwrap();
 
             let mut conn = conn.lock().await;
             assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());

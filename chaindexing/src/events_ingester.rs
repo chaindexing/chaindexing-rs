@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,13 +9,18 @@ use ethers::types::{Address, Filter as EthersFilter, Log};
 use futures_util::future::try_join_all;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
+use std::cmp::{max, min};
 use tokio::sync::Mutex;
 use tokio::time::interval;
 
+use crate::chain_reorg::Execution;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
-use crate::events::Events;
-use crate::{ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, Repo, Streamable};
+use crate::events::{Event, Events};
+use crate::{
+    ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, MinConfirmationCount, Repo,
+    RepoError, Streamable,
+};
 
 #[async_trait::async_trait]
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
@@ -37,6 +42,7 @@ impl EventsIngesterJsonRpc for Provider<Http> {
 #[derive(Debug)]
 pub enum EventsIngesterError {
     HTTPError(String),
+    RepoConnectionError,
     GenericError(String),
 }
 
@@ -45,6 +51,15 @@ impl From<ProviderError> for EventsIngesterError {
         match value {
             ProviderError::HTTPError(error) => EventsIngesterError::HTTPError(error.to_string()),
             other_error => EventsIngesterError::GenericError(other_error.to_string()),
+        }
+    }
+}
+
+impl From<RepoError> for EventsIngesterError {
+    fn from(value: RepoError) -> Self {
+        match value {
+            RepoError::NotConnected => EventsIngesterError::RepoConnectionError,
+            RepoError::Unknown(error) => EventsIngesterError::GenericError(error),
         }
     }
 }
@@ -61,27 +76,42 @@ impl EventsIngester {
             let conn = Arc::new(Mutex::new(conn));
             let contracts = config.contracts.clone();
             let mut interval = interval(Duration::from_millis(config.ingestion_interval_ms));
+            let mut run_confirmation_execution = false;
 
             loop {
                 interval.tick().await;
 
-                for (_chain, json_rpc_url) in config.chains.clone() {
+                for (chain, json_rpc_url) in config.chains.clone() {
                     let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
-                    Self::ingest(conn.clone(), &contracts, config.blocks_per_batch, json_rpc)
-                        .await
-                        .unwrap();
+                    Self::ingest(
+                        conn.clone(),
+                        &contracts,
+                        config.blocks_per_batch,
+                        json_rpc,
+                        &chain,
+                        &config.min_confirmation_count,
+                        run_confirmation_execution,
+                    )
+                    .await
+                    .unwrap();
+                }
+
+                if !run_confirmation_execution {
+                    run_confirmation_execution = true;
                 }
             }
         });
     }
 
-    // TODO: Can Arc<> or just raw &mut Conn work?
     pub async fn ingest<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         contracts: &Vec<Contract>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
+        chain: &Chain,
+        min_confirmation_count: &MinConfirmationCount,
+        run_confirmation_execution: bool,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = (json_rpc.get_block_number().await?).as_u64();
 
@@ -93,18 +123,75 @@ impl EventsIngester {
                 &contract_addresses,
                 current_block_number,
             );
+
             let mut conn = conn.lock().await;
-            let filters = Filters::new(
-                &contract_addresses,
-                &contracts,
+
+            MainExecution::run(
+                &mut conn,
+                contract_addresses.clone(),
+                contracts,
+                &json_rpc,
+                chain,
                 current_block_number,
                 blocks_per_batch,
-            );
-            let logs = Self::fetch_logs(&filters, &json_rpc).await.unwrap();
+            )
+            .await?;
 
-            let events = Events::new(&logs, &contracts);
+            if run_confirmation_execution {
+                ConfirmationExecution::run(
+                    &mut conn,
+                    contract_addresses.clone(),
+                    contracts,
+                    &json_rpc,
+                    chain,
+                    current_block_number,
+                    blocks_per_batch,
+                    min_confirmation_count,
+                )
+                .await?;
+            }
+        }
 
-            ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
+        Ok(())
+    }
+
+    fn filter_uningested_contract_addresses(
+        contract_addresses: &Vec<ContractAddress>,
+        current_block_number: u64,
+    ) -> Vec<ContractAddress> {
+        contract_addresses
+            .to_vec()
+            .into_iter()
+            .filter(|ca| current_block_number > ca.next_block_number_to_ingest_from as u64)
+            .collect()
+    }
+}
+
+struct MainExecution;
+
+impl MainExecution {
+    async fn run<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        contract_addresses: Vec<ContractAddress>,
+        contracts: &Vec<Contract>,
+        json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
+        chain: &Chain,
+        current_block_number: u64,
+        blocks_per_batch: u64,
+    ) -> Result<(), EventsIngesterError> {
+        let filters = Filters::new(
+            &contract_addresses,
+            &contracts,
+            current_block_number,
+            blocks_per_batch,
+            &Execution::Main,
+        );
+
+        if !filters.is_empty() {
+            let logs = fetch_logs(&filters, json_rpc).await.unwrap();
+            let events = Events::new(&logs, &contracts, chain);
+
+            ChaindexingRepo::run_in_transaction(conn, move |conn| {
                 async move {
                     ChaindexingRepo::create_events(conn, &events.clone()).await;
 
@@ -119,7 +206,7 @@ impl EventsIngester {
                 }
                 .boxed()
             })
-            .await;
+            .await?;
         }
 
         Ok(())
@@ -148,27 +235,109 @@ impl EventsIngester {
             }
         }
     }
+}
 
-    fn filter_uningested_contract_addresses(
-        contract_addresses: &Vec<ContractAddress>,
+struct ConfirmationExecution;
+
+impl ConfirmationExecution {
+    async fn run<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        contract_addresses: Vec<ContractAddress>,
+        contracts: &Vec<Contract>,
+        json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
+        chain: &Chain,
         current_block_number: u64,
-    ) -> Vec<ContractAddress> {
-        contract_addresses
-            .to_vec()
+        blocks_per_batch: u64,
+        min_confirmation_count: &MinConfirmationCount,
+    ) -> Result<(), EventsIngesterError> {
+        let filters = Filters::new(
+            &contract_addresses,
+            &contracts,
+            current_block_number,
+            blocks_per_batch,
+            &Execution::Confirmation(min_confirmation_count),
+        );
+
+        if !filters.is_empty() {
+            let logs = fetch_logs(&filters, json_rpc).await.unwrap();
+
+            if let Some((min_block_number, max_block_number)) =
+                Self::get_min_and_max_block_number(&logs)
+            {
+                let already_ingested_events =
+                    ChaindexingRepo::get_events(conn, min_block_number, max_block_number).await;
+
+                let json_rpc_events = Events::new(&logs, &contracts, chain);
+
+                let (added_events, removed_events) = Self::get_json_rpc_added_and_removed_events(
+                    &already_ingested_events,
+                    &json_rpc_events,
+                );
+
+                ChaindexingRepo::run_in_transaction(conn, move |conn| {
+                    async move {
+                        let event_ids = removed_events.iter().map(|e| e.id).collect();
+                        ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
+
+                        ChaindexingRepo::create_events(conn, &added_events).await;
+
+                        Ok(())
+                    }
+                    .boxed()
+                })
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_min_and_max_block_number(logs: &Vec<Log>) -> Option<(u64, u64)> {
+        logs.clone().iter().fold(None, |block_range, Log { block_number, .. }| {
+            let block_number = block_number.unwrap().as_u64();
+
+            block_range
+                .and_then(|(min_block_number, max_block_number)| {
+                    let min_block_number = min(min_block_number, block_number);
+                    let max_block_number = max(max_block_number, block_number);
+
+                    Some((min_block_number, max_block_number))
+                })
+                .or_else(|| Some((block_number, block_number)))
+        })
+    }
+
+    fn get_json_rpc_added_and_removed_events(
+        already_ingested_events: &Vec<Event>,
+        json_rpc_events: &Vec<Event>,
+    ) -> (Vec<Event>, Vec<Event>) {
+        let already_ingested_events_set: HashSet<_> =
+            already_ingested_events.clone().into_iter().collect();
+        let json_rpc_events_set: HashSet<_> = json_rpc_events.clone().into_iter().collect();
+
+        let json_rpc_added_events = json_rpc_events
+            .clone()
             .into_iter()
-            .filter(|ca| current_block_number > ca.next_block_number_to_ingest_from as u64)
-            .collect()
-    }
+            .filter(|e| !already_ingested_events_set.contains(e))
+            .collect();
 
-    async fn fetch_logs(
-        filters: &Vec<Filter>,
-        json_rpc: &Arc<impl EventsIngesterJsonRpc>,
-    ) -> Result<Vec<Log>, EventsIngesterError> {
-        let logs_per_filter =
-            try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f.value))).await?;
+        let json_rpc_removed_events = already_ingested_events
+            .clone()
+            .into_iter()
+            .filter(|e| !json_rpc_events_set.contains(e))
+            .collect();
 
-        Ok(logs_per_filter.into_iter().flatten().collect())
+        (json_rpc_added_events, json_rpc_removed_events)
     }
+}
+
+async fn fetch_logs(
+    filters: &Vec<Filter>,
+    json_rpc: &Arc<impl EventsIngesterJsonRpc>,
+) -> Result<Vec<Log>, EventsIngesterError> {
+    let logs_per_filter = try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f.value))).await?;
+
+    Ok(logs_per_filter.into_iter().flatten().collect())
 }
 
 #[derive(Clone, Debug)]
@@ -183,20 +352,36 @@ impl Filter {
         topics: &Vec<ContractEventTopic>,
         current_block_number: u64,
         blocks_per_batch: u64,
+        execution: &Execution,
     ) -> Filter {
-        let next_block_number_to_ingest_from =
-            contract_address.next_block_number_to_ingest_from as u64;
+        let ContractAddress {
+            id: contract_address_id,
+            next_block_number_to_ingest_from,
+            start_block_number,
+            address,
+            ..
+        } = contract_address;
+
+        let next_block_number_to_ingest_from = match execution {
+            Execution::Main => *next_block_number_to_ingest_from as u64,
+            Execution::Confirmation(min_confirmation_count) => min_confirmation_count
+                .ideduct_from(*next_block_number_to_ingest_from, *start_block_number),
+        };
+
+        let current_block_number = match execution {
+            Execution::Main => current_block_number,
+            Execution::Confirmation(min_confirmation_count) => {
+                min_confirmation_count.deduct_from(current_block_number, *start_block_number as u64)
+            }
+        };
 
         Filter {
-            contract_address_id: contract_address.id,
+            contract_address_id: *contract_address_id,
             value: EthersFilter::new()
-                // We could use multiple adddresses here but
-                // we'll rather not because it would affect the correctness of
-                // next_block_number_to_ingest_from since we stream the contracts upstream.
-                .address(contract_address.address.parse::<Address>().unwrap())
+                .address(address.parse::<Address>().unwrap())
                 .topic0(topics.to_vec())
                 .from_block(next_block_number_to_ingest_from)
-                .to_block(std::cmp::min(
+                .to_block(min(
                     next_block_number_to_ingest_from + blocks_per_batch,
                     current_block_number,
                 )),
@@ -212,6 +397,7 @@ impl Filters {
         contracts: &Vec<Contract>,
         current_block_number: u64,
         blocks_per_batch: u64,
+        execution: &Execution,
     ) -> Vec<Filter> {
         let topics_by_contract_name = Contracts::group_event_topics_by_names(contracts);
 
@@ -226,8 +412,10 @@ impl Filters {
                     topics_by_contract_name,
                     current_block_number,
                     blocks_per_batch,
+                    execution,
                 )
             })
+            .filter(|f| !f.value.get_from_block().eq(&f.value.get_to_block()))
             .collect()
     }
 

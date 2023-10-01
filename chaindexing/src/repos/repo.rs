@@ -1,4 +1,6 @@
+use derive_more::Display;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use futures_core::{future::BoxFuture, Stream};
 use serde::de::DeserializeOwned;
@@ -9,6 +11,12 @@ use crate::{
     events::Event,
     ContractAddress, ResetCount,
 };
+
+#[derive(Debug, Display)]
+pub enum RepoError {
+    NotConnected,
+    Unknown(String),
+}
 
 #[async_trait::async_trait]
 pub trait Repo:
@@ -21,9 +29,12 @@ pub trait Repo:
     async fn get_pool(&self, max_size: u32) -> Self::Pool;
     async fn get_conn<'a>(pool: &'a Self::Pool) -> Self::Conn<'a>;
 
-    async fn run_in_transaction<'a, F>(conn: &mut Self::Conn<'a>, repo_ops: F)
+    async fn run_in_transaction<'a, F>(
+        conn: &mut Self::Conn<'a>,
+        repo_ops: F,
+    ) -> Result<(), RepoError>
     where
-        F: for<'b> FnOnce(&'b mut Self::Conn<'a>) -> BoxFuture<'b, Result<(), ()>>
+        F: for<'b> FnOnce(&'b mut Self::Conn<'a>) -> BoxFuture<'b, Result<(), RepoError>>
             + Send
             + Sync
             + 'a;
@@ -36,6 +47,8 @@ pub trait Repo:
 
     async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
+    async fn get_events<'a>(conn: &mut Self::Conn<'a>, from: u64, to: u64) -> Vec<Event>;
+    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &Vec<Uuid>);
 
     async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,

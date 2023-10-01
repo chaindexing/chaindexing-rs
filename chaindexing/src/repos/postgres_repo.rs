@@ -10,13 +10,19 @@ use crate::{
 };
 use diesel_async::RunQueryDsl;
 
-use diesel::{result::Error, upsert::excluded, ExpressionMethods};
+use diesel::{
+    delete,
+    result::{DatabaseErrorKind, Error as DieselError},
+    upsert::excluded,
+    ExpressionMethods, QueryDsl,
+};
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use diesel_streamer::get_serial_table_async_stream;
 use futures_core::{future::BoxFuture, Stream};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
-use super::repo::Repo;
+use super::repo::{Repo, RepoError};
 
 pub type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
 pub type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
@@ -27,6 +33,17 @@ pub use diesel_async::{
 };
 
 pub use raw_queries::{PostgresRepoRawQueryClient, PostgresRepoRawQueryTxnClient};
+
+impl From<DieselError> for RepoError {
+    fn from(value: DieselError) -> Self {
+        match value {
+            DieselError::DatabaseError(DatabaseErrorKind::ClosedConnection, _info) => {
+                RepoError::NotConnected
+            }
+            any_other_error => RepoError::Unknown(any_other_error.to_string()),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct PostgresRepo {
@@ -56,20 +73,17 @@ impl Repo for PostgresRepo {
         pool.get().await.unwrap()
     }
 
-    async fn run_in_transaction<'a, F>(conn: &mut Conn<'a>, repo_ops: F)
+    async fn run_in_transaction<'a, F>(conn: &mut Conn<'a>, repo_ops: F) -> Result<(), RepoError>
     where
-        F: for<'b> FnOnce(&'b mut Conn<'a>) -> BoxFuture<'b, Result<(), ()>> + Send + Sync + 'a,
+        F: for<'b> FnOnce(&'b mut Conn<'a>) -> BoxFuture<'b, Result<(), RepoError>>
+            + Send
+            + Sync
+            + 'a,
     {
-        conn.transaction::<(), Error, _>(|transaction_conn| {
-            async move {
-                (repo_ops)(transaction_conn).await.unwrap();
-
-                Ok(())
-            }
-            .scope_boxed()
+        conn.transaction::<(), RepoError, _>(|transaction_conn| {
+            async move { (repo_ops)(transaction_conn).await }.scope_boxed()
         })
         .await
-        .unwrap();
     }
 
     async fn create_contract_addresses<'a>(
@@ -105,11 +119,24 @@ impl Repo for PostgresRepo {
             .await
             .unwrap();
     }
-
     async fn get_all_events<'a>(conn: &mut Conn<'a>) -> Vec<Event> {
         use crate::diesels::schema::chaindexing_events::dsl::*;
 
         chaindexing_events.load(conn).await.unwrap()
+    }
+    async fn get_events<'a>(conn: &mut Self::Conn<'a>, from: u64, to: u64) -> Vec<Event> {
+        use crate::diesels::schema::chaindexing_events::dsl::*;
+
+        chaindexing_events
+            .filter(block_number.between(from as i64, to as i64))
+            .load(conn)
+            .await
+            .unwrap()
+    }
+    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &Vec<Uuid>) {
+        use crate::diesels::schema::chaindexing_events::dsl::*;
+
+        delete(chaindexing_events).filter(id.eq_any(ids)).execute(conn).await.unwrap();
     }
 
     async fn update_next_block_number_to_ingest_from<'a>(

@@ -1,3 +1,4 @@
+mod chain_reorg;
 mod chains;
 mod config;
 mod contract_states;
@@ -9,6 +10,7 @@ mod events_ingester;
 mod repos;
 mod reset_counts;
 
+pub use chain_reorg::MinConfirmationCount;
 pub use chains::Chains;
 pub use config::Config;
 pub use contract_states::{ContractState, ContractStateError, ContractStateMigrations};
@@ -83,11 +85,16 @@ impl Chaindexing {
         client: &ChaindexingRepoRawQueryClient,
         conn: &mut ChaindexingRepoConn<'a>,
     ) {
+        let reset_count = *reset_count as usize;
         let reset_counts = ChaindexingRepo::get_reset_counts(conn).await;
-        if *reset_count as usize > reset_counts.len() {
+        let previous_reset_count = reset_counts.len();
+
+        if reset_count > previous_reset_count {
             Self::reset_internal_migrations(client).await;
             Self::reset_migrations_for_contract_states(client, contracts).await;
-            ChaindexingRepo::create_reset_count(conn).await;
+            for _ in previous_reset_count..reset_count {
+                ChaindexingRepo::create_reset_count(conn).await;
+            }
         }
     }
 

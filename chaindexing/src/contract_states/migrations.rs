@@ -12,8 +12,6 @@ pub trait ContractStateMigrations: Send + Sync {
                 validate_migration(user_migration);
 
                 if user_migration.starts_with("CREATE TABLE IF NOT EXISTS") {
-                    // FUTURE TODO: Index user migration fields
-                    // Index State Version fields
                     let create_state_table_migration = user_migration.to_owned().to_owned();
 
                     let create_state_versions_table_migration = append_migration(
