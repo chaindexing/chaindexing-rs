@@ -16,8 +16,10 @@ pub trait ContractStateMigrations: Send + Sync {
                     // Index State Version fields
                     let create_state_table_migration = user_migration.to_owned().to_owned();
 
-                    let create_state_versions_table_migration =
-                        append_migration(&user_migration, &remaining_state_versions_migration());
+                    let create_state_versions_table_migration = append_migration(
+                        &user_migration,
+                        &get_remaining_state_versions_migration(),
+                    );
                     let create_state_versions_table_migration =
                         set_state_versions_table_name(&create_state_versions_table_migration);
 
@@ -27,8 +29,8 @@ pub trait ContractStateMigrations: Send + Sync {
                         extract_table_fields(&create_state_versions_table_migration);
 
                     let state_versions_unique_index_migration =
-                        unique_index_migration_for_state_versions(
-                            state_versions_table_name,
+                        get_unique_index_migration_for_state_versions(
+                            &state_versions_table_name,
                             state_versions_fields,
                         );
 
@@ -40,6 +42,18 @@ pub trait ContractStateMigrations: Send + Sync {
                 } else {
                     vec![user_migration.to_string()]
                 }
+            })
+            .collect()
+    }
+
+    fn get_reset_migrations(&self) -> Vec<String> {
+        self.get_migrations()
+            .iter()
+            .filter(|m| m.starts_with("CREATE TABLE IF NOT EXISTS"))
+            .map(|create_migration| {
+                let table_name = extract_table_name(&create_migration);
+
+                format!("DROP TABLE IF EXISTS {table_name}")
             })
             .collect()
     }
@@ -75,8 +89,8 @@ fn extract_table_fields(migration: &str) -> Vec<String> {
         .collect()
 }
 
-fn unique_index_migration_for_state_versions(
-    table_name: String,
+fn get_unique_index_migration_for_state_versions(
+    table_name: &str,
     table_fields: Vec<String>,
 ) -> String {
     let table_fields: Vec<String> =
@@ -110,7 +124,7 @@ fn append_migration(migration: &str, migration_to_append: &str) -> String {
         .replace("),,", ",")
 }
 
-fn remaining_state_versions_migration() -> String {
+fn get_remaining_state_versions_migration() -> String {
     // No need for IDs, we will be using each field in the state
     // and delegate the responsibility of creating unique states
     // to the user, using whatever means necessary. The user can
@@ -120,11 +134,11 @@ fn remaining_state_versions_migration() -> String {
         state_version_is_deleted BOOL NOT NULL default false,
         {}
         ",
-        remaining_state_fields_migration()
+        get_remaining_state_fields_migration()
     )
 }
 
-fn remaining_state_fields_migration() -> String {
+fn get_remaining_state_fields_migration() -> String {
     "state_version_contract_address TEXT NOT NULL,
     state_chain_id INTEGER NOT NULL,
     state_version_block_hash TEXT NOT NULL,

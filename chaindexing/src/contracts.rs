@@ -104,6 +104,12 @@ impl Contracts {
         contracts.into_iter().flat_map(|c| c.addresses.clone()).collect()
     }
 
+    pub fn get_state_migrations(
+        contracts: &Vec<Contract>,
+    ) -> Vec<Arc<dyn ContractStateMigrations>> {
+        contracts.into_iter().flat_map(|c| c.state_migrations.clone()).collect()
+    }
+
     pub fn get_all_event_handlers_by_event_abi(
         contracts: &Vec<Contract>,
     ) -> HashMap<EventAbi, Arc<dyn EventHandler>> {

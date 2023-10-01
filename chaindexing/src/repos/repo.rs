@@ -1,6 +1,6 @@
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
-use derive_more::Display;
 use futures_core::{future::BoxFuture, Stream};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
@@ -8,11 +8,8 @@ use tokio::sync::Mutex;
 use crate::{
     contracts::{ContractAddressID, UnsavedContractAddress},
     events::Event,
-    ContractAddress,
+    ContractAddress, ResetCount,
 };
-
-#[derive(Debug, Display)]
-pub enum RepoError {}
 
 #[async_trait::async_trait]
 pub trait Repo:
@@ -20,6 +17,7 @@ pub trait Repo:
 {
     type Pool;
     type Conn<'a>;
+    type RepoError: Debug + Display;
 
     fn new(url: &str) -> Self;
     async fn get_pool(&self, max_size: u32) -> Self::Pool;
@@ -51,6 +49,9 @@ pub trait Repo:
         contract_address_id: ContractAddressID,
         block_number: i64,
     );
+
+    async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>);
+    async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount>;
 }
 
 #[async_trait::async_trait]
@@ -104,12 +105,23 @@ pub trait Streamable {
 
 pub trait RepoMigrations: Migratable {
     fn create_contract_addresses_migration() -> &'static [&'static str];
+    fn drop_contract_addresses_migration() -> &'static [&'static str];
     fn create_events_migration() -> &'static [&'static str];
+    fn drop_events_migration() -> &'static [&'static str];
+    fn create_reset_counts_migration() -> &'static [&'static str];
 
-    fn get_all_internal_migrations() -> Vec<&'static str> {
+    fn get_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_contract_addresses_migration(),
             Self::create_events_migration(),
+        ]
+        .concat()
+    }
+
+    fn get_reset_internal_migrations() -> Vec<&'static str> {
+        [
+            Self::drop_contract_addresses_migration(),
+            Self::drop_events_migration(),
         ]
         .concat()
     }
@@ -145,6 +157,9 @@ impl SQLikeMigrations {
         ON chaindexing_contract_addresses(address)",
         ]
     }
+    pub fn drop_contract_addresses() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_contract_addresses"]
+    }
 
     pub fn create_events() -> &'static [&'static str] {
         &[
@@ -170,5 +185,15 @@ impl SQLikeMigrations {
             "CREATE INDEX IF NOT EXISTS chaindexing_events_abi
             ON chaindexing_events(abi)",
         ]
+    }
+    pub fn drop_events() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_events"]
+    }
+
+    pub fn create_reset_counts() -> &'static [&'static str] {
+        &["CREATE TABLE IF NOT EXISTS chaindexing_reset_counts (
+                id SERIAL PRIMARY KEY,
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
+            )"]
     }
 }

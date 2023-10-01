@@ -1,3 +1,4 @@
+use derive_more::Display;
 use std::sync::Arc;
 
 mod migrations;
@@ -6,7 +7,7 @@ mod raw_queries;
 use crate::{
     contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
-    Streamable,
+    ResetCount, Streamable,
 };
 use diesel_async::RunQueryDsl;
 
@@ -28,6 +29,11 @@ pub use diesel_async::{
 
 pub use raw_queries::{PostgresRepoRawQueryClient, PostgresRepoRawQueryTxnClient};
 
+#[derive(Clone, Debug, Display)]
+pub enum PostgresRepoError {
+    RepoNotMigrated,
+}
+
 #[derive(Clone)]
 pub struct PostgresRepo {
     url: String,
@@ -39,6 +45,7 @@ type PgPooledConn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<A
 impl Repo for PostgresRepo {
     type Conn<'a> = PgPooledConn<'a>;
     type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
+    type RepoError = PostgresRepoError;
 
     fn new(url: &str) -> Self {
         Self {
@@ -140,6 +147,22 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
+    }
+
+    async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>) {
+        use crate::diesels::schema::chaindexing_reset_counts::dsl::*;
+
+        diesel::insert_into(chaindexing_reset_counts)
+            .default_values()
+            .execute(conn)
+            .await
+            .unwrap();
+    }
+
+    async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount> {
+        use crate::diesels::schema::chaindexing_reset_counts::dsl::*;
+
+        chaindexing_reset_counts.load(conn).await.unwrap()
     }
 }
 

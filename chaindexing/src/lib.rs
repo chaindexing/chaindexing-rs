@@ -7,10 +7,12 @@ mod event_handlers;
 mod events;
 mod events_ingester;
 mod repos;
+mod reset_counts;
 
 pub use chains::Chains;
 pub use config::Config;
 pub use contract_states::{ContractState, ContractStateError, ContractStateMigrations};
+use contracts::Contracts;
 pub use contracts::{Contract, ContractAddress, ContractEvent};
 pub use diesel;
 pub use diesel::prelude::QueryableByName;
@@ -19,6 +21,7 @@ pub use event_handlers::{EventHandler, EventHandlers};
 pub use events::Event;
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
 pub use repos::*;
+pub use reset_counts::ResetCount;
 
 pub use ethers::prelude::{Address, U256, U64};
 
@@ -54,33 +57,68 @@ impl Chaindexing {
     }
 
     pub async fn setup(config: &Config) -> Result<(), ()> {
-        let raw_query_client = config.repo.get_raw_query_client().await;
-        Self::run_internal_migrations(&raw_query_client).await;
-        Self::run_migrations_for_contract_states(&raw_query_client, &config.contracts).await;
+        let Config {
+            repo,
+            contracts,
+            reset_count,
+            ..
+        } = config;
 
-        let pool = config.repo.get_pool(1).await;
+        let client = repo.get_raw_query_client().await;
+        let pool = repo.get_pool(1).await;
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
-        Self::create_initial_contract_addresses(&mut conn, &config.contracts).await;
+
+        Self::run_migrations_for_resets(&client).await;
+        Self::maybe_reset(reset_count, contracts, &client, &mut conn).await;
+        Self::run_internal_migrations(&client).await;
+        Self::run_migrations_for_contract_states(&client, contracts).await;
+        Self::create_initial_contract_addresses(&mut conn, contracts).await;
 
         Ok(())
     }
 
-    pub async fn run_internal_migrations(raw_query_client: &ChaindexingRepoRawQueryClient) {
+    pub async fn maybe_reset<'a>(
+        reset_count: &u8,
+        contracts: &Vec<Contract>,
+        client: &ChaindexingRepoRawQueryClient,
+        conn: &mut ChaindexingRepoConn<'a>,
+    ) {
+        let reset_counts = ChaindexingRepo::get_reset_counts(conn).await;
+        if *reset_count as usize > reset_counts.len() {
+            Self::reset_internal_migrations(client).await;
+            Self::reset_migrations_for_contract_states(client, contracts).await;
+            ChaindexingRepo::create_reset_count(conn).await;
+        }
+    }
+
+    pub async fn run_migrations_for_resets(client: &ChaindexingRepoRawQueryClient) {
         ChaindexingRepo::migrate(
-            &raw_query_client,
-            ChaindexingRepo::get_all_internal_migrations(),
+            &client,
+            ChaindexingRepo::create_reset_counts_migration().to_vec(),
         )
         .await;
     }
+    pub async fn run_internal_migrations(client: &ChaindexingRepoRawQueryClient) {
+        ChaindexingRepo::migrate(&client, ChaindexingRepo::get_internal_migrations()).await;
+    }
+    pub async fn reset_internal_migrations(client: &ChaindexingRepoRawQueryClient) {
+        ChaindexingRepo::migrate(&client, ChaindexingRepo::get_reset_internal_migrations()).await;
+    }
 
     pub async fn run_migrations_for_contract_states(
-        raw_query_client: &ChaindexingRepoRawQueryClient,
+        client: &ChaindexingRepoRawQueryClient,
         contracts: &Vec<Contract>,
     ) {
-        let states = contracts.iter().flat_map(|c| c.state_migrations.clone());
-
-        for state in states {
-            ChaindexingRepo::migrate(raw_query_client, state.get_migrations()).await;
+        for state_migration in Contracts::get_state_migrations(contracts) {
+            ChaindexingRepo::migrate(client, state_migration.get_migrations()).await;
+        }
+    }
+    pub async fn reset_migrations_for_contract_states(
+        client: &ChaindexingRepoRawQueryClient,
+        contracts: &Vec<Contract>,
+    ) {
+        for state_migration in Contracts::get_state_migrations(contracts) {
+            ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
         }
     }
 
