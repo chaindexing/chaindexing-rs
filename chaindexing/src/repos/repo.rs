@@ -1,4 +1,3 @@
-use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 use futures_core::{future::BoxFuture, Stream};
@@ -17,7 +16,6 @@ pub trait Repo:
 {
     type Pool;
     type Conn<'a>;
-    type RepoError: Debug + Display;
 
     fn new(url: &str) -> Self;
     async fn get_pool(&self, max_size: u32) -> Self::Pool;
