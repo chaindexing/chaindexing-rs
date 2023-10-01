@@ -1,15 +1,16 @@
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
-use crate::contracts::{ContractAddress, ContractAddresses, Contracts};
+use crate::contracts::{ContractAddress, Contracts};
 use crate::diesels::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
-use ethers::types::Log;
+use ethers::types::{Chain, Log};
 
 use crate::{Contract, ContractEvent};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Queryable, Insertable)]
+#[derive(Debug, Clone, Eq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
     pub id: Uuid,
@@ -29,14 +30,34 @@ pub struct Event {
     inserted_at: chrono::NaiveDateTime,
 }
 
+impl PartialEq for Event {
+    fn eq(&self, other: &Self) -> bool {
+        self.chain_id == other.chain_id
+            && self.contract_address == other.contract_address
+            && self.abi == other.abi
+            && self.log_params == other.log_params
+            && self.block_hash == other.block_hash
+    }
+}
+
+impl Hash for Event {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.chain_id.hash(state);
+        self.contract_address.hash(state);
+        self.abi.hash(state);
+        self.log_params.to_string().hash(state);
+        self.block_hash.hash(state);
+    }
+}
+
 impl Event {
-    pub fn new(log: &Log, event: &ContractEvent, contract_name: &str, chain_id: i32) -> Self {
+    pub fn new(log: &Log, event: &ContractEvent, contract_name: &str, chain: &Chain) -> Self {
         let log_params = event.value.parse_log(log.clone().into()).unwrap().params;
         let parameters = Self::log_params_to_parameters(&log_params);
 
         Self {
             id: uuid::Uuid::new_v4(),
-            chain_id,
+            chain_id: *chain as i32,
             contract_address: ContractAddress::address_to_string(&log.address),
             contract_name: contract_name.to_string(),
             abi: event.abi.clone(),
@@ -77,13 +98,9 @@ impl Event {
 pub struct Events;
 
 impl Events {
-    pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>) -> Vec<Event> {
+    pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>, chain: &Chain) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
         let contracts_by_addresses = Contracts::group_by_addresses(contracts);
-
-        let contract_addresses = Contracts::get_contract_addresses(contracts);
-        let contract_addresses_by_addresses =
-            ContractAddresses::group_by_addresses(&contract_addresses);
 
         logs.iter()
             .map(
@@ -94,7 +111,7 @@ impl Events {
                         log,
                         &events_by_topics.get(&topics[0]).unwrap(),
                         &contracts_by_addresses.get(&address).unwrap().name,
-                        contract_addresses_by_addresses.get(&address).unwrap().chain_id,
+                        chain,
                     )
                 },
             )

@@ -1,9 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::{
-    diesels::schema::chaindexing_contract_addresses, event_handlers::EventHandler,
-    ContractStateMigrations,
-};
+use crate::diesels::schema::chaindexing_contract_addresses;
+use crate::{ContractStateMigrations, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::{
@@ -100,10 +98,6 @@ impl Contract {
 pub struct Contracts;
 
 impl Contracts {
-    pub fn get_contract_addresses(contracts: &Vec<Contract>) -> Vec<UnsavedContractAddress> {
-        contracts.into_iter().flat_map(|c| c.addresses.clone()).collect()
-    }
-
     pub fn get_state_migrations(
         contracts: &Vec<Contract>,
     ) -> Vec<Arc<dyn ContractStateMigrations>> {
@@ -198,7 +192,7 @@ pub struct ContractAddress {
     chain_id: i32,
     pub next_block_number_to_ingest_from: i64,
     pub next_block_number_to_handle_from: i64,
-    start_block_number: i64,
+    pub start_block_number: i64,
     pub address: String,
     pub contract_name: String,
 }
@@ -209,26 +203,5 @@ impl ContractAddress {
     }
     pub fn address_to_string(address: &Address) -> String {
         serde_json::to_value(address).unwrap().as_str().unwrap().to_string()
-    }
-}
-
-pub struct ContractAddresses;
-
-impl ContractAddresses {
-    pub fn group_by_addresses(
-        contract_addresses: &Vec<UnsavedContractAddress>,
-    ) -> HashMap<Address, &UnsavedContractAddress> {
-        contract_addresses.iter().fold(
-            HashMap::new(),
-            |mut contract_addresses_by_addresses,
-             contract_address @ UnsavedContractAddress { address, .. }| {
-                contract_addresses_by_addresses.insert(
-                    Address::from_str(&*address.as_str()).unwrap(),
-                    contract_address,
-                );
-
-                contract_addresses_by_addresses
-            },
-        )
     }
 }
