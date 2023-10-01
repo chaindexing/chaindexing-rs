@@ -9,7 +9,6 @@ use ethers::types::Log;
 use crate::{Contract, ContractEvent};
 use uuid::Uuid;
 
-/// Ingested EVM Events
 #[derive(Debug, Clone, PartialEq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {

@@ -32,4 +32,11 @@ diesel::table! {
   }
 }
 
+diesel::table! {
+  chaindexing_reset_counts (id) {
+      id -> Int4,
+      inserted_at -> Timestamptz,
+  }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(chaindexing_contract_addresses, chaindexing_events,);
