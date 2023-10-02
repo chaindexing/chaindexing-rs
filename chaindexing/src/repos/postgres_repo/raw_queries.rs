@@ -1,5 +1,6 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
+use crate::contracts::ContractAddressID;
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
 use serde::de::DeserializeOwned;
 
@@ -35,6 +36,20 @@ impl ExecutesWithRawQuery for PostgresRepo {
     }
     async fn commit_raw_query_txns<'a>(client: Self::RawQueryTxnClient<'a>) {
         client.commit().await.unwrap();
+    }
+
+    async fn update_next_block_number_to_handle_from_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        ContractAddressID(contract_address_id): ContractAddressID,
+        block_number: i64,
+    ) {
+        let query = format!(
+            "UPDATE chaindexing_contract_addresses 
+        WHERE contract_address_id = {contract_address_id}
+        SET next_block_number_to_handle_from = {block_number}"
+        );
+
+        Self::execute_raw_query_in_txn(client, &query).await;
     }
 }
 

@@ -100,9 +100,8 @@ impl EventHandlers {
 
             if let Some(Event { block_number, .. }) = events.last() {
                 let next_block_number_to_handle_from = block_number + 1;
-                let mut conn = conn.lock().await;
-                ChaindexingRepo::update_next_block_number_to_handle_from(
-                    &mut conn,
+                ChaindexingRepo::update_next_block_number_to_handle_from_in_txn(
+                    &raw_query_txn_client,
                     contract_address.id(),
                     next_block_number_to_handle_from,
                 )
