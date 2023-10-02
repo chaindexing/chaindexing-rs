@@ -81,6 +81,12 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
     async fn execute_raw_query(client: &Self::RawQueryClient, query: &str);
     async fn execute_raw_query_in_txn<'a>(client: &Self::RawQueryTxnClient<'a>, query: &str);
     async fn commit_raw_query_txns<'a>(client: Self::RawQueryTxnClient<'a>);
+
+    async fn update_next_block_number_to_handle_from_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        contract_address_id: ContractAddressID,
+        block_number: i64,
+    );
 }
 
 #[async_trait::async_trait]
