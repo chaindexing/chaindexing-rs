@@ -13,7 +13,7 @@ use std::cmp::{max, min};
 use tokio::sync::Mutex;
 use tokio::time::interval;
 
-use crate::chain_reorg::Execution;
+use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::events::{Event, Events};
@@ -126,7 +126,7 @@ impl EventsIngester {
 
             let mut conn = conn.lock().await;
 
-            MainExecution::run(
+            MainExecution::ingest(
                 &mut conn,
                 contract_addresses.clone(),
                 contracts,
@@ -138,7 +138,7 @@ impl EventsIngester {
             .await?;
 
             if run_confirmation_execution {
-                ConfirmationExecution::run(
+                ConfirmationExecution::ingest(
                     &mut conn,
                     contract_addresses.clone(),
                     contracts,
@@ -170,7 +170,7 @@ impl EventsIngester {
 struct MainExecution;
 
 impl MainExecution {
-    async fn run<'a>(
+    async fn ingest<'a>(
         conn: &mut ChaindexingRepoConn<'a>,
         contract_addresses: Vec<ContractAddress>,
         contracts: &Vec<Contract>,
@@ -240,7 +240,7 @@ impl MainExecution {
 struct ConfirmationExecution;
 
 impl ConfirmationExecution {
-    async fn run<'a>(
+    async fn ingest<'a>(
         conn: &mut ChaindexingRepoConn<'a>,
         contract_addresses: Vec<ContractAddress>,
         contracts: &Vec<Contract>,
@@ -269,22 +269,12 @@ impl ConfirmationExecution {
 
                 let json_rpc_events = Events::new(&logs, &contracts, chain);
 
-                let (added_events, removed_events) = Self::get_json_rpc_added_and_removed_events(
+                Self::maybe_handle_chain_reorg(
+                    conn,
+                    chain,
                     &already_ingested_events,
                     &json_rpc_events,
-                );
-
-                ChaindexingRepo::run_in_transaction(conn, move |conn| {
-                    async move {
-                        let event_ids = removed_events.iter().map(|e| e.id).collect();
-                        ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
-
-                        ChaindexingRepo::create_events(conn, &added_events).await;
-
-                        Ok(())
-                    }
-                    .boxed()
-                })
+                )
                 .await?;
             }
         }
@@ -307,27 +297,75 @@ impl ConfirmationExecution {
         })
     }
 
+    async fn maybe_handle_chain_reorg<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        chain: &Chain,
+        already_ingested_events: &Vec<Event>,
+        json_rpc_events: &Vec<Event>,
+    ) -> Result<(), EventsIngesterError> {
+        if let Some((added_events, removed_events)) =
+            Self::get_json_rpc_added_and_removed_events(&already_ingested_events, &json_rpc_events)
+        {
+            let earliest_block_number =
+                Self::get_earliest_block_number((&added_events, &removed_events));
+
+            let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, chain);
+
+            ChaindexingRepo::run_in_transaction(conn, move |conn| {
+                async move {
+                    ChaindexingRepo::create_reorged_block(conn, &new_reorged_block).await;
+
+                    let event_ids = removed_events.iter().map(|e| e.id).collect();
+                    ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
+
+                    ChaindexingRepo::create_events(conn, &added_events).await;
+
+                    Ok(())
+                }
+                .boxed()
+            })
+            .await?;
+        }
+
+        Ok(())
+    }
+
     fn get_json_rpc_added_and_removed_events(
         already_ingested_events: &Vec<Event>,
         json_rpc_events: &Vec<Event>,
-    ) -> (Vec<Event>, Vec<Event>) {
+    ) -> Option<(Vec<Event>, Vec<Event>)> {
         let already_ingested_events_set: HashSet<_> =
             already_ingested_events.clone().into_iter().collect();
         let json_rpc_events_set: HashSet<_> = json_rpc_events.clone().into_iter().collect();
 
-        let json_rpc_added_events = json_rpc_events
+        let added_events: Vec<_> = json_rpc_events
             .clone()
             .into_iter()
             .filter(|e| !already_ingested_events_set.contains(e))
             .collect();
 
-        let json_rpc_removed_events = already_ingested_events
+        let removed_events: Vec<_> = already_ingested_events
             .clone()
             .into_iter()
             .filter(|e| !json_rpc_events_set.contains(e))
             .collect();
 
-        (json_rpc_added_events, json_rpc_removed_events)
+        if added_events.is_empty() && removed_events.is_empty() {
+            None
+        } else {
+            Some((added_events, removed_events))
+        }
+    }
+
+    fn get_earliest_block_number((add_events, removed_events): (&Vec<Event>, &Vec<Event>)) -> i64 {
+        let earliest_block_number =
+            add_events.iter().min_by_key(|e| e.block_number).unwrap().block_number;
+        let earliest_block_number = min(
+            earliest_block_number,
+            removed_events.iter().min_by_key(|e| e.block_number).unwrap().block_number,
+        );
+
+        earliest_block_number
     }
 }
 

@@ -1,9 +1,23 @@
+use std::collections::HashMap;
+
 use super::STATE_VERSIONS_TABLE_PREFIX;
 
 // Since contract states are rebuildable from ground up, we can
 // easen the type strictness for consumer applications.
+// Trait/Callback? this way, consumer apps can statically visualize their migrations
 pub trait ContractStateMigrations: Send + Sync {
     fn migrations(&self) -> Vec<&'static str>;
+
+    fn get_table_names(&self) -> Vec<String> {
+        self.migrations().iter().fold(vec![], |mut table_names, migration| {
+            if migration.starts_with("CREATE TABLE IF NOT EXISTS") {
+                let table_name = extract_table_name(&migration);
+                table_names.push(table_name)
+            }
+
+            table_names
+        })
+    }
 
     fn get_migrations(&self) -> Vec<String> {
         self.migrations()
@@ -12,7 +26,12 @@ pub trait ContractStateMigrations: Send + Sync {
                 validate_migration(user_migration);
 
                 if user_migration.starts_with("CREATE TABLE IF NOT EXISTS") {
-                    let create_state_table_migration = user_migration.to_owned().to_owned();
+                    let create_state_views_table_migration =
+                        append_migration(&user_migration, &get_remaining_state_views_migration());
+                    let create_state_views_table_migration =
+                        DefaultMigration::remove_repeating_occurrences(
+                            &create_state_views_table_migration,
+                        );
 
                     let create_state_versions_table_migration = append_migration(
                         &user_migration,
@@ -33,7 +52,7 @@ pub trait ContractStateMigrations: Send + Sync {
                         );
 
                     vec![
-                        create_state_table_migration,
+                        create_state_views_table_migration,
                         create_state_versions_table_migration,
                         state_versions_unique_index_migration,
                     ]
@@ -92,7 +111,7 @@ fn get_unique_index_migration_for_state_versions(
     table_fields: Vec<String>,
 ) -> String {
     let table_fields: Vec<String> =
-        table_fields.into_iter().filter(|f| f.as_str() != "state_version_id").collect();
+        table_fields.into_iter().filter(|f| f.as_str() != "id").collect();
     let fields_by_comma = table_fields.join(",");
 
     format!(
@@ -123,28 +142,19 @@ fn append_migration(migration: &str, migration_to_append: &str) -> String {
 }
 
 fn get_remaining_state_versions_migration() -> String {
-    // No need for IDs, we will be using each field in the state
-    // and delegate the responsibility of creating unique states
-    // to the user, using whatever means necessary. The user can
-    // decide to use the `contract_address`,
+    // TOOO:: Maybe add `chaindexing_` here to prevent the user from
+    // overriding these fields (including state_version_group_id)
     format!(
         "state_version_id BIGSERIAL PRIMARY KEY,
         state_version_is_deleted BOOL NOT NULL default false,
         {}
         ",
-        get_remaining_state_fields_migration()
+        DefaultMigration::get()
     )
 }
 
-fn get_remaining_state_fields_migration() -> String {
-    "state_version_contract_address TEXT NOT NULL,
-    state_chain_id INTEGER NOT NULL,
-    state_version_block_hash TEXT NOT NULL,
-    state_version_block_number BIGINT NOT NULL,
-    state_version_transaction_hash TEXT NOT NULL,
-    state_version_transaction_index BIGINT NOT NULL,
-    state_version_log_index BIGINT NOT NULL)"
-        .to_string()
+fn get_remaining_state_views_migration() -> String {
+    DefaultMigration::get().to_string()
 }
 
 fn set_state_versions_table_name(migration: &str) -> String {
@@ -152,6 +162,72 @@ fn set_state_versions_table_name(migration: &str) -> String {
         "CREATE TABLE IF NOT EXISTS ",
         format!("CREATE TABLE IF NOT EXISTS {STATE_VERSIONS_TABLE_PREFIX}",).as_str(),
     )
+}
+
+struct DefaultMigration;
+
+impl DefaultMigration {
+    pub fn get() -> String {
+        "state_version_group_id UUID NOT NULL,
+        contract_address TEXT NOT NULL,
+        chain_id INTEGER NOT NULL,
+        block_hash TEXT NOT NULL,
+        block_number BIGINT NOT NULL,
+        transaction_hash TEXT NOT NULL,
+        transaction_index BIGINT NOT NULL,
+        log_index BIGINT NOT NULL)"
+            .to_string()
+    }
+
+    pub fn get_fields() -> &'static [&'static str] {
+        &[
+            "contract_address",
+            "chain_id",
+            "block_hash",
+            "block_number",
+            "transaction_hash",
+            "transaction_index",
+            "log_index",
+        ]
+    }
+
+    fn remove_repeating_occurrences(migration: &str) -> String {
+        let repeating_state_fields: Vec<_> = Self::get_fields()
+            .iter()
+            .filter(|field| migration.matches(*field).count() > 1)
+            .collect();
+
+        let mut repeating_state_fields_count = repeating_state_fields.iter().fold(
+            HashMap::new(),
+            |mut repeating_field_count, field| {
+                repeating_field_count.insert(*field, 0 as u8);
+
+                repeating_field_count
+            },
+        );
+
+        migration
+            .split(",")
+            .fold(vec![], |mut unique_migration_tokens, migration_token| {
+                match repeating_state_fields.iter().find(|field| migration_token.contains(**field))
+                {
+                    Some(field) => {
+                        let previous_count = repeating_state_fields_count.get(field).unwrap();
+
+                        if *previous_count != 1 {
+                            let new_count = previous_count + 1;
+                            repeating_state_fields_count.insert(field, new_count);
+
+                            unique_migration_tokens.push(migration_token)
+                        }
+                    }
+                    None => unique_migration_tokens.push(migration_token),
+                }
+
+                unique_migration_tokens
+            })
+            .join(",")
+    }
 }
 
 #[cfg(test)]
@@ -169,13 +245,28 @@ mod contract_state_migrations_get_migration_test {
     }
 
     #[test]
-    fn leaves_create_state_migrations_untouched() {
+    fn appends_default_migration_to_create_state_views_migrations() {
         let contract_state = test_contract_state();
+        let migrations = contract_state.get_migrations();
+        let create_state_migration = migrations.first().unwrap();
 
-        assert_eq!(
-            contract_state.get_migrations().first().unwrap(),
+        assert_ne!(
+            create_state_migration,
             contract_state.migrations().first().unwrap()
         );
+
+        assert_default_migration(&create_state_migration);
+    }
+
+    #[test]
+    fn removes_repeating_default_migrations_in_create_state_views_migration() {
+        let contract_state = test_contract_state();
+        let migrations = contract_state.get_migrations();
+        let create_state_migration = migrations.first().unwrap();
+
+        DefaultMigration::get_fields().iter().for_each(|state_field| {
+            assert_eq!(create_state_migration.matches(state_field).count(), 1)
+        });
     }
 
     #[test]
@@ -186,18 +277,13 @@ mod contract_state_migrations_get_migration_test {
         let create_state_versions_migration = migrations.last().unwrap();
 
         assert!(create_state_versions_migration.contains(STATE_VERSIONS_TABLE_PREFIX));
-        assert_state_version_fields_in_migration(create_state_versions_migration);
+        assert_default_migration(create_state_versions_migration);
     }
 
-    fn assert_state_version_fields_in_migration(migration: &str) {
-        const BLOCK_FIELDS: [&'static str; 5] = [
-            "state_version_block_hash",
-            "state_version_block_number",
-            "state_version_transaction_hash",
-            "state_version_transaction_index",
-            "state_version_log_index",
-        ];
-        BLOCK_FIELDS.iter().for_each(|field| assert!(migration.contains(field)));
+    fn assert_default_migration(migration: &str) {
+        DefaultMigration::get_fields()
+            .iter()
+            .for_each(|field| assert!(migration.contains(field)));
     }
 
     #[test]
