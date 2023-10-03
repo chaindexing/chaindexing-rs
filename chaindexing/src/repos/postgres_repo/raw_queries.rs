@@ -51,6 +51,39 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
         Self::execute_raw_query_in_txn(client, &query).await;
     }
+
+    async fn update_every_next_block_number_to_handle_from_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        chain_id: i32,
+        block_number: i64,
+    ) {
+        let query = format!(
+            "UPDATE chaindexing_contract_addresses 
+        WHERE chain_id = {chain_id}
+        SET next_block_number_to_handle_from = {block_number}"
+        );
+
+        Self::execute_raw_query_in_txn(client, &query).await;
+    }
+
+    async fn update_reorged_blocks_as_handled_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        reorged_block_ids: &Vec<i32>,
+    ) {
+        let query = format!(
+            "UPDATE chaindexing_reorged_blocks
+        WHERE id IN ({reorged_block_ids})
+        SET handled_at = {handled_at}",
+            reorged_block_ids = reorged_block_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<String>>()
+                .join(","),
+            handled_at = chrono::Utc::now().naive_utc().to_string(),
+        );
+
+        Self::execute_raw_query_in_txn(client, &query).await;
+    }
 }
 
 #[async_trait::async_trait]

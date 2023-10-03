@@ -6,7 +6,7 @@ mod raw_queries;
 use crate::{
     contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
-    ResetCount, Streamable,
+    ReorgedBlock, ResetCount, Streamable, UnsavedReorgedBlock,
 };
 use diesel_async::RunQueryDsl;
 
@@ -167,6 +167,29 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
+    }
+
+    async fn create_reorged_block<'a>(
+        conn: &mut Self::Conn<'a>,
+        reorged_block: &UnsavedReorgedBlock,
+    ) {
+        use crate::diesels::schema::chaindexing_reorged_blocks::dsl::*;
+
+        diesel::insert_into(chaindexing_reorged_blocks)
+            .values(reorged_block)
+            .execute(conn)
+            .await
+            .unwrap();
+    }
+
+    async fn get_unhandled_reorged_blocks<'a>(conn: &mut Self::Conn<'a>) -> Vec<ReorgedBlock> {
+        use crate::diesels::schema::chaindexing_reorged_blocks::dsl::*;
+
+        chaindexing_reorged_blocks
+            .filter(handled_at.is_null())
+            .load(conn)
+            .await
+            .unwrap()
     }
 
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>) {

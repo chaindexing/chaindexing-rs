@@ -1,75 +1,149 @@
+use std::sync::Arc;
 use std::{collections::HashMap, fmt::Debug};
 
 mod migrations;
+mod state_versions;
+mod state_views;
 
+pub use crate::event_handlers::{EventHandlerContext, UseEventHandlerContext};
 use crate::Event;
-use crate::{
-    ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
-};
+use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, LoadsDataWithRawQuery};
 pub use migrations::ContractStateMigrations;
+
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use state_versions::{StateVersion, StateVersions, STATE_VERSIONS_TABLE_PREFIX};
+use state_views::{StateView, StateViews};
 
+pub struct ContractStates;
+
+impl ContractStates {
+    pub async fn backtrack_states<'a>(
+        state_migrations: &Vec<Arc<dyn ContractStateMigrations>>,
+        chain_id: i32,
+        block_number: i64,
+        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+    ) {
+        // Get all state versions from that block_number in that chain per table
+        // Delete all gotten state versions per table
+        // Refresh all corresponding states using the state group ids
+        let table_names = Self::get_all_table_names(&state_migrations);
+
+        for table_name in table_names {
+            let state_versions =
+                StateVersions::get(block_number, chain_id, &table_name, client).await;
+
+            let state_version_ids = StateVersions::get_ids(&state_versions);
+            StateVersions::delete_by_ids(&state_version_ids, &table_name, client).await;
+
+            let state_version_group_ids = StateVersions::get_group_ids(&state_versions);
+            StateViews::refresh(&state_version_group_ids, &table_name, client).await;
+        }
+    }
+
+    pub fn get_all_table_names(
+        state_migrations: &Vec<Arc<dyn ContractStateMigrations>>,
+    ) -> Vec<String> {
+        state_migrations
+            .iter()
+            .flat_map(|state_migration| state_migration.get_table_names())
+            .collect()
+    }
+}
 // TODO:
 // Investigate HashMap Interface Vs Json (Serde)
 // Move Queries to Repo level and prevent SQLInjection
 // Create Into<StateVersionEvent> to extract events fields we care about once and avoid passing around the whole Event struct
 
-#[derive(Debug)]
-pub enum ContractStateError {
-    AlreadyInserted,
-    NotFound,
-}
-
 #[async_trait::async_trait]
 pub trait ContractState:
-    DeserializeOwned + Serialize + Debug + Sync + Send + Clone + 'static
+    DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static
 {
     fn table_name() -> &'static str;
 
+    fn to_view(&self) -> HashMap<String, String> {
+        let state: serde_json::Value = serde_json::to_value(self).unwrap();
+
+        let map: HashMap<String, serde_json::Value> = serde_json::from_value(state).unwrap();
+
+        serde_map_to_string_map(map)
+    }
+
+    async fn create<'a>(&self, context: &EventHandlerContext) {
+        let event = &context.event;
+        let client = context.get_raw_query_client();
+
+        let state_view = self.to_view();
+        let table_name = Self::table_name();
+
+        let latest_state_version =
+            StateVersion::create(&state_view, table_name, event, client).await;
+        StateView::refresh(&latest_state_version, table_name, client).await;
+    }
+
+    async fn update<'a>(&self, updates: HashMap<String, String>, context: &EventHandlerContext) {
+        let event = &context.event;
+        let client = context.get_raw_query_client();
+
+        let state_view = self.to_view();
+        let table_name = Self::table_name();
+
+        let latest_state_version =
+            StateVersion::update(&state_view, &updates, table_name, event, client).await;
+        StateView::refresh(&latest_state_version, table_name, client).await;
+    }
+
+    async fn delete<'a>(&self, context: &EventHandlerContext) {
+        let event = &context.event;
+        let client = context.get_raw_query_client();
+
+        let state_view = self.to_view();
+        let table_name = Self::table_name();
+
+        let latest_state_version =
+            StateVersion::delete(&state_view, table_name, event, client).await;
+        StateView::refresh(&latest_state_version, table_name, client).await;
+    }
+
     async fn read_one<'a>(
         filters: HashMap<String, String>,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Result<Option<Self>, ContractStateError>
-    where
-        Self: Sized,
-    {
-        let states = Self::read_many(filters, event, client).await?;
-        Ok(states.first().cloned())
+        context: &EventHandlerContext,
+    ) -> Option<Self> {
+        let states = Self::read_many(filters, context).await;
+
+        states.first().cloned()
     }
 
     async fn read_many<'a>(
         filters: HashMap<String, String>,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Result<Vec<Self>, ContractStateError>
-    where
-        Self: Sized,
-    {
+        context: &EventHandlerContext,
+    ) -> Vec<Self> {
+        let client = context.get_raw_query_client();
+        let Event {
+            block_number,
+            log_index,
+            ..
+        } = context.event;
+
         match Self::get_state_fields(client).await {
-            None => Ok(vec![]),
+            None => vec![],
             Some(state_fields) => {
                 let raw_query = format!(
                     "SELECT DISTINCT ON ({state_fields_by_comma}) * FROM {table_name}
                     WHERE {filters} 
-                    AND state_version_block_number <= {block_number}
-                    AND state_version_log_index < {log_index}
-                    ORDER BY {state_fields_by_comma},state_version_block_number DESC",
+                    AND block_number <= {block_number}
+                    AND log_index < {log_index}
+                    ORDER BY {state_fields_by_comma},block_number DESC",
                     state_fields_by_comma = state_fields.join(","),
-                    table_name = StateVersions::table_name(Self::table_name()),
+                    table_name = StateVersion::table_name(Self::table_name()),
                     filters = to_and_filters(&filters),
-                    block_number = event.block_number,
-                    log_index = event.log_index
+                    // N/B: Event Context comparison naively demonstrates parallel indexing future approach
+                    block_number = block_number,
+                    log_index = log_index
                 );
 
-                let states: Vec<Self> =
-                    ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(
-                        client, &raw_query,
-                    )
-                    .await;
-
-                Ok(states)
+                ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query)
+                    .await
             }
         }
     }
@@ -79,230 +153,20 @@ pub trait ContractState:
     ) -> Option<Vec<String>> {
         Self::get_random_state(client)
             .await
-            .and_then(|random_state| Some(random_state.to_map().keys().cloned().collect()))
+            .and_then(|random_state| Some(random_state.get_fields()))
     }
-
+    fn get_fields(&self) -> Vec<String> {
+        self.to_view().keys().cloned().collect()
+    }
     async fn get_random_state<'a>(client: &ChaindexingRepoRawQueryTxnClient<'a>) -> Option<Self> {
         let table_name = Self::table_name();
         let query = format!("SELECT * from {table_name} limit 1");
 
         ChaindexingRepo::load_data_from_raw_query_with_txn_client(client, &query).await
     }
-
-    fn to_map(&self) -> HashMap<String, String> {
-        let state: serde_json::Value = serde_json::to_value(self).unwrap();
-
-        let map: HashMap<String, serde_json::Value> = serde_json::from_value(state).unwrap();
-
-        serde_map_to_string_map(map)
-    }
-
-    async fn create<'a>(
-        &self,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Result<(), ContractStateError> {
-        let state = self.to_map();
-        StateVersions::create(&state, &Self::table_name(), &event, client).await;
-        Self::refresh_state_from_lastest_version(&state, event, client).await;
-        Ok(())
-    }
-    async fn update<'a>(
-        &self,
-        updates: HashMap<String, String>,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Result<(), ContractStateError> {
-        let state = self.to_map();
-        StateVersions::update(&state, &updates, &Self::table_name(), event, client).await;
-        Self::refresh_state_from_lastest_version(&state, event, client).await;
-        Ok(())
-    }
-    async fn delete<'a>(
-        &self,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Result<(), ContractStateError> {
-        let state = self.to_map();
-        StateVersions::delete(&state, &Self::table_name(), event, client).await;
-        Self::refresh_state_from_lastest_version(&state, event, client).await;
-        Ok(())
-    }
-
-    async fn refresh_state_from_lastest_version<'a>(
-        state: &HashMap<String, String>,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        let latest_state_version =
-            StateVersions::get_latest(state, &Self::table_name(), event, client).await;
-        let latest_state = Self::extract_state_from_version(state, &latest_state_version);
-        Self::refresh_state(&state, &latest_state, client).await;
-    }
-    fn extract_state_from_version(
-        state: &HashMap<String, String>,
-        state_version: &HashMap<String, String>,
-    ) -> HashMap<String, String> {
-        state.keys().into_iter().fold(HashMap::new(), |mut state, key| {
-            state.insert(key.to_owned(), state_version.get(key).unwrap().to_owned());
-
-            state
-        })
-    }
-    async fn refresh_state<'a>(
-        old_state: &HashMap<String, String>,
-        new_state: &HashMap<String, String>,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        Self::delete_old_state(old_state, client).await;
-        Self::insert_new_state(new_state, client).await;
-    }
-    async fn delete_old_state<'a>(
-        old_state: &HashMap<String, String>,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        let query = format!(
-            "DELETE FROM {table_name} WHERE {filters}",
-            table_name = Self::table_name(),
-            filters = to_and_filters(old_state)
-        );
-
-        ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
-    }
-    async fn insert_new_state<'a>(
-        new_state: &HashMap<String, String>,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        let (columns, values) = to_columns_and_values(&new_state);
-        let query = format!(
-            "INSERT INTO {table_name} ({columns}) VALUES ({values})",
-            table_name = Self::table_name(),
-            columns = columns.join(","),
-            values = values.join(",")
-        );
-
-        ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
-    }
 }
 
-pub struct StateVersions;
-
-const STATE_VERSIONS_TABLE_PREFIX: &'static str = "chaindexing_state_versions_for_";
-
-impl StateVersions {
-    fn table_name(state_table_name: &str) -> String {
-        let mut table_name = STATE_VERSIONS_TABLE_PREFIX.to_string();
-        table_name.push_str(state_table_name);
-        table_name
-    }
-
-    async fn get_latest<'a>(
-        state: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> HashMap<String, String> {
-        let query = format!(
-            "SELECT * FROM {table_name} 
-            WHERE {filters} 
-            AND state_version_block_number <= {block_number}
-            AND state_version_log_index <= {log_index}
-            ORDER BY state_version_block_number, state_version_log_index
-            LIMIT 1",
-            table_name = Self::table_name(&state_table_name),
-            filters = to_and_filters(state),
-            block_number = event.block_number,
-            log_index = event.log_index
-        );
-
-        serde_map_to_string_map(
-            ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
-                HashMap<String, serde_json::Value>,
-            >(client, &query)
-            .await
-            .unwrap(),
-        )
-    }
-    pub async fn create<'a>(
-        state_version: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        Self::append(&state_version, state_table_name, event, client).await;
-    }
-    pub async fn update<'a>(
-        state_version: &HashMap<String, String>,
-        updates: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        let mut state_version = state_version.clone();
-        state_version.extend(updates.clone());
-        Self::append(&state_version, state_table_name, event, client).await;
-    }
-    pub async fn delete<'a>(
-        state_version: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        let mut state_version = state_version.clone();
-        state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
-        Self::append(&state_version, state_table_name, event, client).await;
-    }
-    async fn append<'a>(
-        state_version: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) {
-        let mut state_version = state_version.clone();
-
-        state_version.extend(Self::extract_part_from_event(event));
-        let (columns, values) = to_columns_and_values(&state_version);
-        let query = format!(
-            "INSERT INTO {table_name} ({columns}) VALUES ({values})",
-            table_name = Self::table_name(state_table_name),
-            columns = columns.join(","),
-            values = values.join(",")
-        );
-
-        ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
-    }
-    fn extract_part_from_event(event: &Event) -> HashMap<String, String> {
-        HashMap::from([
-            (
-                "state_version_contract_address".to_string(),
-                event.contract_address.to_owned(),
-            ),
-            ("state_chain_id".to_string(), event.chain_id.to_string()),
-            (
-                "state_version_transaction_hash".to_string(),
-                event.transaction_hash.to_owned(),
-            ),
-            (
-                "state_version_transaction_index".to_string(),
-                event.transaction_index.to_string(),
-            ),
-            (
-                "state_version_log_index".to_string(),
-                event.log_index.to_string(),
-            ),
-            (
-                "state_version_block_number".to_string(),
-                event.block_number.to_string(),
-            ),
-            (
-                "state_version_block_hash".to_string(),
-                event.block_hash.to_owned(),
-            ),
-        ])
-    }
-}
-
-fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
+pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
     state.into_iter().fold(
         (vec![], vec![]),
         |(mut columns, mut values), (column, value)| {
@@ -314,7 +178,7 @@ fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<S
     )
 }
 
-fn to_and_filters(state: &HashMap<String, String>) -> String {
+pub fn to_and_filters(state: &HashMap<String, String>) -> String {
     let filters = state.iter().fold(vec![], |mut filters, (column, value)| {
         filters.push(format!("{column} = '{value}'"));
 
@@ -324,7 +188,7 @@ fn to_and_filters(state: &HashMap<String, String>) -> String {
     filters.join(" AND ")
 }
 
-fn serde_map_to_string_map(
+pub fn serde_map_to_string_map(
     serde_map: HashMap<String, serde_json::Value>,
 ) -> HashMap<String, String> {
     serde_map.iter().fold(HashMap::new(), |mut map, (key, value)| {

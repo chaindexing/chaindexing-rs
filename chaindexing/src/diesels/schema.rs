@@ -39,4 +39,14 @@ diesel::table! {
   }
 }
 
+diesel::table! {
+  chaindexing_reorged_blocks (id) {
+      id -> Int4,
+      block_number -> Int8,
+      chain_id -> Int4,
+      handled_at -> Nullable<Timestamptz>,
+      inserted_at -> Timestamptz,
+  }
+}
+
 diesel::allow_tables_to_appear_in_same_query!(chaindexing_contract_addresses, chaindexing_events,);

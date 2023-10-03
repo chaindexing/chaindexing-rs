@@ -15,6 +15,13 @@ impl RepoMigrations for PostgresRepo {
         SQLikeMigrations::drop_events()
     }
 
+    fn create_reorged_blocks_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_reorged_blocks()
+    }
+    fn drop_reorged_blocks_migration() -> &'static [&'static str] {
+        SQLikeMigrations::drop_reorged_blocks()
+    }
+
     fn create_reset_counts_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_reset_counts()
     }

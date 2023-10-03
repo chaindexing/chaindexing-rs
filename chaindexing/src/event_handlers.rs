@@ -1,23 +1,47 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use futures_util::StreamExt;
+mod handle_events;
+mod handled_events;
+
 use tokio::{sync::Mutex, time::interval};
 
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
-use crate::{
-    ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient,
-    ContractAddress, ContractStateError, ExecutesWithRawQuery, HasRawQueryClient, Streamable,
-};
+use crate::{ChaindexingRepoRawQueryTxnClient, HasRawQueryClient};
+
+use handle_events::HandleEvents;
+use handled_events::MaybeBacktrackHandledEvents;
+
+#[derive(Clone)]
+pub struct EventHandlerContext<'a> {
+    pub event: Event,
+    raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+}
+
+impl<'a> EventHandlerContext<'a> {
+    fn new(event: Event, client: &'a ChaindexingRepoRawQueryTxnClient<'a>) -> Self {
+        Self {
+            event,
+            raw_query_client: client,
+        }
+    }
+}
+
+pub trait UseEventHandlerContext<'a> {
+    fn get_raw_query_client(&self) -> &'a ChaindexingRepoRawQueryTxnClient<'a>;
+}
+
+impl<'a> UseEventHandlerContext<'a> for EventHandlerContext<'a> {
+    fn get_raw_query_client(&self) -> &'a ChaindexingRepoRawQueryTxnClient<'a> {
+        self.raw_query_client
+    }
+}
 
 #[async_trait::async_trait]
 pub trait EventHandler: Send + Sync {
-    async fn handle_event<'a>(
-        &self,
-        event: Event,
-        raw_query_client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Result<(), ContractStateError>;
+    async fn handle_event<'a>(&self, event_context: EventHandlerContext<'a>);
 }
 
+// TODO: Use just raw query client through for mutations
 pub struct EventHandlers;
 
 impl EventHandlers {
@@ -37,78 +61,21 @@ impl EventHandlers {
             loop {
                 interval.tick().await;
 
-                Self::handle_events(
+                HandleEvents::run(
                     conn.clone(),
                     &event_handlers_by_event_abi,
                     &mut raw_query_client,
                 )
                 .await;
-            }
-        });
-    }
 
-    pub async fn handle_events<'a>(
-        conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-        event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
-        raw_query_client: &mut ChaindexingRepoRawQueryClient,
-    ) {
-        let mut contract_addresses_stream =
-            ChaindexingRepo::get_contract_addresses_stream(conn.clone());
-
-        while let Some(contract_addresses) = contract_addresses_stream.next().await {
-            for contract_address in contract_addresses {
-                Self::handle_events_for_contract_address(
+                let state_migrations = Contracts::get_state_migrations(&config.contracts);
+                MaybeBacktrackHandledEvents::run(
                     conn.clone(),
-                    &contract_address,
-                    event_handlers_by_event_abi,
-                    raw_query_client,
-                )
-                .await
-            }
-        }
-    }
-
-    pub async fn handle_events_for_contract_address<'a>(
-        conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-        contract_address: &ContractAddress,
-        event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
-        raw_query_client: &mut ChaindexingRepoRawQueryClient,
-    ) {
-        let mut events_stream = ChaindexingRepo::get_events_stream(
-            conn.clone(),
-            contract_address.next_block_number_to_handle_from,
-        );
-
-        while let Some(events) = events_stream.next().await {
-            // TODO: Move this filter to the stream query level
-            let mut events: Vec<Event> = events
-                .into_iter()
-                .filter(|event| {
-                    event.match_contract_address(&contract_address.address) && event.not_removed()
-                })
-                .collect();
-            events.sort_by_key(|e| (e.block_number, e.log_index));
-
-            let raw_query_txn_client =
-                ChaindexingRepo::get_raw_query_txn_client(raw_query_client).await;
-
-            for event in events.clone() {
-                let event_handler = event_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
-
-                event_handler.handle_event(event.clone(), &raw_query_txn_client).await.unwrap();
-            }
-
-            if let Some(Event { block_number, .. }) = events.last() {
-                let next_block_number_to_handle_from = block_number + 1;
-                ChaindexingRepo::update_next_block_number_to_handle_from_in_txn(
-                    &raw_query_txn_client,
-                    contract_address.id(),
-                    next_block_number_to_handle_from,
+                    &mut raw_query_client,
+                    &state_migrations,
                 )
                 .await;
             }
-
-            ChaindexingRepo::commit_raw_query_txns(raw_query_txn_client).await;
-        }
+        });
     }
 }

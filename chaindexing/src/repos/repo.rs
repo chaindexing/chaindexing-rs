@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use crate::{
     contracts::{ContractAddressID, UnsavedContractAddress},
     events::Event,
-    ContractAddress, ResetCount,
+    ContractAddress, ReorgedBlock, ResetCount, UnsavedReorgedBlock,
 };
 
 #[derive(Debug, Display)]
@@ -61,6 +61,12 @@ pub trait Repo:
         block_number: i64,
     );
 
+    async fn create_reorged_block<'a>(
+        conn: &mut Self::Conn<'a>,
+        reorged_block: &UnsavedReorgedBlock,
+    );
+    async fn get_unhandled_reorged_blocks<'a>(conn: &mut Self::Conn<'a>) -> Vec<ReorgedBlock>;
+
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>);
     async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount>;
 }
@@ -86,6 +92,17 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         client: &Self::RawQueryTxnClient<'a>,
         contract_address_id: ContractAddressID,
         block_number: i64,
+    );
+
+    async fn update_every_next_block_number_to_handle_from_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        chain_id: i32,
+        block_number: i64,
+    );
+
+    async fn update_reorged_blocks_as_handled_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        reorged_block_ids: &Vec<i32>,
     );
 }
 
@@ -126,6 +143,8 @@ pub trait RepoMigrations: Migratable {
     fn create_events_migration() -> &'static [&'static str];
     fn drop_events_migration() -> &'static [&'static str];
     fn create_reset_counts_migration() -> &'static [&'static str];
+    fn create_reorged_blocks_migration() -> &'static [&'static str];
+    fn drop_reorged_blocks_migration() -> &'static [&'static str];
 
     fn get_internal_migrations() -> Vec<&'static str> {
         [
@@ -205,6 +224,19 @@ impl SQLikeMigrations {
     }
     pub fn drop_events() -> &'static [&'static str] {
         &["DROP TABLE IF EXISTS chaindexing_events"]
+    }
+
+    pub fn create_reorged_blocks() -> &'static [&'static str] {
+        &["CREATE TABLE IF NOT EXISTS chaindexing_reorged_blocks (
+                id SERIAL PRIMARY KEY,
+                chain_id INTEGER NOT NULL,
+                block_number BIGINT NOT NULL,
+                handled_at TIMESTAMPTZ
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
+            )"]
+    }
+    pub fn drop_reorged_blocks() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_reorged_blocks"]
     }
 
     pub fn create_reset_counts() -> &'static [&'static str] {

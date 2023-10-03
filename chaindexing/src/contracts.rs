@@ -73,8 +73,11 @@ impl Contract {
         self
     }
 
-    pub fn add_state_migrations(mut self, state: impl ContractStateMigrations + 'static) -> Self {
-        self.state_migrations.push(Arc::new(state));
+    pub fn add_state_migrations(
+        mut self,
+        state_migration: impl ContractStateMigrations + 'static,
+    ) -> Self {
+        self.state_migrations.push(Arc::new(state_migration));
 
         self
     }
