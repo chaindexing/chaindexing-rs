@@ -24,9 +24,6 @@ impl ContractStates {
         block_number: i64,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
-        // Get all state versions from that block_number in that chain per table
-        // Delete all gotten state versions per table
-        // Refresh all corresponding states using the state group ids
         let table_names = Self::get_all_table_names(&state_migrations);
 
         for table_name in table_names {
@@ -50,11 +47,11 @@ impl ContractStates {
             .collect()
     }
 }
+
 // TODO:
 // Investigate HashMap Interface Vs Json (Serde)
 // Move Queries to Repo level and prevent SQLInjection
 // Create Into<StateVersionEvent> to extract events fields we care about once and avoid passing around the whole Event struct
-
 #[async_trait::async_trait]
 pub trait ContractState:
     DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static
