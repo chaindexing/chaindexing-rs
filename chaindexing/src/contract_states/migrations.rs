@@ -39,6 +39,10 @@ pub trait ContractStateMigrations: Send + Sync {
                     );
                     let create_state_versions_table_migration =
                         set_state_versions_table_name(&create_state_versions_table_migration);
+                    let create_state_versions_table_migration =
+                        DefaultMigration::remove_repeating_occurrences(
+                            &create_state_versions_table_migration,
+                        );
 
                     let state_versions_table_name =
                         extract_table_name(&create_state_versions_table_migration);
@@ -111,7 +115,7 @@ fn get_unique_index_migration_for_state_versions(
     table_fields: Vec<String>,
 ) -> String {
     let table_fields: Vec<String> =
-        table_fields.into_iter().filter(|f| f.as_str() != "id").collect();
+        table_fields.into_iter().filter(|f| f.as_str() != "state_version_id").collect();
     let fields_by_comma = table_fields.join(",");
 
     format!(

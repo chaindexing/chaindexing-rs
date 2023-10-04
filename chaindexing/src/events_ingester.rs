@@ -357,15 +357,20 @@ impl ConfirmationExecution {
         }
     }
 
-    fn get_earliest_block_number((add_events, removed_events): (&Vec<Event>, &Vec<Event>)) -> i64 {
-        let earliest_block_number =
-            add_events.iter().min_by_key(|e| e.block_number).unwrap().block_number;
-        let earliest_block_number = min(
-            earliest_block_number,
-            removed_events.iter().min_by_key(|e| e.block_number).unwrap().block_number,
-        );
+    fn get_earliest_block_number(
+        (added_events, removed_events): (&Vec<Event>, &Vec<Event>),
+    ) -> i64 {
+        let earliest_added_event = added_events.iter().min_by_key(|e| e.block_number);
+        let earliest_removed_event = removed_events.iter().min_by_key(|e| e.block_number);
 
-        earliest_block_number
+        match (earliest_added_event, earliest_removed_event) {
+            (None, Some(event)) => event.block_number,
+            (Some(event), None) => event.block_number,
+            (Some(earliest_added), Some(earliest_removed)) => {
+                min(earliest_added.block_number, earliest_removed.block_number)
+            }
+            _ => unreachable!("Added Events or Removed Events must have at least one entry"),
+        }
     }
 }
 

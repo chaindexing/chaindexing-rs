@@ -66,6 +66,16 @@ pub trait ContractState:
         serde_map_to_string_map(map)
     }
 
+    async fn to_complete_view<'a>(
+        &self,
+        table_name: &str,
+        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+    ) -> HashMap<String, String> {
+        let view = self.to_view();
+
+        StateView::get_complete(&view, table_name, client).await
+    }
+
     async fn create<'a>(&self, context: &EventHandlerContext) {
         let event = &context.event;
         let client = context.get_raw_query_client();
@@ -82,8 +92,8 @@ pub trait ContractState:
         let event = &context.event;
         let client = context.get_raw_query_client();
 
-        let state_view = self.to_view();
         let table_name = Self::table_name();
+        let state_view = self.to_complete_view(&table_name, &client).await;
 
         let latest_state_version =
             StateVersion::update(&state_view, &updates, table_name, event, client).await;
@@ -94,8 +104,8 @@ pub trait ContractState:
         let event = &context.event;
         let client = context.get_raw_query_client();
 
-        let state_view = self.to_view();
         let table_name = Self::table_name();
+        let state_view = self.to_complete_view(&table_name, &client).await;
 
         let latest_state_version =
             StateVersion::delete(&state_view, table_name, event, client).await;

@@ -24,7 +24,7 @@ impl StateVersions {
         let query = format!(
             "SELECT * FROM {table_name} 
             WHERE chain_id = {chain_id}
-            WHERE block_number >= {from_block_number}",
+            AND block_number >= {from_block_number}",
             table_name = StateVersion::table_name(&state_table_name),
         );
 
@@ -55,12 +55,13 @@ impl StateVersions {
 
     pub async fn delete_by_ids<'a>(
         ids: &Vec<String>,
-        table_name: &str,
+        state_table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
         let query = format!(
-            "SELECT * FROM {table_name} 
-            WHERE id IN ({ids})",
+            "DELETE FROM {table_name}
+            WHERE state_version_id IN ({ids})",
+            table_name = StateVersion::table_name(state_table_name),
             ids = ids.join(",")
         );
 
@@ -74,10 +75,10 @@ impl StateVersions {
     ) -> Vec<HashMap<String, String>> {
         let query = format!(
             "SELECT DISTINCT ON (state_version_group_id) * FROM {table_name} 
-            WHERE group_id IN ({group_ids}) 
+            WHERE state_version_group_id IN ({group_ids}) 
             ORDER BY state_version_group_id, block_number, log_index DESC",
             table_name = StateVersion::table_name(&state_table_name),
-            group_ids = group_ids.join(",")
+            group_ids = group_ids.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",")
         );
 
         ChaindexingRepo::load_data_list_from_raw_query_with_txn_client::<

@@ -45,8 +45,8 @@ impl ExecutesWithRawQuery for PostgresRepo {
     ) {
         let query = format!(
             "UPDATE chaindexing_contract_addresses 
-        WHERE contract_address_id = {contract_address_id}
-        SET next_block_number_to_handle_from = {block_number}"
+        SET next_block_number_to_handle_from = {block_number}
+        WHERE id = {contract_address_id}"
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
@@ -59,8 +59,8 @@ impl ExecutesWithRawQuery for PostgresRepo {
     ) {
         let query = format!(
             "UPDATE chaindexing_contract_addresses 
-        WHERE chain_id = {chain_id}
-        SET next_block_number_to_handle_from = {block_number}"
+        SET next_block_number_to_handle_from = {block_number}
+        WHERE chain_id = {chain_id}"
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
@@ -72,8 +72,8 @@ impl ExecutesWithRawQuery for PostgresRepo {
     ) {
         let query = format!(
             "UPDATE chaindexing_reorged_blocks
-        WHERE id IN ({reorged_block_ids})
-        SET handled_at = {handled_at}",
+        SET handled_at = '{handled_at}'
+        WHERE id IN ({reorged_block_ids})",
             reorged_block_ids = reorged_block_ids
                 .iter()
                 .map(|id| id.to_string())
