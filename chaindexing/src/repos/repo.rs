@@ -150,6 +150,7 @@ pub trait RepoMigrations: Migratable {
         [
             Self::create_contract_addresses_migration(),
             Self::create_events_migration(),
+            Self::create_reorged_blocks_migration(),
         ]
         .concat()
     }
@@ -158,6 +159,7 @@ pub trait RepoMigrations: Migratable {
         [
             Self::drop_contract_addresses_migration(),
             Self::drop_events_migration(),
+            Self::drop_reorged_blocks_migration(),
         ]
         .concat()
     }
@@ -231,7 +233,7 @@ impl SQLikeMigrations {
                 id SERIAL PRIMARY KEY,
                 chain_id INTEGER NOT NULL,
                 block_number BIGINT NOT NULL,
-                handled_at TIMESTAMPTZ
+                handled_at TIMESTAMPTZ,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
             )"]
     }

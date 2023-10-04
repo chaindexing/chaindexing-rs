@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 pub use crate::event_handlers::{EventHandlerContext, UseEventHandlerContext};
-use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery};
+use crate::{
+    ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
+};
 
 use super::state_versions::{StateVersion, StateVersions, STATE_VERSIONS_UNIQUE_FIELDS};
-use super::to_columns_and_values;
+use super::{serde_map_to_string_map, to_and_filters, to_columns_and_values};
 
 pub struct StateViews;
 
@@ -25,6 +27,25 @@ impl StateViews {
 pub struct StateView;
 
 impl StateView {
+    pub async fn get_complete<'a>(
+        state_view: &HashMap<String, String>,
+        table_name: &str,
+        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+    ) -> HashMap<String, String> {
+        let query = format!(
+            "SELECT * FROM {table_name} WHERE {filters}",
+            filters = to_and_filters(state_view),
+        );
+
+        serde_map_to_string_map(
+            ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
+                HashMap<String, serde_json::Value>,
+            >(client, &query)
+            .await
+            .unwrap(),
+        )
+    }
+
     pub async fn refresh<'a>(
         latest_state_version: &HashMap<String, String>,
         table_name: &str,
@@ -58,7 +79,7 @@ impl StateView {
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
         let query = format!(
-            "DELETE FROM {table_name} WHERE state_version_group_id = {state_version_group_id}",
+            "DELETE FROM {table_name} WHERE state_version_group_id = '{state_version_group_id}'",
         );
 
         ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
