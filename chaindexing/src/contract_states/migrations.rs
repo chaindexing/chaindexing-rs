@@ -143,6 +143,7 @@ fn append_migration(migration: &str, migration_to_append: &str) -> String {
         .join(" ")
         .replace("),", ",")
         .replace("),,", ",")
+        .replace(", ,", ",")
 }
 
 fn get_remaining_state_versions_migration() -> String {
