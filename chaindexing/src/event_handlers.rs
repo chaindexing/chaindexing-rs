@@ -18,7 +18,7 @@ pub struct EventHandlerContext<'a> {
 }
 
 impl<'a> EventHandlerContext<'a> {
-    fn new(event: Event, client: &'a ChaindexingRepoRawQueryTxnClient<'a>) -> Self {
+    pub fn new(event: Event, client: &'a ChaindexingRepoRawQueryTxnClient<'a>) -> Self {
         Self {
             event,
             raw_query_client: client,

@@ -139,7 +139,7 @@ pub trait ContractState:
                     "SELECT DISTINCT ON ({state_fields_by_comma}) * FROM {table_name}
                     WHERE {filters} 
                     AND block_number <= {block_number}
-                    AND log_index < {log_index}
+                    AND log_index <= {log_index}
                     ORDER BY {state_fields_by_comma},block_number DESC",
                     state_fields_by_comma = state_fields.join(","),
                     table_name = StateVersion::table_name(Self::table_name()),
