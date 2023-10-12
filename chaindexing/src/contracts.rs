@@ -142,12 +142,18 @@ impl Contracts {
             .collect()
     }
 
-    pub fn group_by_addresses<'a>(contracts: &'a Vec<Contract>) -> HashMap<Address, &'a Contract> {
+    pub fn get_all_contract_addresses_grouped_by_address<'a>(
+        contracts: &'a Vec<Contract>,
+    ) -> HashMap<Address, &'a UnsavedContractAddress> {
         contracts.iter().fold(HashMap::new(), |mut contracts_by_addresses, contract| {
-            contract.addresses.iter().for_each(|UnsavedContractAddress { address, .. }| {
-                contracts_by_addresses
-                    .insert(Address::from_str(&*address.as_str()).unwrap(), contract);
-            });
+            contract.addresses.iter().for_each(
+                |contract_address @ UnsavedContractAddress { address, .. }| {
+                    contracts_by_addresses.insert(
+                        Address::from_str(&*address.as_str()).unwrap(),
+                        contract_address,
+                    );
+                },
+            );
 
             contracts_by_addresses
         })
@@ -157,7 +163,7 @@ impl Contracts {
 #[derive(Debug, Clone, PartialEq, Insertable)]
 #[diesel(table_name = chaindexing_contract_addresses)]
 pub struct UnsavedContractAddress {
-    contract_name: String,
+    pub contract_name: String,
     address: String,
     pub chain_id: i32,
     start_block_number: i64,
