@@ -6,7 +6,6 @@ mod state_versions;
 mod state_views;
 
 pub use crate::event_handlers::{EventHandlerContext, UseEventHandlerContext};
-use crate::Event;
 use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, LoadsDataWithRawQuery};
 pub use migrations::ContractStateMigrations;
 
@@ -126,33 +125,14 @@ pub trait ContractState:
         context: &EventHandlerContext,
     ) -> Vec<Self> {
         let client = context.get_raw_query_client();
-        let Event {
-            block_number,
-            log_index,
-            ..
-        } = context.event;
 
-        match Self::get_state_fields(client).await {
-            None => vec![],
-            Some(state_fields) => {
-                let raw_query = format!(
-                    "SELECT DISTINCT ON ({state_fields_by_comma}) * FROM {table_name}
-                    WHERE {filters} 
-                    AND block_number <= {block_number}
-                    AND log_index <= {log_index}
-                    ORDER BY {state_fields_by_comma},block_number DESC",
-                    state_fields_by_comma = state_fields.join(","),
-                    table_name = StateVersion::table_name(Self::table_name()),
-                    filters = to_and_filters(&filters),
-                    // N/B: Event Context comparison naively demonstrates parallel indexing future approach
-                    block_number = block_number,
-                    log_index = log_index
-                );
+        let raw_query = format!(
+            "SELECT * FROM {table_name} WHERE {filters}",
+            table_name = Self::table_name(),
+            filters = to_and_filters(&filters),
+        );
 
-                ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query)
-                    .await
-            }
-        }
+        ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query).await
     }
 
     async fn get_state_fields<'a>(

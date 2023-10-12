@@ -142,7 +142,7 @@ impl StateVersion {
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
-        state_version.insert("is_deleted".to_owned(), "true".to_owned());
+        state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
         Self::append(&state_version, state_table_name, event, client).await
     }
 
