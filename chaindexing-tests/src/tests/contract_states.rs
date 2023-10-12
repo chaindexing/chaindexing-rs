@@ -54,13 +54,13 @@ mod tests {
             &raw_query_txn_client,
         );
 
-        let new_state = NftState { token_id: 2 };
+        let new_state = NftState { token_id: 1 };
         new_state.create(&event_context).await;
         let updates = [("token_id".to_string(), "4".to_owned())];
         new_state.update(updates.into(), &event_context).await;
 
         let initial_state = NftState::read_one(
-            [("token_id".to_owned(), "2".to_owned())].into(),
+            [("token_id".to_owned(), "1".to_owned())].into(),
             &event_context,
         )
         .await;
@@ -91,12 +91,12 @@ mod tests {
             &raw_query_txn_client,
         );
 
-        let new_state = NftState { token_id: 2 };
+        let new_state = NftState { token_id: 9 };
         new_state.create(&event_context).await;
         new_state.delete(&event_context).await;
 
         let state = NftState::read_one(
-            [("token_id".to_owned(), "2".to_owned())].into(),
+            [("token_id".to_owned(), "9".to_owned())].into(),
             &event_context,
         )
         .await;
