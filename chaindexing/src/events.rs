@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use crate::contracts::{ContractAddress, Contracts};
+use crate::contracts::{ContractAddress, Contracts, UnsavedContractAddress};
 use crate::diesels::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
-use ethers::types::{Chain, Log};
+use ethers::types::Log;
 
 use crate::{Contract, ContractEvent};
 use uuid::Uuid;
@@ -51,15 +51,19 @@ impl Hash for Event {
 }
 
 impl Event {
-    pub fn new(log: &Log, event: &ContractEvent, contract_name: &str, chain: &Chain) -> Self {
+    pub fn new(
+        log: &Log,
+        event: &ContractEvent,
+        contract_address: &UnsavedContractAddress,
+    ) -> Self {
         let log_params = event.value.parse_log(log.clone().into()).unwrap().params;
         let parameters = Self::log_params_to_parameters(&log_params);
 
         Self {
             id: uuid::Uuid::new_v4(),
-            chain_id: *chain as i32,
+            chain_id: contract_address.chain_id,
             contract_address: ContractAddress::address_to_string(&log.address),
-            contract_name: contract_name.to_string(),
+            contract_name: contract_address.contract_name.to_owned(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),
             parameters: serde_json::to_value(parameters).unwrap(),
@@ -98,20 +102,22 @@ impl Event {
 pub struct Events;
 
 impl Events {
-    pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>, chain: &Chain) -> Vec<Event> {
+    pub fn new(logs: &Vec<Log>, contracts: &Vec<Contract>) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
-        let contracts_by_addresses = Contracts::group_by_addresses(contracts);
+        let contract_addresses_by_address =
+            Contracts::get_all_contract_addresses_grouped_by_address(contracts);
 
         logs.iter()
             .map(
                 |log @ Log {
                      topics, address, ..
                  }| {
+                    let contract_address = contract_addresses_by_address.get(&address).unwrap();
+
                     Event::new(
                         log,
                         &events_by_topics.get(&topics[0]).unwrap(),
-                        &contracts_by_addresses.get(&address).unwrap().name,
-                        chain,
+                        &contract_address,
                     )
                 },
             )

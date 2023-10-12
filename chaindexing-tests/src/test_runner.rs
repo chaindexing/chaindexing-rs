@@ -30,7 +30,7 @@ where
     test_fn(conn).await;
 }
 
-fn new_repo() -> ChaindexingRepo {
+pub fn new_repo() -> ChaindexingRepo {
     ChaindexingRepo::new(db::database_url().as_str())
 }
 

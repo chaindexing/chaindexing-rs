@@ -19,7 +19,7 @@ pub use diesel;
 pub use diesel::prelude::QueryableByName;
 pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
-pub use events::Event;
+pub use events::{Event, Events};
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
 pub use repos::*;
 pub use reset_counts::ResetCount;

@@ -131,7 +131,6 @@ impl EventsIngester {
                 contract_addresses.clone(),
                 contracts,
                 &json_rpc,
-                chain,
                 current_block_number,
                 blocks_per_batch,
             )
@@ -175,7 +174,6 @@ impl MainExecution {
         contract_addresses: Vec<ContractAddress>,
         contracts: &Vec<Contract>,
         json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
-        chain: &Chain,
         current_block_number: u64,
         blocks_per_batch: u64,
     ) -> Result<(), EventsIngesterError> {
@@ -189,7 +187,7 @@ impl MainExecution {
 
         if !filters.is_empty() {
             let logs = fetch_logs(&filters, json_rpc).await.unwrap();
-            let events = Events::new(&logs, &contracts, chain);
+            let events = Events::new(&logs, &contracts);
 
             ChaindexingRepo::run_in_transaction(conn, move |conn| {
                 async move {
@@ -267,7 +265,7 @@ impl ConfirmationExecution {
                 let already_ingested_events =
                     ChaindexingRepo::get_events(conn, min_block_number, max_block_number).await;
 
-                let json_rpc_events = Events::new(&logs, &contracts, chain);
+                let json_rpc_events = Events::new(&logs, &contracts);
 
                 Self::maybe_handle_chain_reorg(
                     conn,

@@ -14,10 +14,7 @@ tests.setup:
 	cargo run -p chaindexing-tests
 
 tests:
-	cargo test -- --nocapture
-
-tests.after_setup:
-	make tests.setup && make tests
+	make tests.setup && cargo test -- --nocapture
 
 tests.with_backtrace:
 	RUST_BACKTRACE=1 make tests
