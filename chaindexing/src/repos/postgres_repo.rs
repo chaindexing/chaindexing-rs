@@ -124,10 +124,16 @@ impl Repo for PostgresRepo {
 
         chaindexing_events.load(conn).await.unwrap()
     }
-    async fn get_events<'a>(conn: &mut Self::Conn<'a>, from: u64, to: u64) -> Vec<Event> {
+    async fn get_events<'a>(
+        conn: &mut Self::Conn<'a>,
+        address: String,
+        from: u64,
+        to: u64,
+    ) -> Vec<Event> {
         use crate::diesels::schema::chaindexing_events::dsl::*;
 
         chaindexing_events
+            .filter(contract_address.eq(address.to_lowercase()))
             .filter(block_number.between(from as i64, to as i64))
             .load(conn)
             .await

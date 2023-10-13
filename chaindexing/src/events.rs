@@ -62,7 +62,7 @@ impl Event {
         Self {
             id: uuid::Uuid::new_v4(),
             chain_id: contract_address.chain_id,
-            contract_address: ContractAddress::address_to_string(&log.address),
+            contract_address: ContractAddress::address_to_string(&log.address).to_lowercase(),
             contract_name: contract_address.contract_name.to_owned(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),
