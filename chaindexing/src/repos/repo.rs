@@ -47,7 +47,12 @@ pub trait Repo:
 
     async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
-    async fn get_events<'a>(conn: &mut Self::Conn<'a>, from: u64, to: u64) -> Vec<Event>;
+    async fn get_events<'a>(
+        conn: &mut Self::Conn<'a>,
+        address: String,
+        from: u64,
+        to: u64,
+    ) -> Vec<Event>;
     async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &Vec<Uuid>);
 
     async fn update_next_block_number_to_ingest_from<'a>(

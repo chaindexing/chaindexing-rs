@@ -9,7 +9,7 @@ use ethers::types::{Address, Filter as EthersFilter, Log};
 use futures_util::future::try_join_all;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
-use std::cmp::{max, min};
+use std::cmp::min;
 use tokio::sync::Mutex;
 use tokio::time::interval;
 
@@ -257,42 +257,42 @@ impl ConfirmationExecution {
         );
 
         if !filters.is_empty() {
-            let logs = fetch_logs(&filters, json_rpc).await.unwrap();
+            let already_ingested_events = Self::get_already_ingested_events(conn, &filters).await;
+            let json_rpc_events = Self::get_json_rpc_events(&filters, json_rpc, contracts).await;
 
-            if let Some((min_block_number, max_block_number)) =
-                Self::get_min_and_max_block_number(&logs)
-            {
-                let already_ingested_events =
-                    ChaindexingRepo::get_events(conn, min_block_number, max_block_number).await;
-
-                let json_rpc_events = Events::new(&logs, &contracts);
-
-                Self::maybe_handle_chain_reorg(
-                    conn,
-                    chain,
-                    &already_ingested_events,
-                    &json_rpc_events,
-                )
+            Self::maybe_handle_chain_reorg(conn, chain, &already_ingested_events, &json_rpc_events)
                 .await?;
-            }
         }
 
         Ok(())
     }
 
-    fn get_min_and_max_block_number(logs: &Vec<Log>) -> Option<(u64, u64)> {
-        logs.clone().iter().fold(None, |block_range, Log { block_number, .. }| {
-            let block_number = block_number.unwrap().as_u64();
+    async fn get_already_ingested_events<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        filters: &Vec<Filter>,
+    ) -> Vec<Event> {
+        let mut already_ingested_events = vec![];
+        for filter in filters {
+            let from_block = filter.value.get_from_block().unwrap().as_u64();
+            let to_block = filter.value.get_to_block().unwrap().as_u64();
 
-            block_range
-                .and_then(|(min_block_number, max_block_number)| {
-                    let min_block_number = min(min_block_number, block_number);
-                    let max_block_number = max(max_block_number, block_number);
+            let mut events =
+                ChaindexingRepo::get_events(conn, filter.address.to_owned(), from_block, to_block)
+                    .await;
+            already_ingested_events.append(&mut events);
+        }
 
-                    Some((min_block_number, max_block_number))
-                })
-                .or_else(|| Some((block_number, block_number)))
-        })
+        already_ingested_events
+    }
+
+    async fn get_json_rpc_events(
+        filters: &Vec<Filter>,
+        json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
+        contracts: &Vec<Contract>,
+    ) -> Vec<Event> {
+        let logs = fetch_logs(&filters, json_rpc).await.unwrap();
+
+        Events::new(&logs, contracts)
     }
 
     async fn maybe_handle_chain_reorg<'a>(
@@ -306,7 +306,6 @@ impl ConfirmationExecution {
         {
             let earliest_block_number =
                 Self::get_earliest_block_number((&added_events, &removed_events));
-
             let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, chain);
 
             ChaindexingRepo::run_in_transaction(conn, move |conn| {
@@ -381,55 +380,6 @@ async fn fetch_logs(
     Ok(logs_per_filter.into_iter().flatten().collect())
 }
 
-#[derive(Clone, Debug)]
-struct Filter {
-    contract_address_id: i32,
-    value: EthersFilter,
-}
-
-impl Filter {
-    fn new(
-        contract_address: &ContractAddress,
-        topics: &Vec<ContractEventTopic>,
-        current_block_number: u64,
-        blocks_per_batch: u64,
-        execution: &Execution,
-    ) -> Filter {
-        let ContractAddress {
-            id: contract_address_id,
-            next_block_number_to_ingest_from,
-            start_block_number,
-            address,
-            ..
-        } = contract_address;
-
-        let next_block_number_to_ingest_from = match execution {
-            Execution::Main => *next_block_number_to_ingest_from as u64,
-            Execution::Confirmation(min_confirmation_count) => min_confirmation_count
-                .ideduct_from(*next_block_number_to_ingest_from, *start_block_number),
-        };
-
-        let current_block_number = match execution {
-            Execution::Main => current_block_number,
-            Execution::Confirmation(min_confirmation_count) => {
-                min_confirmation_count.deduct_from(current_block_number, *start_block_number as u64)
-            }
-        };
-
-        Filter {
-            contract_address_id: *contract_address_id,
-            value: EthersFilter::new()
-                .address(address.parse::<Address>().unwrap())
-                .topic0(topics.to_vec())
-                .from_block(next_block_number_to_ingest_from)
-                .to_block(min(
-                    next_block_number_to_ingest_from + blocks_per_batch,
-                    current_block_number,
-                )),
-        }
-    }
-}
-
 struct Filters;
 
 impl Filters {
@@ -485,5 +435,53 @@ impl Filters {
         filters.sort_by_key(|f| f.value.get_to_block());
 
         filters.last().cloned()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Filter {
+    contract_address_id: i32,
+    address: String,
+    value: EthersFilter,
+}
+
+impl Filter {
+    fn new(
+        contract_address: &ContractAddress,
+        topics: &Vec<ContractEventTopic>,
+        current_block_number: u64,
+        blocks_per_batch: u64,
+        execution: &Execution,
+    ) -> Filter {
+        let ContractAddress {
+            id: contract_address_id,
+            next_block_number_to_ingest_from,
+            start_block_number,
+            address,
+            ..
+        } = contract_address;
+
+        let from_block_number = match execution {
+            Execution::Main => *next_block_number_to_ingest_from as u64,
+            Execution::Confirmation(min_confirmation_count) => min_confirmation_count.deduct_from(
+                *next_block_number_to_ingest_from as u64,
+                *start_block_number as u64,
+            ),
+        };
+
+        let to_block_number = match execution {
+            Execution::Main => min(from_block_number + blocks_per_batch, current_block_number),
+            Execution::Confirmation(_mcc) => from_block_number + blocks_per_batch,
+        };
+
+        Filter {
+            contract_address_id: *contract_address_id,
+            address: address.to_string(),
+            value: EthersFilter::new()
+                .address(address.parse::<Address>().unwrap())
+                .topic0(topics.to_vec())
+                .from_block(from_block_number)
+                .to_block(to_block_number),
+        }
     }
 }
