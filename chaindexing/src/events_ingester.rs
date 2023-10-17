@@ -11,7 +11,7 @@ use futures_util::FutureExt;
 use futures_util::StreamExt;
 use std::cmp::min;
 use tokio::sync::Mutex;
-use tokio::time::interval;
+use tokio::time::{interval, sleep};
 
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::contracts::Contract;
@@ -41,18 +41,8 @@ impl EventsIngesterJsonRpc for Provider<Http> {
 
 #[derive(Debug)]
 pub enum EventsIngesterError {
-    HTTPError(String),
     RepoConnectionError,
     GenericError(String),
-}
-
-impl From<ProviderError> for EventsIngesterError {
-    fn from(value: ProviderError) -> Self {
-        match value {
-            ProviderError::HTTPError(error) => EventsIngesterError::HTTPError(error.to_string()),
-            other_error => EventsIngesterError::GenericError(other_error.to_string()),
-        }
-    }
 }
 
 impl From<RepoError> for EventsIngesterError {
@@ -113,8 +103,7 @@ impl EventsIngester {
         min_confirmation_count: &MinConfirmationCount,
         run_confirmation_execution: bool,
     ) -> Result<(), EventsIngesterError> {
-        let current_block_number = (json_rpc.get_block_number().await?).as_u64();
-
+        let current_block_number = fetch_current_block_number(&json_rpc).await;
         let mut contract_addresses_stream =
             ChaindexingRepo::get_contract_addresses_stream(conn.clone());
 
@@ -186,7 +175,7 @@ impl MainExecution {
         );
 
         if !filters.is_empty() {
-            let logs = fetch_logs(&filters, json_rpc).await.unwrap();
+            let logs = fetch_logs(&filters, json_rpc).await;
             let events = Events::new(&logs, &contracts);
 
             ChaindexingRepo::run_in_transaction(conn, move |conn| {
@@ -290,7 +279,7 @@ impl ConfirmationExecution {
         json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
         contracts: &Vec<Contract>,
     ) -> Vec<Event> {
-        let logs = fetch_logs(&filters, json_rpc).await.unwrap();
+        let logs = fetch_logs(&filters, json_rpc).await;
 
         Events::new(&logs, contracts)
     }
@@ -371,13 +360,47 @@ impl ConfirmationExecution {
     }
 }
 
-async fn fetch_logs(
-    filters: &Vec<Filter>,
-    json_rpc: &Arc<impl EventsIngesterJsonRpc>,
-) -> Result<Vec<Log>, EventsIngesterError> {
-    let logs_per_filter = try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f.value))).await?;
+async fn fetch_current_block_number<'a>(json_rpc: &'a Arc<impl EventsIngesterJsonRpc>) -> u64 {
+    let mut maybe_current_block_number = None;
 
-    Ok(logs_per_filter.into_iter().flatten().collect())
+    while maybe_current_block_number.is_none() {
+        match json_rpc.get_block_number().await {
+            Ok(current_block_number) => {
+                maybe_current_block_number = Some(current_block_number.as_u64())
+            }
+            Err(provider_error) => {
+                eprintln!("Provider Error: {}", provider_error);
+
+                backoff().await;
+            }
+        }
+    }
+
+    maybe_current_block_number.unwrap()
+}
+async fn fetch_logs(filters: &Vec<Filter>, json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> Vec<Log> {
+    let mut maybe_logs = None;
+
+    while maybe_logs.is_none() {
+        match try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f.value))).await {
+            Ok(logs_per_filter) => {
+                let logs = logs_per_filter.into_iter().flatten().collect();
+
+                maybe_logs = Some(logs)
+            }
+            Err(provider_error) => {
+                eprintln!("Provider Error: {}", provider_error);
+
+                backoff().await;
+            }
+        }
+    }
+
+    maybe_logs.unwrap()
+}
+
+async fn backoff() {
+    sleep(Duration::from_secs(2u64.pow(2))).await;
 }
 
 struct Filters;

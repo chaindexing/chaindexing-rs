@@ -19,9 +19,9 @@ impl Config {
             chains,
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
-            blocks_per_batch: 20,
-            handler_interval_ms: 10000,
-            ingestion_interval_ms: 10000,
+            blocks_per_batch: 10000,
+            handler_interval_ms: 4000,
+            ingestion_interval_ms: 4000,
             reset_count: 0,
         }
     }
