@@ -9,6 +9,7 @@ chaindexing = { path = "../chaindexing", features = ["postgres"] }
 ethers = "2.0"
 dotenvy = "0.15"
 diesel = { version = "2", features = ["postgres", "chrono"] }
+rand = "0.8.5"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.29", features = ["full"] }
 

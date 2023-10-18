@@ -2,6 +2,8 @@ use chaindexing::EventsIngesterJsonRpc;
 use ethers::providers::ProviderError;
 use ethers::types::{Block, Filter, Log, TxHash, U64};
 
+use rand::seq::SliceRandom;
+
 pub fn empty_json_rpc() -> impl EventsIngesterJsonRpc {
     #[derive(Clone)]
     struct JsonRpc;
@@ -30,6 +32,8 @@ use ethers::types::{Bytes, H160, H256};
 use std::str::FromStr;
 
 pub fn transfer_log(contract_address: &str) -> Log {
+    let log_index = *(1..800).collect::<Vec<_>>().choose(&mut rand::thread_rng()).unwrap();
+
     Log {
         address: H160::from_str(contract_address).unwrap(),
         topics: vec![
@@ -47,7 +51,7 @@ pub fn transfer_log(contract_address: &str) -> Log {
             "0x83d751998ff98cd609bc9b18bb36bdef8659cde2f74d6d7a1b0fef2c2bf8f839",
         )),
         transaction_index: Some(89.into()),
-        log_index: Some(218.into()),
+        log_index: Some(log_index.into()),
         transaction_log_index: None,
         log_type: None,
         removed: Some(false),

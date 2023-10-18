@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use ethers::types::U64;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -37,7 +36,6 @@ mod tests {
                 json_rpc,
                 &Chain::Mainnet,
                 &MinConfirmationCount::new(1),
-                false,
             )
             .await
             .unwrap();
@@ -85,7 +83,6 @@ mod tests {
                 json_rpc,
                 &Chain::Mainnet,
                 &MinConfirmationCount::new(1),
-                false,
             )
             .await
             .unwrap();
@@ -117,7 +114,6 @@ mod tests {
                 json_rpc,
                 &Chain::Mainnet,
                 &MinConfirmationCount::new(1),
-                false,
             )
             .await
             .unwrap();
@@ -155,7 +151,6 @@ mod tests {
                 json_rpc,
                 &Chain::Mainnet,
                 &MinConfirmationCount::new(1),
-                false,
             )
             .await
             .unwrap();
@@ -184,7 +179,6 @@ mod tests {
                 json_rpc,
                 &Chain::Mainnet,
                 &MinConfirmationCount::new(1),
-                false,
             )
             .await
             .unwrap();
