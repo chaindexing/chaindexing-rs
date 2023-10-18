@@ -99,7 +99,6 @@ impl EventsIngester {
             let conn = Arc::new(Mutex::new(conn));
             let contracts = config.contracts.clone();
             let mut interval = interval(Duration::from_millis(config.ingestion_interval_ms));
-            let mut run_confirmation_execution = false;
 
             loop {
                 interval.tick().await;
@@ -114,14 +113,9 @@ impl EventsIngester {
                         json_rpc,
                         &chain,
                         &config.min_confirmation_count,
-                        run_confirmation_execution,
                     )
                     .await
                     .unwrap();
-                }
-
-                if !run_confirmation_execution {
-                    run_confirmation_execution = true;
                 }
             }
         });
@@ -134,7 +128,6 @@ impl EventsIngester {
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
         chain: &Chain,
         min_confirmation_count: &MinConfirmationCount,
-        run_confirmation_execution: bool,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
         let mut contract_addresses_stream =
@@ -158,19 +151,17 @@ impl EventsIngester {
             )
             .await?;
 
-            if run_confirmation_execution {
-                MaybeBacktrackIngestedEvents::run(
-                    &mut conn,
-                    contract_addresses.clone(),
-                    contracts,
-                    &json_rpc,
-                    chain,
-                    current_block_number,
-                    blocks_per_batch,
-                    min_confirmation_count,
-                )
-                .await?;
-            }
+            MaybeBacktrackIngestedEvents::run(
+                &mut conn,
+                contract_addresses.clone(),
+                contracts,
+                &json_rpc,
+                chain,
+                current_block_number,
+                blocks_per_batch,
+                min_confirmation_count,
+            )
+            .await?;
         }
 
         Ok(())
