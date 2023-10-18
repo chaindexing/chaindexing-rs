@@ -7,6 +7,7 @@ mod diesels;
 mod event_handlers;
 mod events;
 mod events_ingester;
+mod hashes;
 mod repos;
 mod reset_counts;
 

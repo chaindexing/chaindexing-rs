@@ -217,6 +217,7 @@ impl SQLikeMigrations {
                 topics JSON NOT NULL,
                 block_hash TEXT NOT NULL,
                 block_number BIGINT NOT NULL,
+                block_timestamp BIGINT NOT NULL,
                 transaction_hash TEXT NOT NULL,
                 transaction_index BIGINT NOT NULL,
                 log_index BIGINT NOT NULL,

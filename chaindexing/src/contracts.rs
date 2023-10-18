@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::diesels::schema::chaindexing_contract_addresses;
+use crate::hashes::Hashes;
 use crate::{ContractStateMigrations, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
@@ -211,6 +212,6 @@ impl ContractAddress {
         ContractAddressID(self.id)
     }
     pub fn address_to_string(address: &Address) -> String {
-        serde_json::to_value(address).unwrap().as_str().unwrap().to_string()
+        Hashes::h160_to_string(address)
     }
 }
