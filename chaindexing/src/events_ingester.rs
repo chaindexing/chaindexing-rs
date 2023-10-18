@@ -26,6 +26,31 @@ use crate::{
 pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
     async fn get_block_number(&self) -> Result<U64, ProviderError>;
     async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
+
+    async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError>;
+    async fn get_blocks_by_tx_hash(
+        &self,
+        logs: &Vec<Log>,
+    ) -> Result<HashMap<TxHash, Block<TxHash>>, ProviderError> {
+        let mut blocks = HashMap::new();
+
+        for Log {
+            block_number,
+            transaction_hash,
+            ..
+        } in logs
+        {
+            let transaction_hash = transaction_hash.unwrap();
+
+            if blocks.get(&transaction_hash).is_none() {
+                let block = self.get_block(block_number.unwrap()).await?;
+
+                blocks.insert(transaction_hash, block);
+            }
+        }
+
+        Ok(blocks)
+    }
 }
 
 #[async_trait::async_trait]
@@ -36,6 +61,10 @@ impl EventsIngesterJsonRpc for Provider<Http> {
 
     async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
         Middleware::get_logs(&self, filter).await
+    }
+
+    async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+        Ok(Middleware::get_block(&self, block_number).await?.unwrap())
     }
 }
 
@@ -176,7 +205,8 @@ impl MainExecution {
 
         if !filters.is_empty() {
             let logs = fetch_logs(&filters, json_rpc).await;
-            let events = Events::new(&logs, &contracts);
+            let blocks_by_tx_hash = fetch_blocks_by_tx_hash(&logs, json_rpc).await;
+            let events = Events::new(&logs, &contracts, &blocks_by_tx_hash);
 
             ChaindexingRepo::run_in_transaction(conn, move |conn| {
                 async move {
@@ -280,8 +310,9 @@ impl ConfirmationExecution {
         contracts: &Vec<Contract>,
     ) -> Vec<Event> {
         let logs = fetch_logs(&filters, json_rpc).await;
+        let blocks_by_tx_hash = fetch_blocks_by_tx_hash(&logs, json_rpc).await;
 
-        Events::new(&logs, contracts)
+        Events::new(&logs, contracts, &blocks_by_tx_hash)
     }
 
     async fn maybe_handle_chain_reorg<'a>(
@@ -362,6 +393,7 @@ impl ConfirmationExecution {
 
 async fn fetch_current_block_number<'a>(json_rpc: &'a Arc<impl EventsIngesterJsonRpc>) -> u64 {
     let mut maybe_current_block_number = None;
+    let mut retries_so_far = 0;
 
     while maybe_current_block_number.is_none() {
         match json_rpc.get_block_number().await {
@@ -371,7 +403,8 @@ async fn fetch_current_block_number<'a>(json_rpc: &'a Arc<impl EventsIngesterJso
             Err(provider_error) => {
                 eprintln!("Provider Error: {}", provider_error);
 
-                backoff().await;
+                backoff(retries_so_far).await;
+                retries_so_far += 1;
             }
         }
     }
@@ -380,6 +413,7 @@ async fn fetch_current_block_number<'a>(json_rpc: &'a Arc<impl EventsIngesterJso
 }
 async fn fetch_logs(filters: &Vec<Filter>, json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> Vec<Log> {
     let mut maybe_logs = None;
+    let mut retries_so_far = 0;
 
     while maybe_logs.is_none() {
         match try_join_all(filters.iter().map(|f| json_rpc.get_logs(&f.value))).await {
@@ -391,16 +425,38 @@ async fn fetch_logs(filters: &Vec<Filter>, json_rpc: &Arc<impl EventsIngesterJso
             Err(provider_error) => {
                 eprintln!("Provider Error: {}", provider_error);
 
-                backoff().await;
+                backoff(retries_so_far).await;
+                retries_so_far += 1;
             }
         }
     }
 
     maybe_logs.unwrap()
 }
+async fn fetch_blocks_by_tx_hash(
+    logs: &Vec<Log>,
+    json_rpc: &Arc<impl EventsIngesterJsonRpc>,
+) -> HashMap<TxHash, Block<TxHash>> {
+    let mut maybe_blocks_by_tx_hash = None;
+    let mut retries_so_far = 0;
 
-async fn backoff() {
-    sleep(Duration::from_secs(2u64.pow(2))).await;
+    while maybe_blocks_by_tx_hash.is_none() {
+        match json_rpc.get_blocks_by_tx_hash(logs).await {
+            Ok(blocks_by_tx_hash) => maybe_blocks_by_tx_hash = Some(blocks_by_tx_hash),
+            Err(provider_error) => {
+                eprintln!("Provider Error: {}", provider_error);
+
+                backoff(retries_so_far).await;
+                retries_so_far += 1;
+            }
+        }
+    }
+
+    maybe_blocks_by_tx_hash.unwrap()
+}
+
+async fn backoff(retries_so_far: u32) {
+    sleep(Duration::from_secs(2u64.pow(retries_so_far))).await;
 }
 
 struct Filters;

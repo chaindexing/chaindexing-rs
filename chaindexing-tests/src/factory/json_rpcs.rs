@@ -1,6 +1,6 @@
 use chaindexing::EventsIngesterJsonRpc;
 use ethers::providers::ProviderError;
-use ethers::types::{Filter, Log, U64};
+use ethers::types::{Block, Filter, Log, TxHash, U64};
 
 pub fn empty_json_rpc() -> impl EventsIngesterJsonRpc {
     #[derive(Clone)]
@@ -13,6 +13,13 @@ pub fn empty_json_rpc() -> impl EventsIngesterJsonRpc {
 
         async fn get_logs(&self, _filter: &Filter) -> Result<Vec<Log>, ProviderError> {
             Ok(vec![])
+        }
+
+        async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+            Ok(Block {
+                number: Some(block_number),
+                ..Default::default()
+            })
         }
     }
 
@@ -62,7 +69,7 @@ macro_rules! json_rpc_with_logs {
         use crate::factory::transfer_log;
         use chaindexing::EventsIngesterJsonRpc;
         use ethers::providers::ProviderError;
-        use ethers::types::{Filter, Log, U64};
+        use ethers::types::{Block, Filter, Log, TxHash, U64};
 
         #[derive(Clone)]
         struct JsonRpc;
@@ -75,6 +82,13 @@ macro_rules! json_rpc_with_logs {
             async fn get_logs(&self, _filter: &Filter) -> Result<Vec<Log>, ProviderError> {
                 Ok(vec![transfer_log($contract_address)])
             }
+
+            async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+                Ok(Block {
+                    number: Some(block_number),
+                    ..Default::default()
+                })
+            }
         }
 
         JsonRpc
@@ -86,7 +100,7 @@ macro_rules! json_rpc_with_filter_stubber {
     ($contract_address:expr, $filter_stubber: expr) => {{
         use chaindexing::EventsIngesterJsonRpc;
         use ethers::providers::ProviderError;
-        use ethers::types::{Filter, Log};
+        use ethers::types::{Block, Filter, Log, TxHash, U64};
 
         #[derive(Clone)]
         struct JsonRpc;
@@ -101,6 +115,13 @@ macro_rules! json_rpc_with_filter_stubber {
 
                 Ok(vec![])
             }
+
+            async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+                Ok(Block {
+                    number: Some(block_number),
+                    ..Default::default()
+                })
+            }
         }
 
         JsonRpc
@@ -112,7 +133,7 @@ macro_rules! json_rpc_with_empty_logs {
     ($contract_address:expr) => {{
         use chaindexing::EventsIngesterJsonRpc;
         use ethers::providers::ProviderError;
-        use ethers::types::{Filter, Log};
+        use ethers::types::{Block, Filter, Log, TxHash, U64};
 
         #[derive(Clone)]
         struct JsonRpc;
@@ -124,6 +145,13 @@ macro_rules! json_rpc_with_empty_logs {
 
             async fn get_logs(&self, _filter: &Filter) -> Result<Vec<Log>, ProviderError> {
                 Ok(vec![])
+            }
+
+            async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+                Ok(Block {
+                    number: Some(block_number),
+                    ..Default::default()
+                })
             }
         }
 

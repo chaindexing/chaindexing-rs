@@ -24,6 +24,7 @@ diesel::table! {
       topics -> Json,
       block_hash -> Text,
       block_number -> Int8,
+      block_timestamp -> Int8,
       transaction_hash -> Text,
       transaction_index -> Int8,
       log_index -> Int8,
