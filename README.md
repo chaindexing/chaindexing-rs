@@ -145,3 +145,9 @@ async fn main() {
     Chaindexing::index_states(&config).await.unwrap();
 }
 ```
+
+4. Query your DB using any approach/ORM:
+
+```sql
+  select * from nft_states
+```
