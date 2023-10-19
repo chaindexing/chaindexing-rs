@@ -4,9 +4,18 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/chaindexing.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/chaindexing)
 [<img alt="diesel-streamer build" src="https://img.shields.io/github/actions/workflow/status/jurshsmith/chaindexing-rs/ci.yml?branch=main&style=for-the-badge" height="20">](https://github.com/jurshsmith/chaindexing-rs/actions?query=branch%3Amain)
 
-A Chain Reorg-Proof indexing engine that helps aggregate states for EVM contracts in RDBMS'.
+A Chain Reorg-Proof EVM indexing engine that helps aggregate states for EVM contracts in RDBMS'.
 
-Example:
+### Mini Comparison with TheGraph
+
+It is a great alternative to theGraph if you:
+
+- have a server + relational database setup
+- are NOT indexing thousands of contracts
+- don't want to deal with an additional external system
+- have written your DApp in RUST (Other Languages soon to come!)
+
+Example Usage:
 
 Indexing states of NFTs (`NftState`) for Bored Ape Yatch Club and Doodle's contracts in a Postgres DB.
 
