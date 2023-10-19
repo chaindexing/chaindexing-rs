@@ -4,7 +4,7 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/chaindexing.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/chaindexing)
 [<img alt="diesel-streamer build" src="https://img.shields.io/github/actions/workflow/status/jurshsmith/chaindexing-rs/ci.yml?branch=main&style=for-the-badge" height="20">](https://github.com/jurshsmith/chaindexing-rs/actions?query=branch%3Amain)
 
-A Chain Reorg-Proof indexing engine that helps aggregate states for EVM contracts in RDBMS' as accurately as possible.
+A Chain Reorg-Proof indexing engine that helps aggregate states for EVM contracts in RDBMS'.
 
 Example:
 
@@ -128,8 +128,9 @@ async fn main() {
 
     // Setup indexing config
     let config = Config::new(
-      // Choose your database and provider its corresponding url
+      // Database
       PostgresRepo::new("postgres://postgres:postgres@localhost/example-db"),
+      // All possible chains in your Dapp
       HashMap::from([(
           Chain::Mainnet,
           "https://eth-mainnet.g.alchemy.com/v2/some-secret"
