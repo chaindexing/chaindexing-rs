@@ -17,7 +17,7 @@ It is a great alternative to theGraph [https://thegraph.com/](https://thegraph.c
 
 Example Usage:
 
-Indexing states of NFTs (`NftState`) for Bored Ape Yatch Club and Doodle's contracts in a Postgres DB.
+Indexing states of NFTs (`NftState`) for Bored Ape Yacht Club and Doodle's contracts in a Postgres DB.
 
 1. Setup state by specifying its RDBMS's(Postgres) table name and migration:
 
@@ -114,7 +114,7 @@ use chaindexing::{Chain, Chaindexing, Chains, Config, Contract, PostgresRepo, Re
 async fn main() {
     // Setup BAYC's contract
     let bayc_contract =  Contract::new("BoredApeYachtClub")
-    // add transfer event and it's corresponding handler
+    // add transfer event and its corresponding handler
     .add_event("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)", TransferEventHandler)
     // add migration for the state's DB schema
     .add_state_migrations(NftStateMigrations)
