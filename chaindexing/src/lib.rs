@@ -14,6 +14,7 @@ mod reset_counts;
 pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::Chains;
 pub use config::Config;
+use config::{ConfigError, ValidatableConfig};
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts};
 pub use diesel;
@@ -48,17 +49,38 @@ pub type ChaindexingRepoRawQueryTxnClient<'a> = PostgresRepoRawQueryTxnClient<'a
 #[cfg(feature = "postgres")]
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
 
+pub enum ChaindexingError {
+    Config(ConfigError),
+}
+
+impl From<ConfigError> for ChaindexingError {
+    fn from(value: ConfigError) -> Self {
+        ChaindexingError::Config(value)
+    }
+}
+
+impl std::fmt::Debug for ChaindexingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChaindexingError::Config(config_error) => {
+                write!(f, "Config Error: {:?}", config_error)
+            }
+        }
+    }
+}
+
 pub struct Chaindexing;
 
 impl Chaindexing {
-    pub async fn index_states(config: &Config) -> Result<(), ()> {
+    pub async fn index_states(config: &Config) -> Result<(), ChaindexingError> {
+        config.validate()?;
         Self::setup(config).await?;
         EventsIngester::start(config);
         EventHandlers::start(config);
         Ok(())
     }
 
-    pub async fn setup(config: &Config) -> Result<(), ()> {
+    pub async fn setup(config: &Config) -> Result<(), ChaindexingError> {
         let Config {
             repo,
             contracts,
