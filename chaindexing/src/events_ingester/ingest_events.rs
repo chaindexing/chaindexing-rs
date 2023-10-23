@@ -7,7 +7,7 @@ use crate::contracts::Contract;
 use crate::events::Events;
 use crate::{ChaindexingRepo, ChaindexingRepoConn, ContractAddress, EventsIngesterJsonRpc, Repo};
 
-use super::{fetch_blocks_by_tx_hash, fetch_logs, EventsIngesterError, Filter, Filters};
+use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Filters};
 
 pub struct IngestEvents;
 
@@ -30,7 +30,7 @@ impl IngestEvents {
 
         if !filters.is_empty() {
             let logs = fetch_logs(&filters, json_rpc).await;
-            let blocks_by_tx_hash = fetch_blocks_by_tx_hash(&logs, json_rpc).await;
+            let blocks_by_tx_hash = fetch_blocks_by_number(&logs, json_rpc).await;
             let events = Events::new(&logs, &contracts, &blocks_by_tx_hash);
 
             ChaindexingRepo::run_in_transaction(conn, move |conn| {

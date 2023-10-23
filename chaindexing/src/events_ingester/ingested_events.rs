@@ -13,7 +13,7 @@ use crate::{
     MinConfirmationCount, Repo,
 };
 
-use super::{fetch_blocks_by_tx_hash, fetch_logs, EventsIngesterError, Filter, Filters};
+use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Filters};
 
 pub struct MaybeBacktrackIngestedEvents;
 
@@ -71,9 +71,9 @@ impl MaybeBacktrackIngestedEvents {
         contracts: &Vec<Contract>,
     ) -> Vec<Event> {
         let logs = fetch_logs(&filters, json_rpc).await;
-        let blocks_by_tx_hash = fetch_blocks_by_tx_hash(&logs, json_rpc).await;
+        let blocks_by_number = fetch_blocks_by_number(&logs, json_rpc).await;
 
-        Events::new(&logs, contracts, &blocks_by_tx_hash)
+        Events::new(&logs, contracts, &blocks_by_number)
     }
 
     async fn maybe_handle_chain_reorg<'a>(
