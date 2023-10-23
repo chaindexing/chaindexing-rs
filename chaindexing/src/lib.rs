@@ -14,7 +14,7 @@ mod reset_counts;
 pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::Chains;
 pub use config::Config;
-use config::{ConfigError, ValidatableConfig};
+use config::{ConfigError, ConfigValidation};
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts};
 pub use diesel;

@@ -81,11 +81,11 @@ impl std::fmt::Debug for ConfigError {
     }
 }
 
-pub trait ValidatableConfig {
+pub trait ConfigValidation {
     fn validate(&self) -> Result<(), ConfigError>;
 }
 
-impl ValidatableConfig for Config {
+impl ConfigValidation for Config {
     fn validate(&self) -> Result<(), ConfigError> {
         if self.contracts.is_empty() {
             Err(ConfigError::NoContract)
