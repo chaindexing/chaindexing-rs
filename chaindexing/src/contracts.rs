@@ -176,7 +176,7 @@ impl UnsavedContractAddress {
     pub fn new(contract_name: &str, address: &str, chain: &Chain, start_block_number: i64) -> Self {
         UnsavedContractAddress {
             contract_name: contract_name.to_string(),
-            address: address.to_string(),
+            address: address.to_lowercase().to_string(),
             chain_id: *chain as i32,
             start_block_number: start_block_number,
             next_block_number_to_ingest_from: start_block_number,
