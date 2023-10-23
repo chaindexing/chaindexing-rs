@@ -1,4 +1,5 @@
-use std::{cmp::max, collections::HashMap};
+use std::cmp::max;
+use std::collections::HashMap;
 
 use crate::diesels::schema::chaindexing_reorged_blocks;
 use diesel::prelude::{Insertable, Queryable};
@@ -17,7 +18,9 @@ impl MinConfirmationCount {
     }
 
     pub fn deduct_from(&self, block_number: u64, start_block_number: u64) -> u64 {
-        max(start_block_number, block_number - (self.value as u64))
+        let deduction = max(0, (block_number as i64) - (self.value as i64));
+
+        max(start_block_number, deduction as u64)
     }
 }
 
