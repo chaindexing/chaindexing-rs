@@ -32,28 +32,34 @@ pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
     async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
 
     async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError>;
-    async fn get_blocks_by_tx_hash(
+    async fn get_blocks_by_number(
         &self,
         logs: &Vec<Log>,
-    ) -> Result<HashMap<TxHash, Block<TxHash>>, ProviderError> {
-        let mut blocks = HashMap::new();
+    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+        let mut logs = logs.clone();
+        logs.dedup_by_key(|log| log.block_number);
 
-        for Log {
-            block_number,
-            transaction_hash,
-            ..
-        } in logs
-        {
-            let transaction_hash = transaction_hash.unwrap();
+        const CHUNK_SIZE: usize = 4;
+        let chunked_logs: Vec<_> = logs.chunks(CHUNK_SIZE).collect();
 
-            if blocks.get(&transaction_hash).is_none() {
-                let block = self.get_block(block_number.unwrap()).await?;
-
-                blocks.insert(transaction_hash, block);
-            }
+        let mut blocks = vec![];
+        for chunked_log in chunked_logs {
+            blocks.extend(
+                try_join_all(
+                    chunked_log
+                        .iter()
+                        .map(|Log { block_number, .. }| self.get_block(block_number.unwrap())),
+                )
+                .await?,
+            );
         }
 
-        Ok(blocks)
+        let mut blocks_by_number = HashMap::new();
+        for block @ Block { number, .. } in blocks {
+            blocks_by_number.insert(number.unwrap(), block);
+        }
+
+        Ok(blocks_by_number)
     }
 }
 
@@ -221,16 +227,16 @@ async fn fetch_logs(filters: &Vec<Filter>, json_rpc: &Arc<impl EventsIngesterJso
 
     maybe_logs.unwrap()
 }
-async fn fetch_blocks_by_tx_hash(
+async fn fetch_blocks_by_number(
     logs: &Vec<Log>,
     json_rpc: &Arc<impl EventsIngesterJsonRpc>,
-) -> HashMap<TxHash, Block<TxHash>> {
-    let mut maybe_blocks_by_tx_hash = None;
+) -> HashMap<U64, Block<TxHash>> {
+    let mut maybe_blocks_by_number = None;
     let mut retries_so_far = 0;
 
-    while maybe_blocks_by_tx_hash.is_none() {
-        match json_rpc.get_blocks_by_tx_hash(logs).await {
-            Ok(blocks_by_tx_hash) => maybe_blocks_by_tx_hash = Some(blocks_by_tx_hash),
+    while maybe_blocks_by_number.is_none() {
+        match json_rpc.get_blocks_by_number(logs).await {
+            Ok(blocks_by_tx_hash) => maybe_blocks_by_number = Some(blocks_by_tx_hash),
             Err(provider_error) => {
                 eprintln!("Provider Error: {}", provider_error);
 
@@ -240,7 +246,7 @@ async fn fetch_blocks_by_tx_hash(
         }
     }
 
-    maybe_blocks_by_tx_hash.unwrap()
+    maybe_blocks_by_number.unwrap()
 }
 async fn backoff(retries_so_far: u32) {
     sleep(Duration::from_secs(2u64.pow(retries_so_far))).await;

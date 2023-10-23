@@ -6,7 +6,7 @@ use crate::diesels::schema::chaindexing_events;
 use crate::hashes::Hashes;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
-use ethers::types::{Block, Log, TxHash};
+use ethers::types::{Block, Log, TxHash, U64};
 
 use crate::{Contract, ContractEvent};
 use uuid::Uuid;
@@ -109,7 +109,7 @@ impl Events {
     pub fn new(
         logs: &Vec<Log>,
         contracts: &Vec<Contract>,
-        blocks_by_tx_hash: &HashMap<TxHash, Block<TxHash>>,
+        blocks_by_number: &HashMap<U64, Block<TxHash>>,
     ) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);
         let contract_addresses_by_address =
@@ -120,11 +120,11 @@ impl Events {
                 |log @ Log {
                      topics,
                      address,
-                     transaction_hash,
+                     block_number,
                      ..
                  }| {
                     let contract_address = contract_addresses_by_address.get(&address).unwrap();
-                    let block = blocks_by_tx_hash.get(&transaction_hash.unwrap()).unwrap();
+                    let block = blocks_by_number.get(&block_number.unwrap()).unwrap();
 
                     Event::new(
                         log,
