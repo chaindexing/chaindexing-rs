@@ -1,6 +1,7 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::contracts::ContractAddressID;
+use crate::events::PartialEvent;
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
 use serde::de::DeserializeOwned;
 
@@ -74,11 +75,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
             "UPDATE chaindexing_reorged_blocks
         SET handled_at = '{handled_at}'
         WHERE id IN ({reorged_block_ids})",
-            reorged_block_ids = reorged_block_ids
-                .iter()
-                .map(|id| id.to_string())
-                .collect::<Vec<String>>()
-                .join(","),
+            reorged_block_ids = join_i32s_with_comma(reorged_block_ids),
             handled_at = chrono::Utc::now().naive_utc().to_string(),
         );
 
@@ -88,6 +85,31 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
 #[async_trait::async_trait]
 impl LoadsDataWithRawQuery for PostgresRepo {
+    async fn load_latest_events<'a>(
+        client: &Self::RawQueryClient,
+        addresses: &Vec<String>,
+    ) -> Vec<PartialEvent> {
+        let query = format!(
+            "WITH EventsWithRowNumbers AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (PARTITION BY contract_address ORDER BY block_number DESC, log_index DESC) AS row_no
+                FROM
+                    chaindexing_events
+                WHERE
+                contract_address IN ({addresses})
+            )
+            SELECT
+                *
+            FROM
+                EventsWithRowNumbers
+            WHERE
+                row_no = 1",
+                addresses = join_strings_with_comma(addresses),
+        );
+
+        Self::load_data_list_from_raw_query(client, &query).await
+    }
     async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,
         query: &str,
@@ -152,4 +174,12 @@ async fn get_json_aggregate_in_txn<'a>(
 
 fn json_aggregate_query(query: &str) -> String {
     format!("WITH result AS ({query}) SELECT COALESCE(json_agg(result), '[]'::json) FROM result",)
+}
+
+fn join_i32s_with_comma(i32s: &Vec<i32>) -> String {
+    i32s.iter().map(|id| id.to_string()).collect::<Vec<String>>().join(",")
+}
+
+fn join_strings_with_comma(strings: &Vec<String>) -> String {
+    strings.iter().map(|string| format!("'{string}'")).collect::<Vec<_>>().join(",")
 }

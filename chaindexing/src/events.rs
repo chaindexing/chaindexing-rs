@@ -11,7 +11,9 @@ use ethers::types::{Block, Log, TxHash, U64};
 use crate::{Contract, ContractEvent};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Eq, Queryable, Insertable)]
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Clone, Eq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
     pub id: Uuid,
@@ -30,6 +32,21 @@ pub struct Event {
     pub log_index: i64,
     removed: bool,
     inserted_at: chrono::NaiveDateTime,
+}
+
+/// Introduced to allow computing with a subset of Event struct
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
+pub struct PartialEvent {
+    pub id: Uuid,
+    pub chain_id: i32,
+    pub contract_address: String,
+    pub contract_name: String,
+    pub block_hash: String,
+    pub block_number: i64,
+    pub block_timestamp: i64,
+    pub transaction_hash: String,
+    pub transaction_index: i64,
+    pub log_index: i64,
 }
 
 impl PartialEq for Event {

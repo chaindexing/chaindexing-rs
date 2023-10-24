@@ -22,8 +22,8 @@ use crate::chain_reorg::Execution;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::{
-    ChaindexingRepo, ChaindexingRepoConn, Config, ContractAddress, MinConfirmationCount, Repo,
-    RepoError, Streamable,
+    ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config, ContractAddress,
+    HasRawQueryClient, MinConfirmationCount, Repo, RepoError, Streamable,
 };
 
 #[async_trait::async_trait]
@@ -103,6 +103,9 @@ impl EventsIngester {
             let pool = config.repo.get_pool(1).await;
             let conn = ChaindexingRepo::get_conn(&pool).await;
             let conn = Arc::new(Mutex::new(conn));
+
+            let raw_query_client = config.repo.get_raw_query_client().await;
+
             let contracts = config.contracts.clone();
             let mut interval = interval(Duration::from_millis(config.ingestion_interval_ms));
 
@@ -114,6 +117,7 @@ impl EventsIngester {
 
                     Self::ingest(
                         conn.clone(),
+                        &raw_query_client,
                         &contracts,
                         config.blocks_per_batch,
                         json_rpc,
@@ -129,6 +133,7 @@ impl EventsIngester {
 
     pub async fn ingest<'a>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
+        raw_query_client: &ChaindexingRepoRawQueryClient,
         contracts: &Vec<Contract>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
@@ -149,6 +154,7 @@ impl EventsIngester {
 
             IngestEvents::run(
                 &mut conn,
+                raw_query_client,
                 contract_addresses.clone(),
                 contracts,
                 &json_rpc,
@@ -180,7 +186,7 @@ impl EventsIngester {
         contract_addresses
             .to_vec()
             .into_iter()
-            .filter(|ca| current_block_number > ca.next_block_number_to_ingest_from as u64)
+            .filter(|ca| current_block_number >= ca.next_block_number_to_ingest_from as u64)
             .collect()
     }
 }
@@ -278,7 +284,6 @@ impl Filters {
                     execution,
                 )
             })
-            .filter(|f| !f.value.get_from_block().eq(&f.value.get_to_block()))
             .collect()
     }
 
