@@ -10,7 +10,8 @@ mod tests {
         json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
     };
     use chaindexing::{
-        Chain, Chaindexing, EventsIngester, MinConfirmationCount, PostgresRepo, Repo,
+        Chain, Chaindexing, EventsIngester, HasRawQueryClient, MinConfirmationCount, PostgresRepo,
+        Repo,
     };
 
     #[tokio::test]
@@ -29,8 +30,10 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
+            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
             EventsIngester::ingest(
                 conn.clone(),
+                &raw_query_client,
                 &contracts,
                 10,
                 json_rpc,
@@ -76,8 +79,10 @@ mod tests {
             ));
 
             let conn = Arc::new(Mutex::new(conn));
+            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
             EventsIngester::ingest(
-                conn,
+                conn.clone(),
+                &raw_query_client,
                 &contracts,
                 10,
                 json_rpc,
@@ -107,8 +112,10 @@ mod tests {
             let conn = Arc::new(Mutex::new(conn));
             let blocks_per_batch = 10;
 
+            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
             EventsIngester::ingest(
                 conn.clone(),
+                &raw_query_client,
                 &contracts,
                 blocks_per_batch,
                 json_rpc,
@@ -144,8 +151,10 @@ mod tests {
             let json_rpc = Arc::new(empty_json_rpc());
             let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));
+            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
             EventsIngester::ingest(
                 conn.clone(),
+                &raw_query_client,
                 &contracts,
                 blocks_per_batch,
                 json_rpc,
@@ -172,8 +181,10 @@ mod tests {
             Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
 
             let conn = Arc::new(Mutex::new(conn));
+            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
             EventsIngester::ingest(
                 conn.clone(),
+                &raw_query_client,
                 &contracts,
                 10,
                 json_rpc,
