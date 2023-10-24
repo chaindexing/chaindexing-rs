@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     contracts::{ContractAddressID, UnsavedContractAddress},
-    events::Event,
+    events::{Event, PartialEvent},
     ContractAddress, ReorgedBlock, ResetCount, UnsavedReorgedBlock,
 };
 
@@ -113,6 +113,10 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 
 #[async_trait::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
+    async fn load_latest_events<'a>(
+        client: &Self::RawQueryClient,
+        addresses: &Vec<String>,
+    ) -> Vec<PartialEvent>;
     async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,
         query: &str,
