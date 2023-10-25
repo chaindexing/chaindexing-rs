@@ -7,7 +7,6 @@ mod diesels;
 mod event_handlers;
 mod events;
 mod events_ingester;
-mod hashes;
 mod repos;
 mod reset_counts;
 
@@ -159,5 +158,27 @@ impl Chaindexing {
             contracts.clone().into_iter().map(|c| c.addresses).flatten().collect();
 
         ChaindexingRepo::create_contract_addresses(conn, &contract_addresses).await;
+    }
+}
+
+pub mod hashes {
+    use ethers::types::{H160, H256};
+
+    pub fn h160_to_string(h160: &H160) -> String {
+        serde_json::to_value(h160).unwrap().as_str().unwrap().to_string()
+    }
+
+    pub fn h256_to_string(h256: &H256) -> String {
+        serde_json::to_value(h256).unwrap().as_str().unwrap().to_string()
+    }
+}
+/// Useful Rust-specific utils for end users
+pub mod utils {
+    use ethers::types::H160;
+
+    use crate::hashes;
+
+    pub fn address_to_string(address: &H160) -> String {
+        hashes::h160_to_string(address)
     }
 }

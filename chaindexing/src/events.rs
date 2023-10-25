@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use crate::contracts::{ContractAddress, Contracts, UnsavedContractAddress};
+use crate::contracts::{Contracts, UnsavedContractAddress};
 use crate::diesels::schema::chaindexing_events;
-use crate::hashes::Hashes;
+use crate::utils::address_to_string;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
 use ethers::types::{Block, Log, TxHash, U64};
 
-use crate::{Contract, ContractEvent};
+use crate::{hashes, Contract, ContractEvent};
 use uuid::Uuid;
 
 use serde::Deserialize;
@@ -82,16 +82,16 @@ impl Event {
         Self {
             id: uuid::Uuid::new_v4(),
             chain_id: contract_address.chain_id,
-            contract_address: ContractAddress::address_to_string(&log.address).to_lowercase(),
+            contract_address: address_to_string(&log.address).to_lowercase(),
             contract_name: contract_address.contract_name.to_owned(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),
             parameters: serde_json::to_value(parameters).unwrap(),
             topics: serde_json::to_value(&log.topics).unwrap(),
-            block_hash: Hashes::h256_to_string(&log.block_hash.unwrap()).to_lowercase(),
+            block_hash: hashes::h256_to_string(&log.block_hash.unwrap()).to_lowercase(),
             block_number: log.block_number.unwrap().as_u64() as i64,
             block_timestamp,
-            transaction_hash: Hashes::h256_to_string(&log.transaction_hash.unwrap()).to_lowercase(),
+            transaction_hash: hashes::h256_to_string(&log.transaction_hash.unwrap()).to_lowercase(),
             transaction_index: log.transaction_index.unwrap().as_u64() as i64,
             log_index: log.log_index.unwrap().as_u64() as i64,
             removed: log.removed.unwrap(),

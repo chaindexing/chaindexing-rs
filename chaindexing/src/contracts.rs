@@ -1,7 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::diesels::schema::chaindexing_contract_addresses;
-use crate::hashes::Hashes;
 use crate::{ContractStateMigrations, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
@@ -210,8 +209,5 @@ pub struct ContractAddress {
 impl ContractAddress {
     pub fn id(&self) -> ContractAddressID {
         ContractAddressID(self.id)
-    }
-    pub fn address_to_string(address: &Address) -> String {
-        Hashes::h160_to_string(address)
     }
 }

@@ -62,6 +62,7 @@ For our example, we simply need a handler for `Transfer` events.
 ...
 
 use chaindexing::{Contract, EventContext, EventHandler};
+use chaindexing::utils::address_to_string;
 
 struct TransferEventHandler;
 
@@ -74,8 +75,9 @@ impl EventHandler for TransferEventHandler {
 
         // Extract each parameter as exactly specified in the ABI:
         // "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
-        let from = event_params.get("from").unwrap().clone().into_address().unwrap();
-        let to = event_params.get("to").unwrap().clone().into_address().unwrap();
+        // Use address_to_string util to avoid truncation
+        let from = address_to_string(&event_params.get("from").unwrap().clone().into_address().unwrap());
+        let to = address_to_string(&event_params.get("to").unwrap().clone().into_address().unwrap());
         let token_id = event_params.get("tokenId").unwrap().clone().into_uint().unwrap();
 
         if let Some(nft_state) = NftState::read_one(
@@ -88,14 +90,14 @@ impl EventHandler for TransferEventHandler {
         )
         .await
         {
-            let updates = [("owner_address".to_string(), to.to_string())];
+            let updates = [("owner_address".to_string(), to)];
 
             nft_state.update(updates.into(), &event_context).await;
         } else {
             NftState {
                 token_id: token_id.as_u32() as i32,
                 contract_address: event.contract_address.clone(),
-                owner_address: to.to_string(),
+                owner_address: to,
             }
             .create(&event_context)
             .await;
