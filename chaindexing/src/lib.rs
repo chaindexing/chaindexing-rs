@@ -16,8 +16,6 @@ pub use config::Config;
 use config::{ConfigError, ConfigValidation};
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts};
-pub use diesel;
-pub use diesel::prelude::QueryableByName;
 pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, Events};
