@@ -5,7 +5,7 @@ mod migrations;
 mod state_versions;
 mod state_views;
 
-pub use crate::event_handlers::{EventHandlerContext, UseEventHandlerContext};
+pub use crate::event_handlers::EventHandlerContext;
 use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, LoadsDataWithRawQuery};
 pub use migrations::ContractStateMigrations;
 

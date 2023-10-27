@@ -1,5 +1,22 @@
 use crate::{ChaindexingRepo, Chains, Contract, MinConfirmationCount};
 
+pub enum ConfigError {
+    NoContract,
+    NoChain,
+}
+
+impl std::fmt::Debug for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::NoContract => {
+                write!(f, "At least one contract is required")
+            }
+            ConfigError::NoChain => {
+                write!(f, "At least one chain is required")
+            }
+        }
+    }
+}
 #[derive(Clone)]
 pub struct Config {
     pub chains: Chains,
@@ -61,32 +78,8 @@ impl Config {
 
         self
     }
-}
 
-pub enum ConfigError {
-    NoContract,
-    NoChain,
-}
-
-impl std::fmt::Debug for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfigError::NoContract => {
-                write!(f, "At least one contract is required")
-            }
-            ConfigError::NoChain => {
-                write!(f, "At least one chain is required")
-            }
-        }
-    }
-}
-
-pub trait ConfigValidation {
-    fn validate(&self) -> Result<(), ConfigError>;
-}
-
-impl ConfigValidation for Config {
-    fn validate(&self) -> Result<(), ConfigError> {
+    pub(super) fn validate(&self) -> Result<(), ConfigError> {
         if self.contracts.is_empty() {
             Err(ConfigError::NoContract)
         } else if self.chains.is_empty() {

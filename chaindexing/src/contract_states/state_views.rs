@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub use crate::event_handlers::{EventHandlerContext, UseEventHandlerContext};
+pub use crate::event_handlers::EventHandlerContext;
 use crate::{
     ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
 };

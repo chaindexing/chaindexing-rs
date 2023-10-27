@@ -24,14 +24,8 @@ impl<'a> EventHandlerContext<'a> {
             raw_query_client: client,
         }
     }
-}
 
-pub trait UseEventHandlerContext<'a> {
-    fn get_raw_query_client(&self) -> &'a ChaindexingRepoRawQueryTxnClient<'a>;
-}
-
-impl<'a> UseEventHandlerContext<'a> for EventHandlerContext<'a> {
-    fn get_raw_query_client(&self) -> &'a ChaindexingRepoRawQueryTxnClient<'a> {
+    pub(super) fn get_raw_query_client(&self) -> &'a ChaindexingRepoRawQueryTxnClient<'a> {
         self.raw_query_client
     }
 }
