@@ -55,6 +55,11 @@ pub trait ContractStateMigrations: Send + Sync {
                             state_versions_fields,
                         );
 
+                    let create_state_versions_table_migration =
+                        maybe_normalize_user_primary_key_column(
+                            &create_state_versions_table_migration,
+                        );
+
                     vec![
                         create_state_views_table_migration,
                         create_state_versions_table_migration,
@@ -167,6 +172,47 @@ fn set_state_versions_table_name(migration: &str) -> String {
         "CREATE TABLE IF NOT EXISTS ",
         format!("CREATE TABLE IF NOT EXISTS {STATE_VERSIONS_TABLE_PREFIX}",).as_str(),
     )
+}
+
+fn extract_migration_columns(migration: &str) -> Vec<String> {
+    let migration_tokens = migration.split("(");
+    let migration = migration_tokens.last().unwrap();
+    let mut migration_tokens = migration.split(")");
+    let migration = migration_tokens.next().unwrap();
+
+    migration.split(",").fold(vec![], |mut migration_columns, migration_column| {
+        migration_columns.push(migration_column.to_string());
+        migration_columns
+    })
+}
+
+fn filter_migration_columns_containing(migration: &str, to_match_with: &str) -> Vec<String> {
+    extract_migration_columns(migration)
+        .iter()
+        .filter(|migration_column| migration_column.contains(to_match_with))
+        .cloned()
+        .collect()
+}
+
+fn maybe_normalize_user_primary_key_column(state_versions_migration: &str) -> String {
+    let primary_key_columns =
+        filter_migration_columns_containing(state_versions_migration, "PRIMARY KEY");
+
+    if primary_key_columns.len() == 2 {
+        let user_primary_key_column = format!(
+            "{},",
+            primary_key_columns.iter().find(|c| !c.contains("state_version_id")).unwrap()
+        );
+        let user_primary_key_column_replacement =
+            user_primary_key_column.replace("PRIMARY KEY", "");
+
+        state_versions_migration.replace(
+            &user_primary_key_column,
+            &user_primary_key_column_replacement,
+        )
+    } else {
+        state_versions_migration.to_string()
+    }
 }
 
 struct DefaultMigration;
@@ -285,6 +331,27 @@ mod contract_state_migrations_get_migration_test {
         assert_default_migration(create_state_versions_migration);
     }
 
+    #[test]
+    fn normalizes_user_primary_key_column_before_creating_state_versions_migrations() {
+        let contract_state = test_contract_state_with_primary_key();
+        let mut migrations = contract_state.get_migrations();
+        migrations.pop();
+        let create_state_versions_migration = migrations.last().unwrap();
+
+        assert_eq!(
+            create_state_versions_migration.matches("PRIMARY KEY").count(),
+            1
+        );
+        assert_eq!(
+            create_state_versions_migration.matches("id SERIAL PRIMARY KEY").count(),
+            0
+        );
+        assert_eq!(
+            create_state_versions_migration.matches("id SERIAL").count(),
+            1
+        );
+    }
+
     fn assert_default_migration(migration: &str) {
         DefaultMigration::get_fields()
             .iter()
@@ -320,5 +387,24 @@ mod contract_state_migrations_get_migration_test {
         }
 
         TestContractState
+    }
+
+    fn test_contract_state_with_primary_key() -> impl ContractStateMigrations {
+        struct TestContractStateWithPrimaryKey;
+
+        impl ContractStateMigrations for TestContractStateWithPrimaryKey {
+            fn migrations(&self) -> Vec<&'static str> {
+                vec![
+                    "CREATE TABLE IF NOT EXISTS nft_states (
+                      id SERIAL PRIMARY KEY,
+                      token_id INTEGER NOT NULL,
+                      contract_address TEXT NOT NULL,
+                      owner_address TEXT NOT NULL
+                  )",
+                ]
+            }
+        }
+
+        TestContractStateWithPrimaryKey
     }
 }
