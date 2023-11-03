@@ -90,15 +90,13 @@ impl Repo for PostgresRepo {
         conn: &mut Conn<'a>,
         contract_addresses: &Vec<UnsavedContractAddress>,
     ) {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::{
-            address, chaindexing_contract_addresses,
-        };
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::insert_into(chaindexing_contract_addresses)
             .values(contract_addresses)
-            .on_conflict(address)
+            .on_conflict((chain_id, address))
             .do_update()
-            .set(address.eq(excluded(address)))
+            .set(contract_name.eq(excluded(contract_name)))
             .execute(conn)
             .await
             .unwrap();

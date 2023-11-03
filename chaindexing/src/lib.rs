@@ -15,7 +15,7 @@ pub use chains::Chains;
 pub use config::Config;
 use config::ConfigError;
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
-pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts};
+pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, Events};
@@ -93,7 +93,10 @@ impl Chaindexing {
         Self::maybe_reset(reset_count, contracts, &client, &mut conn).await;
         Self::run_internal_migrations(&client).await;
         Self::run_migrations_for_contract_states(&client, contracts).await;
-        Self::create_initial_contract_addresses(&mut conn, contracts).await;
+
+        let contract_addresses =
+            contracts.clone().into_iter().map(|c| c.addresses).flatten().collect();
+        ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
 
         Ok(())
     }
@@ -146,16 +149,6 @@ impl Chaindexing {
         for state_migration in Contracts::get_state_migrations(contracts) {
             ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
         }
-    }
-
-    pub async fn create_initial_contract_addresses<'a>(
-        conn: &mut ChaindexingRepoConn<'a>,
-        contracts: &Vec<Contract>,
-    ) {
-        let contract_addresses =
-            contracts.clone().into_iter().map(|c| c.addresses).flatten().collect();
-
-        ChaindexingRepo::create_contract_addresses(conn, &contract_addresses).await;
     }
 }
 
