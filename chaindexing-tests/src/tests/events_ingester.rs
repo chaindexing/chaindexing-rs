@@ -10,8 +10,7 @@ mod tests {
         json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
     };
     use chaindexing::{
-        Chain, Chaindexing, EventsIngester, HasRawQueryClient, MinConfirmationCount, PostgresRepo,
-        Repo,
+        Chain, ChaindexingRepo, EventsIngester, HasRawQueryClient, MinConfirmationCount, Repo,
     };
 
     #[tokio::test]
@@ -19,15 +18,17 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
-            let contracts = vec![bayc_contract()];
+            let bayc_contract = bayc_contract();
+            let contracts = vec![bayc_contract.clone()];
+
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
             let json_rpc = Arc::new(json_rpc_with_logs!(
                 BAYC_CONTRACT_ADDRESS,
                 CURRENT_BLOCK_NUMBER
             ));
 
-            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
-            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
+            assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
+            ChaindexingRepo::create_contract_addresses(&mut conn, &bayc_contract.addresses).await;
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
@@ -44,7 +45,7 @@ mod tests {
             .unwrap();
 
             let mut conn = conn.lock().await;
-            let ingested_events = PostgresRepo::get_all_events(&mut conn).await;
+            let ingested_events = ChaindexingRepo::get_all_events(&mut conn).await;
             let first_event = ingested_events.first().unwrap();
             assert_eq!(
                 first_event.contract_address,
@@ -59,10 +60,11 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
-            let contracts = vec![bayc_contract()];
+            let bayc_contract = bayc_contract();
+            let contracts = vec![bayc_contract.clone()];
 
-            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
-            let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
+            ChaindexingRepo::create_contract_addresses(&mut conn, &bayc_contract.addresses).await;
+            let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
             assert_eq!(
                 bayc_contract_address.next_block_number_to_ingest_from as u32,
@@ -100,14 +102,16 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
-            let contracts = vec![bayc_contract()];
+            let bayc_contract = bayc_contract();
+            let contracts = vec![bayc_contract.clone()];
+
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
             let json_rpc = Arc::new(json_rpc_with_logs!(
                 BAYC_CONTRACT_ADDRESS,
                 CURRENT_BLOCK_NUMBER
             ));
 
-            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
+            ChaindexingRepo::create_contract_addresses(&mut conn, &bayc_contract.addresses).await;
 
             let conn = Arc::new(Mutex::new(conn));
             let blocks_per_batch = 10;
@@ -126,7 +130,7 @@ mod tests {
             .unwrap();
 
             let mut conn = conn.lock().await;
-            let contract_addresses = PostgresRepo::get_all_contract_addresses(&mut conn).await;
+            let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
             let next_block_number_to_ingest_from =
                 bayc_contract_address.next_block_number_to_ingest_from as u64;
@@ -164,7 +168,7 @@ mod tests {
             .await
             .unwrap();
             let mut conn = conn.lock().await;
-            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
+            assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
         })
         .await;
     }
@@ -174,11 +178,12 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
-            let contracts = vec![bayc_contract()];
+            let bayc_contract = bayc_contract();
+            let contracts = vec![bayc_contract.clone()];
             let json_rpc = Arc::new(json_rpc_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
 
-            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
-            Chaindexing::create_initial_contract_addresses(&mut conn, &contracts).await;
+            assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
+            ChaindexingRepo::create_contract_addresses(&mut conn, &bayc_contract.addresses).await;
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
@@ -195,7 +200,7 @@ mod tests {
             .unwrap();
 
             let mut conn = conn.lock().await;
-            assert!(PostgresRepo::get_all_events(&mut conn).await.is_empty());
+            assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
         })
         .await;
     }
