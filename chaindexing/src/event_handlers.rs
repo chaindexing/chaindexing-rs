@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 mod handle_events;
-mod handled_events;
+mod maybe_handle_chain_reorg;
 
 use tokio::{sync::Mutex, time::interval};
 
@@ -9,7 +9,6 @@ use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
 use crate::{ChaindexingRepoRawQueryTxnClient, HasRawQueryClient};
 
 use handle_events::HandleEvents;
-use handled_events::MaybeBacktrackHandledEvents;
 
 #[derive(Clone)]
 pub struct EventHandlerContext<'a> {
@@ -63,7 +62,7 @@ impl EventHandlers {
                 .await;
 
                 let state_migrations = Contracts::get_state_migrations(&config.contracts);
-                MaybeBacktrackHandledEvents::run(
+                maybe_handle_chain_reorg::run(
                     conn.clone(),
                     &mut raw_query_client,
                     &state_migrations,
