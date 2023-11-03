@@ -1,5 +1,5 @@
 mod ingest_events;
-mod ingested_events;
+mod maybe_handle_chain_reorg;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +16,6 @@ use tokio::sync::Mutex;
 use tokio::time::{interval, sleep};
 
 use ingest_events::IngestEvents;
-use ingested_events::MaybeBacktrackIngestedEvents;
 
 use crate::chain_reorg::Execution;
 use crate::contracts::Contract;
@@ -163,7 +162,7 @@ impl EventsIngester {
             )
             .await?;
 
-            MaybeBacktrackIngestedEvents::run(
+            maybe_handle_chain_reorg::run(
                 &mut conn,
                 contract_addresses.clone(),
                 contracts,
