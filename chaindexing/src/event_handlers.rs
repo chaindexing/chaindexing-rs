@@ -8,8 +8,6 @@ use tokio::{sync::Mutex, time::interval};
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
 use crate::{ChaindexingRepoRawQueryTxnClient, HasRawQueryClient};
 
-use handle_events::HandleEvents;
-
 #[derive(Clone)]
 pub struct EventHandlerContext<'a> {
     pub event: Event,
@@ -54,7 +52,7 @@ impl EventHandlers {
             loop {
                 interval.tick().await;
 
-                HandleEvents::run(
+                handle_events::run(
                     conn.clone(),
                     &event_handlers_by_event_abi,
                     &mut raw_query_client,

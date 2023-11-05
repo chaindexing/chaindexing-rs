@@ -15,8 +15,6 @@ use std::cmp::min;
 use tokio::sync::Mutex;
 use tokio::time::{interval, sleep};
 
-use ingest_events::IngestEvents;
-
 use crate::chain_reorg::Execution;
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
@@ -151,7 +149,7 @@ impl EventsIngester {
 
             let mut conn = conn.lock().await;
 
-            IngestEvents::run(
+            ingest_events::run(
                 &mut conn,
                 raw_query_client,
                 contract_addresses.clone(),
