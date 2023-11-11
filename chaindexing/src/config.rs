@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use ethers::types::Chain;
+
 use crate::{ChaindexingRepo, Chains, Contract, MinConfirmationCount};
 
 pub enum ConfigError {
@@ -30,10 +34,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(repo: ChaindexingRepo, chains: Chains) -> Self {
+    pub fn new(repo: ChaindexingRepo) -> Self {
         Self {
             repo,
-            chains,
+            chains: HashMap::new(),
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
             blocks_per_batch: 10000,
@@ -41,6 +45,12 @@ impl Config {
             ingestion_rate_ms: 4000,
             reset_count: 0,
         }
+    }
+
+    pub fn add_chain(mut self, chain: Chain, json_rpc_url: &str) -> Self {
+        self.chains.insert(chain, json_rpc_url.to_string());
+
+        self
     }
 
     pub fn add_contract(mut self, contract: Contract) -> Self {
