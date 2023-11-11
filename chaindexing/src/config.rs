@@ -24,8 +24,8 @@ pub struct Config {
     pub contracts: Vec<Contract>,
     pub min_confirmation_count: MinConfirmationCount,
     pub blocks_per_batch: u64,
-    pub handler_interval_ms: u64,
-    pub ingestion_interval_ms: u64,
+    pub handler_rate_ms: u64,
+    pub ingestion_rate_ms: u64,
     pub reset_count: u8,
 }
 
@@ -37,8 +37,8 @@ impl Config {
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
             blocks_per_batch: 10000,
-            handler_interval_ms: 4000,
-            ingestion_interval_ms: 4000,
+            handler_rate_ms: 4000,
+            ingestion_rate_ms: 4000,
             reset_count: 0,
         }
     }
@@ -67,14 +67,14 @@ impl Config {
         self
     }
 
-    pub fn with_handler_interval_ms(mut self, handler_interval_ms: u64) -> Self {
-        self.handler_interval_ms = handler_interval_ms;
+    pub fn with_handler_rate_ms(mut self, handler_rate_ms: u64) -> Self {
+        self.handler_rate_ms = handler_rate_ms;
 
         self
     }
 
-    pub fn with_ingestion_interval_ms(mut self, ingestion_interval_ms: u64) -> Self {
-        self.ingestion_interval_ms = ingestion_interval_ms;
+    pub fn with_ingestion_rate_ms(mut self, ingestion_rate_ms: u64) -> Self {
+        self.ingestion_rate_ms = ingestion_rate_ms;
 
         self
     }

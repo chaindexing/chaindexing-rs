@@ -104,7 +104,7 @@ impl EventsIngester {
             let raw_query_client = config.repo.get_raw_query_client().await;
 
             let contracts = config.contracts.clone();
-            let mut interval = interval(Duration::from_millis(config.ingestion_interval_ms));
+            let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
 
             loop {
                 interval.tick().await;

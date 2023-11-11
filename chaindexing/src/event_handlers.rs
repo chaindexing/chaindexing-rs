@@ -45,7 +45,7 @@ impl EventHandlers {
             let mut raw_query_client = config.repo.get_raw_query_client().await;
 
             let conn = Arc::new(Mutex::new(conn));
-            let mut interval = interval(Duration::from_millis(config.handler_interval_ms));
+            let mut interval = interval(Duration::from_millis(config.handler_rate_ms));
             let event_handlers_by_event_abi =
                 Contracts::get_all_event_handlers_by_event_abi(&config.contracts);
 
