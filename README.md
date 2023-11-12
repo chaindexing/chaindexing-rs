@@ -17,4 +17,4 @@ It is a great alternative to theGraph [https://thegraph.com/](https://thegraph.c
 
 ### Examples
 
-[https://github.com/chaindexing/chaindexing-examples/rust](https://github.com/chaindexing/chaindexing-examples/rust) contains examples that can be quickly tested and replicated. While the actual documentation is being worked on, feel free to use them as templates and open issues if they don't work correctly.
+[https://github.com/chaindexing/chaindexing-examples/tree/main/rust](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) contains examples that can be quickly tested and replicated. While the actual documentation is being worked on, feel free to use them as templates and open issues if they don't work correctly.
