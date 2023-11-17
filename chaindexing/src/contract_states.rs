@@ -134,23 +134,6 @@ pub trait ContractState:
 
         ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query).await
     }
-
-    async fn get_state_fields<'a>(
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
-    ) -> Option<Vec<String>> {
-        Self::get_random_state(client)
-            .await
-            .and_then(|random_state| Some(random_state.get_fields()))
-    }
-    fn get_fields(&self) -> Vec<String> {
-        self.to_view().keys().cloned().collect()
-    }
-    async fn get_random_state<'a>(client: &ChaindexingRepoRawQueryTxnClient<'a>) -> Option<Self> {
-        let table_name = Self::table_name();
-        let query = format!("SELECT * from {table_name} limit 1");
-
-        ChaindexingRepo::load_data_from_raw_query_with_txn_client(client, &query).await
-    }
 }
 
 pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
