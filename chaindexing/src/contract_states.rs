@@ -162,7 +162,9 @@ pub fn serde_map_to_string_map(
     serde_map: HashMap<String, serde_json::Value>,
 ) -> HashMap<String, String> {
     serde_map.iter().fold(HashMap::new(), |mut map, (key, value)| {
-        map.insert(key.to_owned(), value.to_string().replace("\"", ""));
+        if !value.is_null() {
+            map.insert(key.to_owned(), value.to_string().replace("\"", ""));
+        }
 
         map
     })
