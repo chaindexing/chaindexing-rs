@@ -163,7 +163,11 @@ pub fn serde_map_to_string_map(
 ) -> HashMap<String, String> {
     serde_map.iter().fold(HashMap::new(), |mut map, (key, value)| {
         if !value.is_null() {
-            map.insert(key.to_owned(), value.to_string().replace("\"", ""));
+            if value.is_object() {
+                map.insert(key.to_owned(), value.to_string());
+            } else {
+                map.insert(key.to_owned(), value.to_string().replace("\"", ""));
+            }
         }
 
         map
