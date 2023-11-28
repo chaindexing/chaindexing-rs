@@ -7,8 +7,8 @@ diesel::table! {
       next_block_number_to_ingest_from -> Int8,
       next_block_number_to_handle_from -> Int8,
       start_block_number -> Int8,
-      address -> Text,
-      contract_name -> Text,
+      address -> VarChar,
+      contract_name -> VarChar,
   }
 }
 
@@ -16,18 +16,18 @@ diesel::table! {
   chaindexing_events (id) {
       id -> Uuid,
       chain_id -> Int4,
-      contract_address -> Text,
-      contract_name -> Text,
+      contract_address -> VarChar,
+      contract_name -> VarChar,
       abi -> Text,
       log_params -> Json,
       parameters -> Json,
       topics -> Json,
-      block_hash -> Text,
+      block_hash -> VarChar,
       block_number -> Int8,
       block_timestamp -> Int8,
-      transaction_hash -> Text,
-      transaction_index -> Int8,
-      log_index -> Int8,
+      transaction_hash -> VarChar,
+      transaction_index -> Int4,
+      log_index -> Int4,
       removed -> Bool,
       inserted_at -> Timestamptz,
   }
