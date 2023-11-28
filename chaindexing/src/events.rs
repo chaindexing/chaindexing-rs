@@ -28,8 +28,8 @@ pub struct Event {
     pub block_number: i64,
     pub block_timestamp: i64,
     pub transaction_hash: String,
-    pub transaction_index: i64,
-    pub log_index: i64,
+    pub transaction_index: i32,
+    pub log_index: i32,
     removed: bool,
     inserted_at: chrono::NaiveDateTime,
 }
@@ -92,8 +92,8 @@ impl Event {
             block_number: log.block_number.unwrap().as_u64() as i64,
             block_timestamp,
             transaction_hash: hashes::h256_to_string(&log.transaction_hash.unwrap()).to_lowercase(),
-            transaction_index: log.transaction_index.unwrap().as_u64() as i64,
-            log_index: log.log_index.unwrap().as_u64() as i64,
+            transaction_index: log.transaction_index.unwrap().as_u32() as i32,
+            log_index: log.log_index.unwrap().as_u32() as i32,
             removed: log.removed.unwrap(),
             inserted_at: chrono::Utc::now().naive_utc(),
         }

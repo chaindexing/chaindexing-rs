@@ -47,7 +47,7 @@ pub trait ContractStateMigrations: Send + Sync {
                     let state_versions_table_name =
                         extract_table_name(&create_state_versions_table_migration);
                     let state_versions_fields =
-                        extract_table_fields(&create_state_versions_table_migration);
+                        extract_table_fields(&create_state_versions_table_migration, true);
 
                     let state_versions_unique_index_migration =
                         get_unique_index_migration_for_state_versions(
@@ -96,7 +96,7 @@ fn extract_table_name(migration: &str) -> String {
         .to_string()
 }
 
-fn extract_table_fields(migration: &str) -> Vec<String> {
+fn extract_table_fields(migration: &str, remove_json_fields: bool) -> Vec<String> {
     migration
         .replace(")", "")
         .split("(")
@@ -104,8 +104,9 @@ fn extract_table_fields(migration: &str) -> Vec<String> {
         .last()
         .unwrap()
         .split(",")
-        .map(|each_field| {
-            each_field
+        .filter(|field| remove_json_fields && !(field.contains("JSON") || field.contains("JSONB")))
+        .map(|field| {
+            field
                 .split_ascii_whitespace()
                 .collect::<Vec<&str>>()
                 .first()
@@ -220,13 +221,13 @@ struct DefaultMigration;
 impl DefaultMigration {
     pub fn get() -> String {
         "state_version_group_id UUID NOT NULL,
-        contract_address TEXT NOT NULL,
+        contract_address VARCHAR NOT NULL,
         chain_id INTEGER NOT NULL,
-        block_hash TEXT NOT NULL,
+        block_hash VARCHAR NOT NULL,
         block_number BIGINT NOT NULL,
-        transaction_hash TEXT NOT NULL,
-        transaction_index BIGINT NOT NULL,
-        log_index BIGINT NOT NULL)"
+        transaction_hash VARCHAR NOT NULL,
+        transaction_index INTEGER NOT NULL,
+        log_index INTEGER NOT NULL)"
             .to_string()
     }
 
@@ -287,7 +288,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn returns_two_more_migrations_for_create_state_migrations() {
-        let contract_state = test_contract_state();
+        let contract_state = TestContractState;
 
         assert_eq!(
             contract_state.get_migrations().len(),
@@ -297,7 +298,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn appends_default_migration_to_create_state_views_migrations() {
-        let contract_state = test_contract_state();
+        let contract_state = TestContractState;
         let migrations = contract_state.get_migrations();
         let create_state_migration = migrations.first().unwrap();
 
@@ -311,7 +312,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn removes_repeating_default_migrations_in_create_state_views_migration() {
-        let contract_state = test_contract_state();
+        let contract_state = TestContractState;
         let migrations = contract_state.get_migrations();
         let create_state_migration = migrations.first().unwrap();
 
@@ -322,7 +323,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn creates_an_extra_migration_for_creating_state_versions() {
-        let contract_state = test_contract_state();
+        let contract_state = TestContractState;
         let mut migrations = contract_state.get_migrations();
         migrations.pop();
         let create_state_versions_migration = migrations.last().unwrap();
@@ -333,7 +334,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn normalizes_user_primary_key_column_before_creating_state_versions_migrations() {
-        let contract_state = test_contract_state_with_primary_key();
+        let contract_state = TestContractStateWithPrimaryKey;
         let mut migrations = contract_state.get_migrations();
         migrations.pop();
         let create_state_versions_migration = migrations.last().unwrap();
@@ -360,7 +361,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn returns_other_migrations_untouched() {
-        let contract_state = test_contract_state();
+        let contract_state = TestContractState;
 
         assert_eq!(
             contract_state.migrations().last().unwrap(),
@@ -368,43 +369,70 @@ mod contract_state_migrations_get_migration_test {
         );
     }
 
-    fn test_contract_state() -> impl ContractStateMigrations {
-        struct TestContractState;
+    #[test]
+    fn returns_unique_index_migrations_for_state_versions() {
+        let contract_state = TestContractState;
+        let migrations = contract_state.get_migrations();
 
-        impl ContractStateMigrations for TestContractState {
-            fn migrations(&self) -> Vec<&'static str> {
-                vec![
-                    "CREATE TABLE IF NOT EXISTS nft_states (
-                      token_id INTEGER NOT NULL,
-                      contract_address TEXT NOT NULL,
-                      owner_address TEXT NOT NULL
-                  )",
-                    "UPDATE nft_states
-                  SET owner_address = ''
-                  WHERE owner_address IS NULL",
-                ]
-            }
-        }
+        let unique_index_migration = migrations.get(2);
 
-        TestContractState
+        assert!(unique_index_migration.is_some());
+        assert!(unique_index_migration.unwrap().contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
     }
 
-    fn test_contract_state_with_primary_key() -> impl ContractStateMigrations {
-        struct TestContractStateWithPrimaryKey;
+    #[test]
+    fn ignores_json_field_in_unique_index_migration() {
+        let contract_state = TestContractStateWithJsonField;
+        let migrations = contract_state.get_migrations();
 
-        impl ContractStateMigrations for TestContractStateWithPrimaryKey {
-            fn migrations(&self) -> Vec<&'static str> {
-                vec![
-                    "CREATE TABLE IF NOT EXISTS nft_states (
+        let unique_index_migration = migrations.get(2);
+
+        assert!(!unique_index_migration.unwrap().contains("json_field"));
+    }
+
+    struct TestContractState;
+
+    impl ContractStateMigrations for TestContractState {
+        fn migrations(&self) -> Vec<&'static str> {
+            vec![
+                "CREATE TABLE IF NOT EXISTS nft_states (
+                      token_id INTEGER NOT NULL,
+                      contract_address VARCHAR NOT NULL,
+                      owner_address VARCHAR NOT NULL
+                  )",
+                "UPDATE nft_states
+                  SET owner_address = ''
+                  WHERE owner_address IS NULL",
+            ]
+        }
+    }
+
+    struct TestContractStateWithPrimaryKey;
+
+    impl ContractStateMigrations for TestContractStateWithPrimaryKey {
+        fn migrations(&self) -> Vec<&'static str> {
+            vec![
+                "CREATE TABLE IF NOT EXISTS nft_states (
                       id SERIAL PRIMARY KEY,
                       token_id INTEGER NOT NULL,
-                      contract_address TEXT NOT NULL,
-                      owner_address TEXT NOT NULL
+                      contract_address VARCHAR NOT NULL,
+                      owner_address VARCHAR NOT NULL
                   )",
-                ]
-            }
+            ]
         }
+    }
 
-        TestContractStateWithPrimaryKey
+    struct TestContractStateWithJsonField;
+
+    impl ContractStateMigrations for TestContractStateWithJsonField {
+        fn migrations(&self) -> Vec<&'static str> {
+            vec![
+                "CREATE TABLE IF NOT EXISTS nft_states (
+                      id SERIAL PRIMARY KEY,
+                      token_id INTEGER NOT NULL,
+                      json_field JSON DEFAULT '{}',
+                  )",
+            ]
+        }
     }
 }
