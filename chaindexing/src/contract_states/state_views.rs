@@ -16,10 +16,10 @@ impl StateViews {
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
-        let backtracked_state_versions =
+        let latest_state_versions =
             StateVersions::get_latest(&state_version_group_ids, table_name, client).await;
 
-        for latest_state_version in backtracked_state_versions {
+        for latest_state_version in latest_state_versions {
             StateView::refresh(&latest_state_version, table_name, client).await
         }
     }
