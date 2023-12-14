@@ -197,8 +197,8 @@ impl SQLikeMigrations {
                 contract_name VARCHAR NOT NULL,
                 chain_id INTEGER NOT NULL,
                 start_block_number BIGINT NOT NULL,
-                next_block_number_to_ingest_from BIGINT NULL,
-                next_block_number_to_handle_from BIGINT NULL
+                next_block_number_to_ingest_from BIGINT NOT NULL,
+                next_block_number_to_handle_from BIGINT NOT NULL
         )",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_contract_addresses_chain_address_index
         ON chaindexing_contract_addresses(chain_id, address)",
