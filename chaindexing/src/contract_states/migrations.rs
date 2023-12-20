@@ -11,7 +11,7 @@ pub trait ContractStateMigrations: Send + Sync {
     fn get_table_names(&self) -> Vec<String> {
         self.migrations().iter().fold(vec![], |mut table_names, migration| {
             if migration.starts_with("CREATE TABLE IF NOT EXISTS") {
-                let table_name = extract_table_name(&migration);
+                let table_name = extract_table_name(migration);
                 table_names.push(table_name)
             }
 
@@ -27,16 +27,14 @@ pub trait ContractStateMigrations: Send + Sync {
 
                 if user_migration.starts_with("CREATE TABLE IF NOT EXISTS") {
                     let create_state_views_table_migration =
-                        append_migration(&user_migration, &get_remaining_state_views_migration());
+                        append_migration(user_migration, &get_remaining_state_views_migration());
                     let create_state_views_table_migration =
                         DefaultMigration::remove_repeating_occurrences(
                             &create_state_views_table_migration,
                         );
 
-                    let create_state_versions_table_migration = append_migration(
-                        &user_migration,
-                        &get_remaining_state_versions_migration(),
-                    );
+                    let create_state_versions_table_migration =
+                        append_migration(user_migration, &get_remaining_state_versions_migration());
                     let create_state_versions_table_migration =
                         set_state_versions_table_name(&create_state_versions_table_migration);
                     let create_state_versions_table_migration =
@@ -77,7 +75,7 @@ pub trait ContractStateMigrations: Send + Sync {
             .iter()
             .filter(|m| m.starts_with("CREATE TABLE IF NOT EXISTS"))
             .map(|create_migration| {
-                let table_name = extract_table_name(&create_migration);
+                let table_name = extract_table_name(create_migration);
 
                 format!("DROP TABLE IF EXISTS {table_name}")
             })
@@ -88,7 +86,7 @@ pub trait ContractStateMigrations: Send + Sync {
 fn extract_table_name(migration: &str) -> String {
     migration
         .replace("CREATE TABLE IF NOT EXISTS", "")
-        .split("(")
+        .split('(')
         .collect::<Vec<&str>>()
         .first()
         .unwrap()
@@ -98,12 +96,12 @@ fn extract_table_name(migration: &str) -> String {
 
 fn extract_table_fields(migration: &str, remove_json_fields: bool) -> Vec<String> {
     migration
-        .replace(")", "")
-        .split("(")
+        .replace(')', "")
+        .split('(')
         .collect::<Vec<&str>>()
         .last()
         .unwrap()
-        .split(",")
+        .split(',')
         .filter(|field| remove_json_fields && !(field.contains("JSON") || field.contains("JSONB")))
         .map(|field| {
             field
@@ -140,8 +138,8 @@ fn validate_migration(migration: &str) {
 }
 
 fn append_migration(migration: &str, migration_to_append: &str) -> String {
-    let mut migration = migration.replace("\n", "");
-    migration.push_str(",");
+    let mut migration = migration.replace('\n', "");
+    migration.push(',');
     migration.push_str(migration_to_append);
     migration
         .split_ascii_whitespace()
@@ -176,12 +174,12 @@ fn set_state_versions_table_name(migration: &str) -> String {
 }
 
 fn extract_migration_columns(migration: &str) -> Vec<String> {
-    let migration_tokens = migration.split("(");
+    let migration_tokens = migration.split('(');
     let migration = migration_tokens.last().unwrap();
-    let mut migration_tokens = migration.split(")");
+    let mut migration_tokens = migration.split(')');
     let migration = migration_tokens.next().unwrap();
 
-    migration.split(",").fold(vec![], |mut migration_columns, migration_column| {
+    migration.split(',').fold(vec![], |mut migration_columns, migration_column| {
         migration_columns.push(migration_column.to_string());
         migration_columns
     })
@@ -252,14 +250,14 @@ impl DefaultMigration {
         let mut repeating_state_fields_count = repeating_state_fields.iter().fold(
             HashMap::new(),
             |mut repeating_field_count, field| {
-                repeating_field_count.insert(*field, 0 as u8);
+                repeating_field_count.insert(*field, 0_u8);
 
                 repeating_field_count
             },
         );
 
         migration
-            .split(",")
+            .split(',')
             .fold(vec![], |mut unique_migration_tokens, migration_token| {
                 match repeating_state_fields.iter().find(|field| migration_token.contains(**field))
                 {
@@ -307,7 +305,7 @@ mod contract_state_migrations_get_migration_test {
             contract_state.migrations().first().unwrap()
         );
 
-        assert_default_migration(&create_state_migration);
+        assert_default_migration(create_state_migration);
     }
 
     #[test]

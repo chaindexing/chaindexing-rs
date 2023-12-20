@@ -8,7 +8,7 @@ use crate::{
 
 use super::{serde_map_to_string_map, to_columns_and_values};
 
-pub const STATE_VERSIONS_TABLE_PREFIX: &'static str = "chaindexing_state_versions_for_";
+pub const STATE_VERSIONS_TABLE_PREFIX: &str = "chaindexing_state_versions_for_";
 pub const STATE_VERSIONS_UNIQUE_FIELDS: [&str; 2] =
     ["state_version_id", "state_version_is_deleted"];
 
@@ -25,7 +25,7 @@ impl StateVersions {
             "SELECT * FROM {table_name} 
             WHERE chain_id = {chain_id}
             AND block_number >= {from_block_number}",
-            table_name = StateVersion::table_name(&state_table_name),
+            table_name = StateVersion::table_name(state_table_name),
         );
 
         ChaindexingRepo::load_data_list_from_raw_query_with_txn_client::<
@@ -37,7 +37,7 @@ impl StateVersions {
         .collect()
     }
 
-    pub fn get_ids(state_versions: &Vec<HashMap<String, String>>) -> Vec<String> {
+    pub fn get_ids(state_versions: &[HashMap<String, String>]) -> Vec<String> {
         state_versions
             .iter()
             .map(|state_version| state_version.get("state_version_id").unwrap())
@@ -45,7 +45,7 @@ impl StateVersions {
             .collect()
     }
 
-    pub fn get_group_ids(state_versions: &Vec<HashMap<String, String>>) -> Vec<String> {
+    pub fn get_group_ids(state_versions: &[HashMap<String, String>]) -> Vec<String> {
         state_versions
             .iter()
             .map(|state_version| state_version.get("state_version_group_id").unwrap())
@@ -54,7 +54,7 @@ impl StateVersions {
     }
 
     pub async fn delete_by_ids<'a>(
-        ids: &Vec<String>,
+        ids: &[String],
         state_table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
@@ -69,7 +69,7 @@ impl StateVersions {
     }
 
     pub async fn get_latest<'a>(
-        group_ids: &Vec<String>,
+        group_ids: &[String],
         state_table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) -> Vec<HashMap<String, String>> {
@@ -77,7 +77,7 @@ impl StateVersions {
             "SELECT DISTINCT ON (state_version_group_id) * FROM {table_name} 
             WHERE state_version_group_id IN ({group_ids}) 
             ORDER BY state_version_group_id, block_number, log_index DESC",
-            table_name = StateVersion::table_name(&state_table_name),
+            table_name = StateVersion::table_name(state_table_name),
             group_ids = group_ids.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",")
         );
 

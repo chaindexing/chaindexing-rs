@@ -45,7 +45,7 @@ pub trait Repo:
     );
     async fn get_all_contract_addresses<'a>(conn: &mut Self::Conn<'a>) -> Vec<ContractAddress>;
 
-    async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &Vec<Event>);
+    async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &[Event]);
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
     async fn get_events<'a>(
         conn: &mut Self::Conn<'a>,
@@ -107,7 +107,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 
     async fn update_reorged_blocks_as_handled_in_txn<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        reorged_block_ids: &Vec<i32>,
+        reorged_block_ids: &[i32],
     );
 }
 

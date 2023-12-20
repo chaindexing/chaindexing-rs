@@ -114,5 +114,5 @@ impl ContractStateMigrations for NftStateMigrations {
 pub async fn setup() {
     let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
     let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-    Chaindexing::run_migrations_for_contract_states(&raw_query_client, &vec![bayc_contract]).await;
+    Chaindexing::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract]).await;
 }

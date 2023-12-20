@@ -25,7 +25,7 @@ pub fn empty_json_rpc() -> impl EventsIngesterJsonRpc {
         }
     }
 
-    return JsonRpc;
+    JsonRpc
 }
 
 use ethers::types::{Bytes, H160, H256};
@@ -65,7 +65,7 @@ fn h256(str: &str) -> H256 {
 #[macro_export]
 macro_rules! json_rpc_with_logs {
     ($contract_address:expr) => {{
-        use crate::json_rpc_with_logs;
+        use $crate::json_rpc_with_logs;
 
         json_rpc_with_logs!($contract_address, 17774490)
     }};

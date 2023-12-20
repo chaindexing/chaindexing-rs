@@ -33,7 +33,7 @@ pub trait EventsIngesterJsonRpc: Clone + Sync + Send {
         &self,
         logs: &Vec<Log>,
     ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
-        let mut logs = logs.clone();
+        let mut logs = logs.to_owned();
         logs.dedup_by_key(|log| log.block_number);
 
         const CHUNK_SIZE: usize = 4;
@@ -177,18 +177,18 @@ impl EventsIngester {
     }
 
     fn filter_uningested_contract_addresses(
-        contract_addresses: &Vec<ContractAddress>,
+        contract_addresses: &[ContractAddress],
         current_block_number: u64,
     ) -> Vec<ContractAddress> {
         contract_addresses
-            .to_vec()
-            .into_iter()
+            .iter()
             .filter(|ca| current_block_number >= ca.next_block_number_to_ingest_from as u64)
+            .cloned()
             .collect()
     }
 }
 
-async fn fetch_current_block_number<'a>(json_rpc: &'a Arc<impl EventsIngesterJsonRpc>) -> u64 {
+async fn fetch_current_block_number(json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> u64 {
     let mut maybe_current_block_number = None;
     let mut retries_so_far = 0;
 
@@ -208,7 +208,7 @@ async fn fetch_current_block_number<'a>(json_rpc: &'a Arc<impl EventsIngesterJso
 
     maybe_current_block_number.unwrap()
 }
-async fn fetch_logs(filters: &Vec<Filter>, json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> Vec<Log> {
+async fn fetch_logs(filters: &[Filter], json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> Vec<Log> {
     let mut maybe_logs = None;
     let mut retries_so_far = 0;
 
@@ -259,8 +259,8 @@ struct Filters;
 
 impl Filters {
     fn new(
-        contract_addresses: &Vec<ContractAddress>,
-        contracts: &Vec<Contract>,
+        contract_addresses: &[ContractAddress],
+        contracts: &[Contract],
         current_block_number: u64,
         blocks_per_batch: u64,
         execution: &Execution,
@@ -284,7 +284,7 @@ impl Filters {
             .collect()
     }
 
-    fn group_by_contract_address_id(filters: &Vec<Filter>) -> HashMap<i32, Vec<Filter>> {
+    fn group_by_contract_address_id(filters: &[Filter]) -> HashMap<i32, Vec<Filter>> {
         let empty_filter_group = vec![];
 
         filters.iter().fold(
@@ -305,7 +305,7 @@ impl Filters {
     }
 
     fn get_latest(filters: &Vec<Filter>) -> Option<Filter> {
-        let mut filters = filters.clone();
+        let mut filters = filters.to_owned();
         filters.sort_by_key(|f| f.value.get_to_block());
 
         filters.last().cloned()
@@ -322,7 +322,7 @@ struct Filter {
 impl Filter {
     fn new(
         contract_address: &ContractAddress,
-        topics: &Vec<ContractEventTopic>,
+        topics: &[ContractEventTopic],
         current_block_number: u64,
         blocks_per_batch: u64,
         execution: &Execution,

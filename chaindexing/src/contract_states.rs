@@ -18,12 +18,12 @@ pub struct ContractStates;
 
 impl ContractStates {
     pub async fn backtrack_states<'a>(
-        state_migrations: &Vec<Arc<dyn ContractStateMigrations>>,
+        state_migrations: &[Arc<dyn ContractStateMigrations>],
         chain_id: i32,
         block_number: i64,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
-        let table_names = Self::get_all_table_names(&state_migrations);
+        let table_names = Self::get_all_table_names(state_migrations);
 
         for table_name in table_names {
             let state_versions =
@@ -38,7 +38,7 @@ impl ContractStates {
     }
 
     pub fn get_all_table_names(
-        state_migrations: &Vec<Arc<dyn ContractStateMigrations>>,
+        state_migrations: &[Arc<dyn ContractStateMigrations>],
     ) -> Vec<String> {
         state_migrations
             .iter()
@@ -92,7 +92,7 @@ pub trait ContractState:
         let client = context.get_raw_query_client();
 
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(&table_name, &client).await;
+        let state_view = self.to_complete_view(table_name, client).await;
 
         let latest_state_version =
             StateVersion::update(&state_view, &updates, table_name, event, client).await;
@@ -104,7 +104,7 @@ pub trait ContractState:
         let client = context.get_raw_query_client();
 
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(&table_name, &client).await;
+        let state_view = self.to_complete_view(table_name, client).await;
 
         let latest_state_version =
             StateVersion::delete(&state_view, table_name, event, client).await;
@@ -137,7 +137,7 @@ pub trait ContractState:
 }
 
 pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
-    state.into_iter().fold(
+    state.iter().fold(
         (vec![], vec![]),
         |(mut columns, mut values), (column, value)| {
             columns.push(column.to_string());
@@ -166,7 +166,7 @@ pub fn serde_map_to_string_map(
             if value.is_object() {
                 map.insert(key.to_owned(), value.to_string());
             } else {
-                map.insert(key.to_owned(), value.to_string().replace("\"", ""));
+                map.insert(key.to_owned(), value.to_string().replace('\"', ""));
             }
         }
 
