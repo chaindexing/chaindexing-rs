@@ -12,12 +12,12 @@ pub struct StateViews;
 
 impl StateViews {
     pub async fn refresh<'a>(
-        state_version_group_ids: &Vec<String>,
+        state_version_group_ids: &[String],
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
         let latest_state_versions =
-            StateVersions::get_latest(&state_version_group_ids, table_name, client).await;
+            StateVersions::get_latest(state_version_group_ids, table_name, client).await;
 
         for latest_state_version in latest_state_versions {
             StateView::refresh(&latest_state_version, table_name, client).await
@@ -53,10 +53,10 @@ impl StateView {
     ) {
         let state_version_group_id = StateVersion::get_group_id(latest_state_version);
 
-        if StateVersion::was_deleted(&latest_state_version) {
+        if StateVersion::was_deleted(latest_state_version) {
             Self::delete(&state_version_group_id, table_name, client).await;
         } else {
-            let new_state_view = Self::from_latest_state_version(&latest_state_version);
+            let new_state_view = Self::from_latest_state_version(latest_state_version);
 
             Self::delete(&state_version_group_id, table_name, client).await;
             Self::create(&new_state_view, table_name, client).await;
@@ -90,7 +90,7 @@ impl StateView {
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
-        let (columns, values) = to_columns_and_values(&new_state_view);
+        let (columns, values) = to_columns_and_values(new_state_view);
         let query = format!(
             "INSERT INTO {table_name} ({columns}) VALUES ({values})",
             columns = columns.join(","),

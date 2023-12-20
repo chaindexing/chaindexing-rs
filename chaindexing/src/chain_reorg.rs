@@ -63,16 +63,16 @@ impl UnsavedReorgedBlock {
 pub struct ReorgedBlocks;
 
 impl ReorgedBlocks {
-    pub fn only_earliest_per_chain(reorged_blocks: &Vec<ReorgedBlock>) -> Vec<ReorgedBlock> {
+    pub fn only_earliest_per_chain(reorged_blocks: &[ReorgedBlock]) -> Vec<ReorgedBlock> {
         reorged_blocks
-            .into_iter()
+            .iter()
             .fold(
                 HashMap::<i32, ReorgedBlock>::new(),
                 |mut reorged_blocks_by_chain, reorged_block| {
                     let ReorgedBlock { chain_id, .. } = reorged_block;
 
                     if let Some(earliest_reorged_block) = reorged_blocks_by_chain.get(chain_id) {
-                        if reorged_block.block_number < (*earliest_reorged_block).block_number {
+                        if reorged_block.block_number < earliest_reorged_block.block_number {
                             reorged_blocks_by_chain.insert(*chain_id, reorged_block.clone());
                         }
                     } else {
@@ -88,7 +88,7 @@ impl ReorgedBlocks {
             .collect()
     }
 
-    pub fn get_ids(reorged_blocks: &Vec<ReorgedBlock>) -> Vec<i32> {
+    pub fn get_ids(reorged_blocks: &[ReorgedBlock]) -> Vec<i32> {
         reorged_blocks.iter().map(|r| r.id).collect()
     }
 }

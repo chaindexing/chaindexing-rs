@@ -94,8 +94,7 @@ impl Chaindexing {
         Self::run_internal_migrations(&client).await;
         Self::run_migrations_for_contract_states(&client, contracts).await;
 
-        let contract_addresses =
-            contracts.clone().into_iter().map(|c| c.addresses).flatten().collect();
+        let contract_addresses = contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
         ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
 
         Ok(())
@@ -103,7 +102,7 @@ impl Chaindexing {
 
     pub async fn maybe_reset<'a>(
         reset_count: &u8,
-        contracts: &Vec<Contract>,
+        contracts: &[Contract],
         client: &ChaindexingRepoRawQueryClient,
         conn: &mut ChaindexingRepoConn<'a>,
     ) {
@@ -122,21 +121,21 @@ impl Chaindexing {
 
     pub async fn run_migrations_for_resets(client: &ChaindexingRepoRawQueryClient) {
         ChaindexingRepo::migrate(
-            &client,
+            client,
             ChaindexingRepo::create_reset_counts_migration().to_vec(),
         )
         .await;
     }
     pub async fn run_internal_migrations(client: &ChaindexingRepoRawQueryClient) {
-        ChaindexingRepo::migrate(&client, ChaindexingRepo::get_internal_migrations()).await;
+        ChaindexingRepo::migrate(client, ChaindexingRepo::get_internal_migrations()).await;
     }
     pub async fn reset_internal_migrations(client: &ChaindexingRepoRawQueryClient) {
-        ChaindexingRepo::migrate(&client, ChaindexingRepo::get_reset_internal_migrations()).await;
+        ChaindexingRepo::migrate(client, ChaindexingRepo::get_reset_internal_migrations()).await;
     }
 
     pub async fn run_migrations_for_contract_states(
         client: &ChaindexingRepoRawQueryClient,
-        contracts: &Vec<Contract>,
+        contracts: &[Contract],
     ) {
         for state_migration in Contracts::get_state_migrations(contracts) {
             ChaindexingRepo::migrate(client, state_migration.get_migrations()).await;
@@ -144,7 +143,7 @@ impl Chaindexing {
     }
     pub async fn reset_migrations_for_contract_states(
         client: &ChaindexingRepoRawQueryClient,
-        contracts: &Vec<Contract>,
+        contracts: &[Contract],
     ) {
         for state_migration in Contracts::get_state_migrations(contracts) {
             ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;

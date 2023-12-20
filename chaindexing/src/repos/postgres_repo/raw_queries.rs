@@ -69,14 +69,14 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
     async fn update_reorged_blocks_as_handled_in_txn<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        reorged_block_ids: &Vec<i32>,
+        reorged_block_ids: &[i32],
     ) {
         let query = format!(
             "UPDATE chaindexing_reorged_blocks
         SET handled_at = '{handled_at}'
         WHERE id IN ({reorged_block_ids})",
             reorged_block_ids = join_i32s_with_comma(reorged_block_ids),
-            handled_at = chrono::Utc::now().naive_utc().to_string(),
+            handled_at = chrono::Utc::now().naive_utc(),
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
@@ -176,10 +176,10 @@ fn json_aggregate_query(query: &str) -> String {
     format!("WITH result AS ({query}) SELECT COALESCE(json_agg(result), '[]'::json) FROM result",)
 }
 
-fn join_i32s_with_comma(i32s: &Vec<i32>) -> String {
+fn join_i32s_with_comma(i32s: &[i32]) -> String {
     i32s.iter().map(|id| id.to_string()).collect::<Vec<String>>().join(",")
 }
 
-fn join_strings_with_comma(strings: &Vec<String>) -> String {
+fn join_strings_with_comma(strings: &[String]) -> String {
     strings.iter().map(|string| format!("'{string}'")).collect::<Vec<_>>().join(",")
 }

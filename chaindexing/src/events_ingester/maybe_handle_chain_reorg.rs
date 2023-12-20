@@ -27,7 +27,7 @@ pub async fn run<'a>(
 ) -> Result<(), EventsIngesterError> {
     let filters = Filters::new(
         &contract_addresses,
-        &contracts,
+        contracts,
         current_block_number,
         blocks_per_batch,
         &Execution::Confirmation(min_confirmation_count),
@@ -70,10 +70,10 @@ async fn get_json_rpc_events(
     json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
     contracts: &Vec<Contract>,
 ) -> Vec<Event> {
-    let logs = fetch_logs(&filters, json_rpc).await;
+    let logs = fetch_logs(filters, json_rpc).await;
     let blocks_by_number = fetch_blocks_by_number(&logs, json_rpc).await;
 
-    Events::new(&logs, contracts, &blocks_by_number)
+    Events::get(&logs, contracts, &blocks_by_number)
 }
 
 async fn handle_chain_reorg<'a>(
@@ -106,20 +106,19 @@ fn get_json_rpc_added_and_removed_events(
     already_ingested_events: &Vec<Event>,
     json_rpc_events: &Vec<Event>,
 ) -> Option<(Vec<Event>, Vec<Event>)> {
-    let already_ingested_events_set: HashSet<_> =
-        already_ingested_events.clone().into_iter().collect();
-    let json_rpc_events_set: HashSet<_> = json_rpc_events.clone().into_iter().collect();
+    let already_ingested_events_set: HashSet<_> = already_ingested_events.iter().cloned().collect();
+    let json_rpc_events_set: HashSet<_> = json_rpc_events.iter().cloned().collect();
 
     let added_events: Vec<_> = json_rpc_events
-        .clone()
-        .into_iter()
+        .iter()
         .filter(|e| !already_ingested_events_set.contains(e))
+        .cloned()
         .collect();
 
     let removed_events: Vec<_> = already_ingested_events
-        .clone()
-        .into_iter()
+        .iter()
         .filter(|e| !json_rpc_events_set.contains(e))
+        .cloned()
         .collect();
 
     if added_events.is_empty() && removed_events.is_empty() {

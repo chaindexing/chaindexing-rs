@@ -108,7 +108,7 @@ impl Repo for PostgresRepo {
         chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
-    async fn create_events<'a>(conn: &mut Conn<'a>, events: &Vec<Event>) {
+    async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) {
         use crate::diesels::schema::chaindexing_events::dsl::*;
 
         diesel::insert_into(chaindexing_events)

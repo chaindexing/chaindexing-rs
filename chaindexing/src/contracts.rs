@@ -101,14 +101,12 @@ impl Contract {
 pub struct Contracts;
 
 impl Contracts {
-    pub fn get_state_migrations(
-        contracts: &Vec<Contract>,
-    ) -> Vec<Arc<dyn ContractStateMigrations>> {
-        contracts.into_iter().flat_map(|c| c.state_migrations.clone()).collect()
+    pub fn get_state_migrations(contracts: &[Contract]) -> Vec<Arc<dyn ContractStateMigrations>> {
+        contracts.iter().flat_map(|c| c.state_migrations.clone()).collect()
     }
 
     pub fn get_all_event_handlers_by_event_abi(
-        contracts: &Vec<Contract>,
+        contracts: &[Contract],
     ) -> HashMap<EventAbi, Arc<dyn EventHandler>> {
         contracts.iter().fold(
             HashMap::new(),
@@ -123,7 +121,7 @@ impl Contracts {
     }
 
     pub fn group_event_topics_by_names(
-        contracts: &Vec<Contract>,
+        contracts: &[Contract],
     ) -> HashMap<String, Vec<ContractEventTopic>> {
         contracts.iter().fold(HashMap::new(), |mut topics_by_contract_name, contract| {
             topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
@@ -133,7 +131,7 @@ impl Contracts {
     }
 
     pub fn group_events_by_topics(
-        contracts: &Vec<Contract>,
+        contracts: &[Contract],
     ) -> HashMap<ContractEventTopic, ContractEvent> {
         contracts
             .iter()
@@ -142,14 +140,14 @@ impl Contracts {
             .collect()
     }
 
-    pub fn get_all_contract_addresses_grouped_by_address<'a>(
-        contracts: &'a Vec<Contract>,
-    ) -> HashMap<Address, &'a UnsavedContractAddress> {
+    pub fn get_all_contract_addresses_grouped_by_address(
+        contracts: &[Contract],
+    ) -> HashMap<Address, &UnsavedContractAddress> {
         contracts.iter().fold(HashMap::new(), |mut contracts_by_addresses, contract| {
             contract.addresses.iter().for_each(
                 |contract_address @ UnsavedContractAddress { address, .. }| {
                     contracts_by_addresses.insert(
-                        Address::from_str(&*address.as_str()).unwrap(),
+                        Address::from_str(address.as_str()).unwrap(),
                         contract_address,
                     );
                 },
@@ -177,7 +175,7 @@ impl UnsavedContractAddress {
             contract_name: contract_name.to_string(),
             address: address.to_lowercase().to_string(),
             chain_id: *chain as i32,
-            start_block_number: start_block_number,
+            start_block_number,
             next_block_number_to_ingest_from: start_block_number,
             next_block_number_to_handle_from: start_block_number,
         }

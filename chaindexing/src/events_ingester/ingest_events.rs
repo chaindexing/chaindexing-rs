@@ -24,7 +24,7 @@ pub async fn run<'a>(
 ) -> Result<(), EventsIngesterError> {
     let filters = Filters::new(
         &contract_addresses,
-        &contracts,
+        contracts,
         current_block_number,
         blocks_per_batch,
         &Execution::Main,
@@ -36,7 +36,7 @@ pub async fn run<'a>(
     if !filters.is_empty() {
         let logs = fetch_logs(&filters, json_rpc).await;
         let blocks_by_tx_hash = fetch_blocks_by_number(&logs, json_rpc).await;
-        let events = Events::new(&logs, &contracts, &blocks_by_tx_hash);
+        let events = Events::get(&logs, contracts, &blocks_by_tx_hash);
 
         ChaindexingRepo::run_in_transaction(conn, move |conn| {
             async move {
@@ -56,7 +56,7 @@ pub async fn run<'a>(
 
 async fn remove_already_ingested_filters(
     filters: &Vec<Filter>,
-    contract_addresses: &Vec<ContractAddress>,
+    contract_addresses: &[ContractAddress],
     raw_query_client: &ChaindexingRepoRawQueryClient,
 ) -> Vec<Filter> {
     let current_block_filters: Vec<_> = filters
@@ -65,7 +65,7 @@ async fn remove_already_ingested_filters(
         .collect();
 
     if current_block_filters.is_empty() {
-        filters.clone()
+        filters.to_owned()
     } else {
         let addresses = contract_addresses.iter().map(|c| c.address.clone()).collect();
 
@@ -118,7 +118,7 @@ async fn update_next_block_numbers_to_ingest_from<'a>(
 
             ChaindexingRepo::update_next_block_number_to_ingest_from(
                 conn,
-                &contract_address,
+                contract_address,
                 next_block_number_to_ingest_from.as_u64() as i64,
             )
             .await

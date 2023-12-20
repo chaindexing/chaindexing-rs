@@ -107,11 +107,11 @@ impl Event {
         !self.removed
     }
 
-    pub fn match_contract_address(&self, contract_address: &String) -> bool {
+    pub fn match_contract_address(&self, contract_address: &str) -> bool {
         self.contract_address.to_lowercase() == *contract_address.to_lowercase()
     }
 
-    fn log_params_to_parameters(log_params: &Vec<LogParam>) -> HashMap<String, Token> {
+    fn log_params_to_parameters(log_params: &[LogParam]) -> HashMap<String, Token> {
         log_params.iter().fold(HashMap::new(), |mut parameters, log_param| {
             parameters.insert(log_param.name.to_string(), log_param.value.clone());
 
@@ -123,8 +123,8 @@ impl Event {
 pub struct Events;
 
 impl Events {
-    pub fn new(
-        logs: &Vec<Log>,
+    pub fn get(
+        logs: &[Log],
         contracts: &Vec<Contract>,
         blocks_by_number: &HashMap<U64, Block<TxHash>>,
     ) -> Vec<Event> {
@@ -140,13 +140,13 @@ impl Events {
                      block_number,
                      ..
                  }| {
-                    let contract_address = contract_addresses_by_address.get(&address).unwrap();
+                    let contract_address = contract_addresses_by_address.get(address).unwrap();
                     let block = blocks_by_number.get(&block_number.unwrap()).unwrap();
 
                     Event::new(
                         log,
-                        &events_by_topics.get(&topics[0]).unwrap(),
-                        &contract_address,
+                        events_by_topics.get(&topics[0]).unwrap(),
+                        contract_address,
                         block.timestamp.as_u64() as i64,
                     )
                 },

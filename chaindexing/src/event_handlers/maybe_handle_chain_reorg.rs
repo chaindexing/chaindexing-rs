@@ -13,7 +13,7 @@ use crate::{ReorgedBlock, ReorgedBlocks};
 pub async fn run<'a>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
     raw_query_client: &mut ChaindexingRepoRawQueryClient,
-    state_migrations: &Vec<Arc<dyn ContractStateMigrations>>,
+    state_migrations: &[Arc<dyn ContractStateMigrations>],
 ) {
     let mut conn = conn.lock().await;
     let reorged_blocks = ChaindexingRepo::get_unhandled_reorged_blocks(&mut conn).await;

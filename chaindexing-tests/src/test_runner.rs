@@ -16,7 +16,7 @@ where
     TestFn: Fn(ChaindexingRepoConn<'a>) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let mut conn = ChaindexingRepo::get_conn(&pool).await;
+    let mut conn = ChaindexingRepo::get_conn(pool).await;
 
     if should_setup_test_db() {
         db::setup();
