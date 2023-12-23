@@ -10,7 +10,8 @@ mod tests {
         json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
     };
     use chaindexing::{
-        Chain, ChaindexingRepo, EventsIngester, HasRawQueryClient, MinConfirmationCount, Repo,
+        Chain, ChaindexingRepo, Contract, EventsIngester, HasRawQueryClient, MinConfirmationCount,
+        NoSharedState, Repo,
     };
 
     #[tokio::test]
@@ -151,7 +152,7 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let contracts = vec![];
+            let contracts: Vec<Contract<NoSharedState>> = vec![];
             let json_rpc = Arc::new(empty_json_rpc());
             let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));

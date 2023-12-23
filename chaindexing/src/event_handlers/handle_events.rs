@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::{collections::HashMap, sync::Arc};
 
 use futures_util::StreamExt;
@@ -11,10 +12,11 @@ use crate::{
 
 use super::{EventHandler, EventHandlerContext};
 
-pub async fn run<'a>(
+pub async fn run<'a, S: Send + Sync + Clone + Debug>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-    event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
+    event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler<SharedState = S>>>,
     raw_query_client: &mut ChaindexingRepoRawQueryClient,
+    shared_state: Option<Arc<Mutex<S>>>,
 ) {
     let mut contract_addresses_stream =
         ChaindexingRepo::get_contract_addresses_stream(conn.clone());
@@ -26,17 +28,19 @@ pub async fn run<'a>(
                 &contract_address,
                 event_handlers_by_event_abi,
                 raw_query_client,
+                shared_state.clone(),
             )
             .await
         }
     }
 }
 
-async fn handle_events_for_contract_address<'a>(
+async fn handle_events_for_contract_address<'a, S: Send + Sync + Clone + Debug>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
     contract_address: &ContractAddress,
-    event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler>>,
+    event_handlers_by_event_abi: &HashMap<&str, Arc<dyn EventHandler<SharedState = S>>>,
     raw_query_client: &mut ChaindexingRepoRawQueryClient,
+    shared_state: Option<Arc<Mutex<S>>>,
 ) {
     let mut events_stream = ChaindexingRepo::get_events_stream(
         conn.clone(),
@@ -58,8 +62,11 @@ async fn handle_events_for_contract_address<'a>(
 
         for event in events.clone() {
             let event_handler = event_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
-            let event_handler_context =
-                EventHandlerContext::new(event.clone(), &raw_query_txn_client);
+            let event_handler_context = EventHandlerContext::new(
+                event.clone(),
+                &raw_query_txn_client,
+                shared_state.clone(),
+            );
 
             event_handler.handle_event(event_handler_context).await;
         }

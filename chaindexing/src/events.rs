@@ -123,9 +123,9 @@ impl Event {
 pub struct Events;
 
 impl Events {
-    pub fn get(
+    pub fn get<S: Send + Sync + Clone>(
         logs: &[Log],
-        contracts: &Vec<Contract>,
+        contracts: &Vec<Contract<S>>,
         blocks_by_number: &HashMap<U64, Block<TxHash>>,
     ) -> Vec<Event> {
         let events_by_topics = Contracts::group_events_by_topics(contracts);

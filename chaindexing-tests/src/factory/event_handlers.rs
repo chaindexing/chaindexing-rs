@@ -1,4 +1,4 @@
-use chaindexing::{EventContext, EventHandler};
+use chaindexing::{EventContext, EventHandler, NoSharedState};
 
 #[derive(Clone, Debug)]
 pub struct NftState;
@@ -7,12 +7,16 @@ pub struct TransferTestEventHandler;
 
 #[async_trait::async_trait]
 impl EventHandler for TransferTestEventHandler {
-    async fn handle_event<'a>(&self, _event_context: EventContext<'a>) {}
+    type SharedState = NoSharedState;
+
+    async fn handle_event<'a>(&self, _event_context: EventContext<'a, Self::SharedState>) {}
 }
 
 pub struct ApprovalForAllTestEventHandler;
 
 #[async_trait::async_trait]
 impl EventHandler for ApprovalForAllTestEventHandler {
-    async fn handle_event<'a>(&self, _event_context: EventContext<'a>) {}
+    type SharedState = NoSharedState;
+
+    async fn handle_event<'a>(&self, _event_context: EventContext<'a, Self::SharedState>) {}
 }
