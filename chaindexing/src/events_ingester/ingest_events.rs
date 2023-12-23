@@ -13,16 +13,16 @@ use crate::{
 
 use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Filters};
 
-pub async fn run<'a>(
+pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     raw_query_client: &ChaindexingRepoRawQueryClient,
     contract_addresses: Vec<ContractAddress>,
-    contracts: &Vec<Contract>,
+    contracts: &Vec<Contract<S>>,
     json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
     current_block_number: u64,
     blocks_per_batch: u64,
 ) -> Result<(), EventsIngesterError> {
-    let filters = Filters::new(
+    let filters = Filters::get(
         &contract_addresses,
         contracts,
         current_block_number,

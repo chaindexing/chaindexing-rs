@@ -94,7 +94,7 @@ impl From<RepoError> for EventsIngesterError {
 pub struct EventsIngester;
 
 impl EventsIngester {
-    pub fn start(config: &Config) {
+    pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) {
         let config = config.clone();
         tokio::spawn(async move {
             let pool = config.repo.get_pool(1).await;
@@ -128,10 +128,10 @@ impl EventsIngester {
         });
     }
 
-    pub async fn ingest<'a>(
+    pub async fn ingest<'a, S: Send + Sync + Clone>(
         conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
         raw_query_client: &ChaindexingRepoRawQueryClient,
-        contracts: &Vec<Contract>,
+        contracts: &Vec<Contract<S>>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
         chain: &Chain,
@@ -258,9 +258,9 @@ async fn backoff(retries_so_far: u32) {
 struct Filters;
 
 impl Filters {
-    fn new(
+    fn get<S: Send + Sync + Clone>(
         contract_addresses: &[ContractAddress],
-        contracts: &[Contract],
+        contracts: &[Contract<S>],
         current_block_number: u64,
         blocks_per_batch: u64,
         execution: &Execution,

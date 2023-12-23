@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use ethers::types::Chain;
+use tokio::sync::Mutex;
 
 use crate::{ChaindexingRepo, Chains, Contract, MinConfirmationCount};
 
@@ -22,19 +23,20 @@ impl std::fmt::Debug for ConfigError {
     }
 }
 #[derive(Clone)]
-pub struct Config {
+pub struct Config<SharedState: Sync + Send + Clone> {
     pub chains: Chains,
     pub repo: ChaindexingRepo,
-    pub contracts: Vec<Contract>,
+    pub contracts: Vec<Contract<SharedState>>,
     pub min_confirmation_count: MinConfirmationCount,
     pub blocks_per_batch: u64,
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
     pub reset_count: u8,
+    pub shared_state: Option<Arc<Mutex<SharedState>>>,
 }
 
-impl Config {
-    pub fn new(repo: ChaindexingRepo) -> Self {
+impl<SharedState: Sync + Send + Clone> Config<SharedState> {
+    pub fn new(repo: ChaindexingRepo, initial_state: Option<SharedState>) -> Self {
         Self {
             repo,
             chains: HashMap::new(),
@@ -44,6 +46,7 @@ impl Config {
             handler_rate_ms: 4000,
             ingestion_rate_ms: 4000,
             reset_count: 0,
+            shared_state: initial_state.map(|s| Arc::new(Mutex::new(s))),
         }
     }
 
@@ -53,7 +56,7 @@ impl Config {
         self
     }
 
-    pub fn add_contract(mut self, contract: Contract) -> Self {
+    pub fn add_contract(mut self, contract: Contract<SharedState>) -> Self {
         self.contracts.push(contract);
 
         self

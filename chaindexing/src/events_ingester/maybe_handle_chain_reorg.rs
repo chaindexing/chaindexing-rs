@@ -15,17 +15,17 @@ use crate::{
 
 use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Filters};
 
-pub async fn run<'a>(
+pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     contract_addresses: Vec<ContractAddress>,
-    contracts: &Vec<Contract>,
+    contracts: &Vec<Contract<S>>,
     json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
     chain: &Chain,
     current_block_number: u64,
     blocks_per_batch: u64,
     min_confirmation_count: &MinConfirmationCount,
 ) -> Result<(), EventsIngesterError> {
-    let filters = Filters::new(
+    let filters = Filters::get(
         &contract_addresses,
         contracts,
         current_block_number,
@@ -65,10 +65,10 @@ async fn get_already_ingested_events<'a>(
     already_ingested_events
 }
 
-async fn get_json_rpc_events(
+async fn get_json_rpc_events<S: Send + Sync + Clone>(
     filters: &Vec<Filter>,
     json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
-    contracts: &Vec<Contract>,
+    contracts: &Vec<Contract<S>>,
 ) -> Vec<Event> {
     let logs = fetch_logs(filters, json_rpc).await;
     let blocks_by_number = fetch_blocks_by_number(&logs, json_rpc).await;

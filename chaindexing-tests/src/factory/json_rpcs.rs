@@ -70,10 +70,10 @@ macro_rules! json_rpc_with_logs {
         json_rpc_with_logs!($contract_address, 17774490)
     }};
     ($contract_address:expr, $current_block_number:expr) => {{
-        use crate::factory::transfer_log;
         use chaindexing::EventsIngesterJsonRpc;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
+        use $crate::factory::transfer_log;
 
         #[derive(Clone)]
         struct JsonRpc;

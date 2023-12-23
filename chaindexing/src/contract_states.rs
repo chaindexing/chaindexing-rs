@@ -75,7 +75,7 @@ pub trait ContractState:
         StateView::get_complete(&view, table_name, client).await
     }
 
-    async fn create<'a>(&self, context: &EventHandlerContext) {
+    async fn create<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
         let event = &context.event;
         let client = context.get_raw_query_client();
 
@@ -87,7 +87,11 @@ pub trait ContractState:
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
-    async fn update<'a>(&self, updates: HashMap<String, String>, context: &EventHandlerContext) {
+    async fn update<'a, S: Send + Sync + Clone>(
+        &self,
+        updates: HashMap<String, String>,
+        context: &EventHandlerContext<S>,
+    ) {
         let event = &context.event;
         let client = context.get_raw_query_client();
 
@@ -99,7 +103,7 @@ pub trait ContractState:
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
-    async fn delete<'a>(&self, context: &EventHandlerContext) {
+    async fn delete<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
         let event = &context.event;
         let client = context.get_raw_query_client();
 
@@ -111,18 +115,18 @@ pub trait ContractState:
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
-    async fn read_one<'a>(
+    async fn read_one<'a, S: Send + Sync + Clone>(
         filters: HashMap<String, String>,
-        context: &EventHandlerContext,
+        context: &EventHandlerContext<S>,
     ) -> Option<Self> {
         let states = Self::read_many(filters, context).await;
 
         states.first().cloned()
     }
 
-    async fn read_many<'a>(
+    async fn read_many<'a, S: Send + Sync + Clone>(
         filters: HashMap<String, String>,
-        context: &EventHandlerContext,
+        context: &EventHandlerContext<S>,
     ) -> Vec<Self> {
         let client = context.get_raw_query_client();
 

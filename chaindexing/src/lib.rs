@@ -10,6 +10,8 @@ mod events_ingester;
 mod repos;
 mod reset_counts;
 
+use std::fmt::Debug;
+
 pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::Chains;
 pub use config::Config;
@@ -17,7 +19,9 @@ use config::ConfigError;
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use ethers::prelude::Chain;
-pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
+pub use event_handlers::{
+    EventHandler, EventHandlerContext as EventContext, EventHandlers, NoSharedState,
+};
 pub use events::{Event, Events};
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
 pub use repos::*;
@@ -69,7 +73,9 @@ impl std::fmt::Debug for ChaindexingError {
 pub struct Chaindexing;
 
 impl Chaindexing {
-    pub async fn index_states(config: &Config) -> Result<(), ChaindexingError> {
+    pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
+        config: &Config<S>,
+    ) -> Result<(), ChaindexingError> {
         config.validate()?;
         Self::setup(config).await?;
         EventsIngester::start(config);
@@ -77,7 +83,7 @@ impl Chaindexing {
         Ok(())
     }
 
-    pub async fn setup(config: &Config) -> Result<(), ChaindexingError> {
+    pub async fn setup<S: Sync + Send + Clone>(config: &Config<S>) -> Result<(), ChaindexingError> {
         let Config {
             repo,
             contracts,
@@ -100,9 +106,9 @@ impl Chaindexing {
         Ok(())
     }
 
-    pub async fn maybe_reset<'a>(
+    pub async fn maybe_reset<'a, S: Send + Sync + Clone>(
         reset_count: &u8,
-        contracts: &[Contract],
+        contracts: &[Contract<S>],
         client: &ChaindexingRepoRawQueryClient,
         conn: &mut ChaindexingRepoConn<'a>,
     ) {
@@ -133,17 +139,17 @@ impl Chaindexing {
         ChaindexingRepo::migrate(client, ChaindexingRepo::get_reset_internal_migrations()).await;
     }
 
-    pub async fn run_migrations_for_contract_states(
+    pub async fn run_migrations_for_contract_states<S: Send + Sync + Clone>(
         client: &ChaindexingRepoRawQueryClient,
-        contracts: &[Contract],
+        contracts: &[Contract<S>],
     ) {
         for state_migration in Contracts::get_state_migrations(contracts) {
             ChaindexingRepo::migrate(client, state_migration.get_migrations()).await;
         }
     }
-    pub async fn reset_migrations_for_contract_states(
+    pub async fn reset_migrations_for_contract_states<S: Send + Sync + Clone>(
         client: &ChaindexingRepoRawQueryClient,
-        contracts: &[Contract],
+        contracts: &[Contract<S>],
     ) {
         for state_migration in Contracts::get_state_migrations(contracts) {
             ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
