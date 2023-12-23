@@ -11,7 +11,7 @@ mod tests {
     };
     use chaindexing::{
         Chain, ChaindexingRepo, Contract, EventsIngester, HasRawQueryClient, MinConfirmationCount,
-        NoSharedState, Repo,
+        Repo,
     };
 
     #[tokio::test]
@@ -152,7 +152,7 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let contracts: Vec<Contract<NoSharedState>> = vec![];
+            let contracts: Vec<Contract<()>> = vec![];
             let json_rpc = Arc::new(empty_json_rpc());
             let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));

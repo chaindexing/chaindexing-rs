@@ -40,9 +40,6 @@ impl<'a, SharedState: Sync + Send + Clone> EventHandlerContext<'a, SharedState> 
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct NoSharedState;
-
 #[async_trait::async_trait]
 pub trait EventHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
