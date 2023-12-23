@@ -22,5 +22,8 @@ tests.with_backtrace:
 doc:
 	cargo doc --open
 
+publish:
+	cargo publish -p chaindexing
+
 publish.dirty:
-	cargo publish -p chaindexing --allow-dirty
+	make publish --allow-dirty
