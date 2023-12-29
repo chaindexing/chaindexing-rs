@@ -45,7 +45,6 @@ pub struct ReorgedBlock {
 pub struct UnsavedReorgedBlock {
     pub block_number: i64,
     pub chain_id: i32,
-    handled_at: Option<chrono::NaiveDateTime>,
     inserted_at: chrono::NaiveDateTime,
 }
 
@@ -54,7 +53,6 @@ impl UnsavedReorgedBlock {
         Self {
             block_number,
             chain_id: *chain as i32,
-            handled_at: None,
             inserted_at: chrono::Utc::now().naive_utc(),
         }
     }
