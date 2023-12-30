@@ -128,11 +128,11 @@ fn get_unique_index_migration_for_state_versions(
 }
 
 fn validate_migration(migration: &str) {
-    let invalid_migration_keywords = [" timestamp", " timestampz", " date", " time"];
+    let invalid_migration_keywords = [" timestamp", " timestamptz", " date", " time"];
 
     invalid_migration_keywords.iter().for_each(|keyword| {
         if migration.to_lowercase().contains(keyword) {
-            panic!("{keyword} tyoe of fields cannot be indexed")
+            panic!("{keyword} tyoe of fields cannot be indexed. Consider using Unix time for timestamp fields.")
         }
     });
 }
