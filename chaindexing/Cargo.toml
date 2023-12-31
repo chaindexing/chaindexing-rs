@@ -1,10 +1,11 @@
 [package]
 name = "chaindexing"
-version = "0.1.22"
+version = "0.1.23"
 edition = "2021"
 description = "Access EVM chain data with SQL"
 license = "MIT OR Apache-2.0"
 readme="../README.md"
+repository = "https://github.com/chaindexing/chaindexing-rs"
 
 [features]
 default = ["postgres"]
