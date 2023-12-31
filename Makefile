@@ -26,4 +26,4 @@ publish:
 	cargo publish -p chaindexing
 
 publish.dirty:
-	make publish --allow-dirty
+	cargo publish -p chaindexing --allow-dirty
