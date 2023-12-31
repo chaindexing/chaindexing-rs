@@ -220,7 +220,7 @@ impl DefaultMigration {
     pub fn get() -> String {
         "state_version_group_id UUID NOT NULL,
         contract_address VARCHAR NOT NULL,
-        chain_id INTEGER NOT NULL,
+        chain_id BIGINT NOT NULL,
         block_hash VARCHAR NOT NULL,
         block_number BIGINT NOT NULL,
         transaction_hash VARCHAR NOT NULL,

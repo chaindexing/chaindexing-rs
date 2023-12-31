@@ -55,7 +55,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
     async fn update_every_next_block_number_to_handle_from_in_txn<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        chain_id: i32,
+        chain_id: i64,
         block_number: i64,
     ) {
         let query = format!(

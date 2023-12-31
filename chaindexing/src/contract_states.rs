@@ -19,7 +19,7 @@ pub struct ContractStates;
 impl ContractStates {
     pub async fn backtrack_states<'a>(
         state_migrations: &[Arc<dyn ContractStateMigrations>],
-        chain_id: i32,
+        chain_id: i64,
         block_number: i64,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {

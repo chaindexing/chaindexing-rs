@@ -17,7 +17,7 @@ pub struct StateVersions;
 impl StateVersions {
     pub async fn get<'a>(
         from_block_number: i64,
-        chain_id: i32,
+        chain_id: i64,
         state_table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) -> Vec<HashMap<String, String>> {

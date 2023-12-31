@@ -101,7 +101,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 
     async fn update_every_next_block_number_to_handle_from_in_txn<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        chain_id: i32,
+        chain_id: i64,
         block_number: i64,
     );
 
@@ -195,7 +195,7 @@ impl SQLikeMigrations {
                 id SERIAL PRIMARY KEY,
                 address VARCHAR NOT NULL,
                 contract_name VARCHAR NOT NULL,
-                chain_id INTEGER NOT NULL,
+                chain_id BIGINT NOT NULL,
                 start_block_number BIGINT NOT NULL,
                 next_block_number_to_ingest_from BIGINT NOT NULL,
                 next_block_number_to_handle_from BIGINT NOT NULL
@@ -212,7 +212,7 @@ impl SQLikeMigrations {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_events (
                 id uuid PRIMARY KEY,
-                chain_id INTEGER NOT NULL,
+                chain_id BIGINT NOT NULL,
                 contract_address VARCHAR NOT NULL,
                 contract_name VARCHAR NOT NULL,
                 abi TEXT NOT NULL,
@@ -241,7 +241,7 @@ impl SQLikeMigrations {
     pub fn create_reorged_blocks() -> &'static [&'static str] {
         &["CREATE TABLE IF NOT EXISTS chaindexing_reorged_blocks (
                 id SERIAL PRIMARY KEY,
-                chain_id INTEGER NOT NULL,
+                chain_id BIGINT NOT NULL,
                 block_number BIGINT NOT NULL,
                 handled_at TIMESTAMPTZ,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 

@@ -35,7 +35,7 @@ pub enum Execution<'a> {
 pub struct ReorgedBlock {
     pub id: i32,
     pub block_number: i64,
-    pub chain_id: i32,
+    pub chain_id: i64,
     handled_at: Option<chrono::NaiveDateTime>,
     inserted_at: chrono::NaiveDateTime,
 }
@@ -44,7 +44,7 @@ pub struct ReorgedBlock {
 #[diesel(table_name = chaindexing_reorged_blocks)]
 pub struct UnsavedReorgedBlock {
     pub block_number: i64,
-    pub chain_id: i32,
+    pub chain_id: i64,
     inserted_at: chrono::NaiveDateTime,
 }
 
@@ -52,7 +52,7 @@ impl UnsavedReorgedBlock {
     pub fn new(block_number: i64, chain: &Chain) -> Self {
         Self {
             block_number,
-            chain_id: *chain as i32,
+            chain_id: *chain as i64,
             inserted_at: chrono::Utc::now().naive_utc(),
         }
     }
@@ -65,7 +65,7 @@ impl ReorgedBlocks {
         reorged_blocks
             .iter()
             .fold(
-                HashMap::<i32, ReorgedBlock>::new(),
+                HashMap::<i64, ReorgedBlock>::new(),
                 |mut reorged_blocks_by_chain, reorged_block| {
                     let ReorgedBlock { chain_id, .. } = reorged_block;
 

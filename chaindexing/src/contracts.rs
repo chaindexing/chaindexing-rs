@@ -165,7 +165,7 @@ impl Contracts {
 pub struct UnsavedContractAddress {
     pub contract_name: String,
     address: String,
-    pub chain_id: i32,
+    pub chain_id: i64,
     start_block_number: i64,
     next_block_number_to_ingest_from: i64,
     next_block_number_to_handle_from: i64,
@@ -176,7 +176,7 @@ impl UnsavedContractAddress {
         UnsavedContractAddress {
             contract_name: contract_name.to_string(),
             address: address.to_lowercase().to_string(),
-            chain_id: *chain as i32,
+            chain_id: *chain as i64,
             start_block_number,
             next_block_number_to_ingest_from: start_block_number,
             next_block_number_to_handle_from: start_block_number,
@@ -198,7 +198,7 @@ impl ContractAddressID {
 #[diesel(primary_key(id))]
 pub struct ContractAddress {
     pub id: i32,
-    chain_id: i32,
+    chain_id: i64,
     pub next_block_number_to_ingest_from: i64,
     pub next_block_number_to_handle_from: i64,
     pub start_block_number: i64,

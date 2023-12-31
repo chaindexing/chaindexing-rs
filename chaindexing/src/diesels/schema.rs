@@ -3,7 +3,7 @@
 diesel::table! {
   chaindexing_contract_addresses (id) {
       id -> Int4,
-      chain_id -> Int4,
+      chain_id -> Int8,
       next_block_number_to_ingest_from -> Int8,
       next_block_number_to_handle_from -> Int8,
       start_block_number -> Int8,
@@ -15,7 +15,7 @@ diesel::table! {
 diesel::table! {
   chaindexing_events (id) {
       id -> Uuid,
-      chain_id -> Int4,
+      chain_id -> Int8,
       contract_address -> VarChar,
       contract_name -> VarChar,
       abi -> Text,
@@ -44,7 +44,7 @@ diesel::table! {
   chaindexing_reorged_blocks (id) {
       id -> Int4,
       block_number -> Int8,
-      chain_id -> Int4,
+      chain_id -> Int8,
       handled_at -> Nullable<Timestamptz>,
       inserted_at -> Timestamptz,
   }

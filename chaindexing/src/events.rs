@@ -17,7 +17,7 @@ use serde::Deserialize;
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
     pub id: Uuid,
-    pub chain_id: i32,
+    pub chain_id: i64,
     pub contract_address: String,
     pub contract_name: String,
     pub abi: String,
@@ -38,7 +38,7 @@ pub struct Event {
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 pub struct PartialEvent {
     pub id: Uuid,
-    pub chain_id: i32,
+    pub chain_id: i64,
     pub contract_address: String,
     pub contract_name: String,
     pub block_hash: String,
