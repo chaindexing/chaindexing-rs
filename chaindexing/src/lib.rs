@@ -25,8 +25,6 @@ pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
 pub use repos::*;
 pub use reset_counts::ResetCount;
 
-pub use ethers::prelude::{Address, U256, U64};
-
 #[cfg(feature = "postgres")]
 pub use repos::{PostgresRepo, PostgresRepoConn, PostgresRepoPool};
 
