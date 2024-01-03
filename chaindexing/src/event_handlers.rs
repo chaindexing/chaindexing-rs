@@ -12,7 +12,7 @@ use crate::{ChaindexingRepoRawQueryTxnClient, HasRawQueryClient};
 #[derive(Clone)]
 pub struct EventHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub event: Event,
-    raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+    pub(super) raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
     shared_state: Option<Arc<Mutex<SharedState>>>,
 }
 
@@ -33,10 +33,6 @@ impl<'a, SharedState: Sync + Send + Clone> EventHandlerContext<'a, SharedState> 
         let shared_state = self.shared_state.clone().unwrap();
         let shared_state = shared_state.lock().await;
         shared_state.clone()
-    }
-
-    pub(super) fn get_raw_query_client(&self) -> &'a ChaindexingRepoRawQueryTxnClient<'a> {
-        self.raw_query_client
     }
 }
 

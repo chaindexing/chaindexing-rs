@@ -77,7 +77,7 @@ pub trait ContractState:
 
     async fn create<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
         let event = &context.event;
-        let client = context.get_raw_query_client();
+        let client = context.raw_query_client;
 
         let state_view = self.to_view();
         let table_name = Self::table_name();
@@ -93,7 +93,7 @@ pub trait ContractState:
         context: &EventHandlerContext<S>,
     ) {
         let event = &context.event;
-        let client = context.get_raw_query_client();
+        let client = context.raw_query_client;
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client).await;
@@ -105,7 +105,7 @@ pub trait ContractState:
 
     async fn delete<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
         let event = &context.event;
-        let client = context.get_raw_query_client();
+        let client = context.raw_query_client;
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client).await;
@@ -128,7 +128,7 @@ pub trait ContractState:
         filters: HashMap<String, String>,
         context: &EventHandlerContext<S>,
     ) -> Vec<Self> {
-        let client = context.get_raw_query_client();
+        let client = context.raw_query_client;
 
         let raw_query = format!(
             "SELECT * FROM {table_name} WHERE {filters}",
