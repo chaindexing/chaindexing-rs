@@ -36,7 +36,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
-    pub fn new(repo: ChaindexingRepo, initial_state: Option<SharedState>) -> Self {
+    pub fn new(repo: ChaindexingRepo) -> Self {
         Self {
             repo,
             chains: HashMap::new(),
@@ -46,7 +46,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             handler_rate_ms: 4000,
             ingestion_rate_ms: 4000,
             reset_count: 0,
-            shared_state: initial_state.map(|s| Arc::new(Mutex::new(s))),
+            shared_state: None,
         }
     }
 
@@ -58,6 +58,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn add_contract(mut self, contract: Contract<SharedState>) -> Self {
         self.contracts.push(contract);
+
+        self
+    }
+
+    pub fn with_initial_state(mut self, initial_state: SharedState) -> Self {
+        self.shared_state = Some(Arc::new(Mutex::new(initial_state)));
 
         self
     }
