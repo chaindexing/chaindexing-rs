@@ -42,9 +42,9 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             chains: HashMap::new(),
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
-            blocks_per_batch: 10000,
-            handler_rate_ms: 4000,
-            ingestion_rate_ms: 4000,
+            blocks_per_batch: 10_000,
+            handler_rate_ms: 4_000,
+            ingestion_rate_ms: 30_000,
             reset_count: 0,
             shared_state: None,
         }
