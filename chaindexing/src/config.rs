@@ -32,6 +32,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
     pub reset_count: u8,
+    pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
 }
 
@@ -46,6 +47,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             handler_rate_ms: 4_000,
             ingestion_rate_ms: 30_000,
             reset_count: 0,
+            reset_queries: vec![],
             shared_state: None,
         }
     }
@@ -62,14 +64,20 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
-    pub fn with_initial_state(mut self, initial_state: SharedState) -> Self {
-        self.shared_state = Some(Arc::new(Mutex::new(initial_state)));
+    pub fn add_reset_query(mut self, reset_query: &str) -> Self {
+        self.reset_queries.push(reset_query.to_string());
 
         self
     }
 
     pub fn reset(mut self, count: u8) -> Self {
         self.reset_count = count;
+
+        self
+    }
+
+    pub fn with_initial_state(mut self, initial_state: SharedState) -> Self {
+        self.shared_state = Some(Arc::new(Mutex::new(initial_state)));
 
         self
     }

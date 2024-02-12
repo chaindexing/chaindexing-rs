@@ -84,6 +84,7 @@ impl Chaindexing {
             repo,
             contracts,
             reset_count,
+            reset_queries,
             ..
         } = config;
 
@@ -92,7 +93,7 @@ impl Chaindexing {
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
 
         Self::run_migrations_for_resets(&client).await;
-        Self::maybe_reset(reset_count, contracts, &client, &mut conn).await;
+        Self::maybe_reset(reset_count, reset_queries, contracts, &client, &mut conn).await;
         Self::run_internal_migrations(&client).await;
         Self::run_migrations_for_contract_states(&client, contracts).await;
 
@@ -104,6 +105,7 @@ impl Chaindexing {
 
     pub async fn maybe_reset<'a, S: Send + Sync + Clone>(
         reset_count: &u8,
+        reset_queries: &Vec<String>,
         contracts: &[Contract<S>],
         client: &ChaindexingRepoRawQueryClient,
         conn: &mut ChaindexingRepoConn<'a>,
@@ -115,6 +117,7 @@ impl Chaindexing {
         if reset_count > previous_reset_count {
             Self::reset_internal_migrations(client).await;
             Self::reset_migrations_for_contract_states(client, contracts).await;
+            Self::run_user_reset_queries(client, reset_queries).await;
             for _ in previous_reset_count..reset_count {
                 ChaindexingRepo::create_reset_count(conn).await;
             }
@@ -149,6 +152,15 @@ impl Chaindexing {
     ) {
         for state_migration in Contracts::get_state_migrations(contracts) {
             ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
+        }
+    }
+
+    async fn run_user_reset_queries(
+        client: &ChaindexingRepoRawQueryClient,
+        reset_queries: &Vec<String>,
+    ) {
+        for reset_query in reset_queries {
+            ChaindexingRepo::execute_raw_query(client, reset_query).await;
         }
     }
 }
