@@ -70,23 +70,38 @@ pub trait ContractStateMigrations: Send + Sync {
             .collect()
     }
 
+    // TODO: Consider returning reset_migrations along with migrations to reduce compute work
     fn get_reset_migrations(&self) -> Vec<String> {
-        self.get_migrations()
-            .iter()
-            .filter(|m| m.starts_with("CREATE TABLE IF NOT EXISTS"))
-            .map(|create_migration| {
-                let table_name = extract_table_name(create_migration);
+        let mut reset_migrations = vec![];
+        for migration in self.get_migrations().iter() {
+            if migration.starts_with("CREATE TABLE IF NOT EXISTS") {
+                let table_name = extract_table_name(migration);
+                let reset_migration = format!("DROP TABLE IF EXISTS {table_name}");
+                reset_migrations.push(reset_migration);
+            } else if migration.starts_with("CREATE UNIQUE INDEX IF NOT EXISTS") {
+                let unique_index_name = extract_unique_index_name(migration);
+                let reset_migration = format!("DROP INDEX IF EXISTS {unique_index_name}");
+                reset_migrations.push(reset_migration);
+            }
+        }
 
-                format!("DROP TABLE IF EXISTS {table_name}")
-            })
-            .collect()
+        reset_migrations
     }
 }
 
 fn extract_table_name(migration: &str) -> String {
-    migration
-        .replace("CREATE TABLE IF NOT EXISTS", "")
-        .split('(')
+    get_first_word_after_this(migration, "CREATE TABLE IF NOT EXISTS")
+}
+
+fn extract_unique_index_name(migration: &str) -> String {
+    get_first_word_after_this(migration, "CREATE UNIQUE INDEX IF NOT EXISTS")
+}
+
+fn get_first_word_after_this(words: &str, this: &str) -> String {
+    words
+        .replace(this, "")
+        .replace('(', " ")
+        .split_ascii_whitespace()
         .collect::<Vec<&str>>()
         .first()
         .unwrap()
@@ -375,7 +390,23 @@ mod contract_state_migrations_get_migration_test {
         let unique_index_migration = migrations.get(2);
 
         assert!(unique_index_migration.is_some());
-        assert!(unique_index_migration.unwrap().contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
+        assert!(unique_index_migration.unwrap().contains(
+            "CREATE UNIQUE INDEX IF NOT EXISTS unique_chaindexing_state_versions_for_nft_states"
+        ));
+    }
+
+    #[test]
+    fn returns_unique_index_reset_migrations_for_state_versions() {
+        let contract_state = TestContractState;
+        let migrations = contract_state.get_reset_migrations();
+
+        let unique_index_reset_migration = migrations.get(2);
+
+        assert!(unique_index_reset_migration.is_some());
+        assert_eq!(
+            unique_index_reset_migration.unwrap(),
+            "DROP INDEX IF EXISTS unique_chaindexing_state_versions_for_nft_states"
+        );
     }
 
     #[test]
