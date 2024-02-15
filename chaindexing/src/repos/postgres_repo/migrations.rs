@@ -1,6 +1,10 @@
 use crate::{Migratable, PostgresRepo, RepoMigrations, SQLikeMigrations};
 
 impl RepoMigrations for PostgresRepo {
+    fn create_nodes_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_nodes()
+    }
+
     fn create_contract_addresses_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_contract_addresses()
     }

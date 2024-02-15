@@ -6,6 +6,7 @@ mod raw_queries;
 use crate::{
     contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
+    nodes::Node,
     ReorgedBlock, ResetCount, Streamable, UnsavedReorgedBlock,
 };
 use diesel_async::RunQueryDsl;
@@ -210,6 +211,37 @@ impl Repo for PostgresRepo {
         use crate::diesels::schema::chaindexing_reset_counts::dsl::*;
 
         chaindexing_reset_counts.load(conn).await.unwrap()
+    }
+
+    async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node {
+        use crate::diesels::schema::chaindexing_nodes::dsl::*;
+
+        diesel::insert_into(chaindexing_nodes)
+            .default_values()
+            .get_result(conn)
+            .await
+            .unwrap()
+    }
+    async fn get_active_nodes<'a>(conn: &mut Self::Conn<'a>) -> Vec<Node> {
+        use crate::diesels::schema::chaindexing_nodes::dsl::*;
+
+        chaindexing_nodes
+            .filter(last_active_at.gt(Node::get_min_active_at()))
+            .load(conn)
+            .await
+            .unwrap()
+    }
+    async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node) {
+        use crate::diesels::schema::chaindexing_nodes::dsl::*;
+
+        let now = chrono::offset::Utc::now().timestamp();
+
+        diesel::update(chaindexing_nodes)
+            .filter(id.eq(node.id))
+            .set(last_active_at.eq(now))
+            .execute(conn)
+            .await
+            .unwrap();
     }
 }
 
