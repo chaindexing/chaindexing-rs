@@ -1,6 +1,14 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+  chaindexing_nodes(id) {
+      id -> Int4,
+      last_active_at -> Int8,
+      inserted_at -> Int8,
+  }
+}
+
+diesel::table! {
   chaindexing_contract_addresses (id) {
       id -> Int4,
       chain_id -> Int8,
