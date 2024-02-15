@@ -12,7 +12,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub const ELECTION_RATE_SECS: u64 = 5;
+    pub const ELECTION_RATE_SECS: u64 = 60;
 
     pub fn get_min_active_at() -> i64 {
         let now = chrono::Utc::now().timestamp();
