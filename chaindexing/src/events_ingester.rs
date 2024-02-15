@@ -12,8 +12,8 @@ use ethers::types::{Address, Filter as EthersFilter, Log};
 use futures_util::future::try_join_all;
 use futures_util::StreamExt;
 use std::cmp::min;
-use tokio::sync::Mutex;
 use tokio::time::{interval, sleep};
+use tokio::{sync::Mutex, task};
 
 use crate::chain_reorg::Execution;
 use crate::contracts::Contract;
@@ -94,7 +94,7 @@ impl From<RepoError> for EventsIngesterError {
 pub struct EventsIngester;
 
 impl EventsIngester {
-    pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) {
+    pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> task::JoinHandle<()> {
         let config = config.clone();
         tokio::spawn(async move {
             let pool = config.repo.get_pool(1).await;
@@ -125,7 +125,7 @@ impl EventsIngester {
                     .unwrap();
                 }
             }
-        });
+        })
     }
 
     pub async fn ingest<'a, S: Send + Sync + Clone>(

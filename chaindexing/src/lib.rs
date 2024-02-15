@@ -7,10 +7,12 @@ mod diesels;
 mod event_handlers;
 mod events;
 mod events_ingester;
+mod nodes;
 mod repos;
 mod reset_counts;
 
 use std::fmt::Debug;
+use std::time::Duration;
 
 pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::Chains;
@@ -22,6 +24,7 @@ pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, Events};
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
+use nodes::Node;
 pub use repos::*;
 pub use reset_counts::ResetCount;
 
@@ -45,6 +48,7 @@ pub type ChaindexingRepoRawQueryTxnClient<'a> = PostgresRepoRawQueryTxnClient<'a
 
 #[cfg(feature = "postgres")]
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
+use tokio::{task, time};
 
 pub enum ChaindexingError {
     Config(ConfigError),
@@ -73,36 +77,92 @@ impl Chaindexing {
         config: &Config<S>,
     ) -> Result<(), ChaindexingError> {
         config.validate()?;
-        Self::setup(config).await?;
-        EventsIngester::start(config);
-        EventHandlers::start(config);
+
+        let Config { repo, .. } = config;
+        let query_client = repo.get_raw_query_client().await;
+        let pool = repo.get_pool(1).await;
+        let mut conn = ChaindexingRepo::get_conn(&pool).await;
+
+        Self::setup_for_nodes(&query_client).await;
+
+        let node = ChaindexingRepo::create_node(&mut conn).await;
+
+        Self::wait_for_other_nodes_to_pause().await;
+
+        Self::setup_for_indexing(config, &mut conn, &query_client).await?;
+
+        let mut indexing_tasks = Self::start_indexing_tasks(&config);
+        let mut tasks_are_aborted = false;
+
+        let config = config.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_millis(Node::ELECTION_RATE_MS));
+
+            let pool = config.repo.get_pool(1).await;
+            let mut conn = ChaindexingRepo::get_conn(&pool).await;
+
+            loop {
+                let active_nodes = ChaindexingRepo::get_active_nodes(&mut conn).await;
+                let leader_node = nodes::elect_leader(&active_nodes);
+
+                if node.id == leader_node.id {
+                    if tasks_are_aborted {
+                        indexing_tasks = Self::start_indexing_tasks(&config);
+                        tasks_are_aborted = false;
+                    }
+                } else {
+                    if !tasks_are_aborted {
+                        for task in &indexing_tasks {
+                            task.abort();
+                        }
+                        tasks_are_aborted = true;
+                    }
+                }
+
+                ChaindexingRepo::keep_node_active(&mut conn, &node).await;
+
+                interval.tick().await;
+            }
+        });
+
         Ok(())
     }
+    async fn setup_for_nodes(client: &ChaindexingRepoRawQueryClient) {
+        ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
+    }
+    async fn wait_for_other_nodes_to_pause() {
+        time::sleep(Duration::from_millis(Node::ELECTION_RATE_MS)).await;
+    }
+    fn start_indexing_tasks<S: Send + Sync + Clone + Debug + 'static>(
+        config: &Config<S>,
+    ) -> Vec<task::JoinHandle<()>> {
+        let event_ingester = EventsIngester::start(config);
+        let event_handlers = EventHandlers::start(config);
 
-    pub async fn setup<S: Sync + Send + Clone>(config: &Config<S>) -> Result<(), ChaindexingError> {
+        vec![event_ingester, event_handlers]
+    }
+    pub async fn setup_for_indexing<'a, S: Sync + Send + Clone>(
+        config: &Config<S>,
+        conn: &mut ChaindexingRepoConn<'a>,
+        client: &ChaindexingRepoRawQueryClient,
+    ) -> Result<(), ChaindexingError> {
         let Config {
-            repo,
             contracts,
             reset_count,
             reset_queries,
             ..
         } = config;
 
-        let client = repo.get_raw_query_client().await;
-        let pool = repo.get_pool(1).await;
-        let mut conn = ChaindexingRepo::get_conn(&pool).await;
-
         Self::run_migrations_for_resets(&client).await;
-        Self::maybe_reset(reset_count, reset_queries, contracts, &client, &mut conn).await;
+        Self::maybe_reset(reset_count, reset_queries, contracts, &client, conn).await;
         Self::run_internal_migrations(&client).await;
         Self::run_migrations_for_contract_states(&client, contracts).await;
 
         let contract_addresses = contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
-        ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+        ChaindexingRepo::create_contract_addresses(conn, &contract_addresses).await;
 
         Ok(())
     }
-
     pub async fn maybe_reset<'a, S: Send + Sync + Clone>(
         reset_count: &u8,
         reset_queries: &Vec<String>,
