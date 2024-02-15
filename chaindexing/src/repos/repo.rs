@@ -198,8 +198,8 @@ impl SQLikeMigrations {
     pub fn create_nodes() -> &'static [&'static str] {
         &["CREATE TABLE IF NOT EXISTS chaindexing_nodes (
                 id SERIAL PRIMARY KEY,
-                last_active_at BIGINT DEFAULT (EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) * 1000)::BIGINT,
-                inserted_at BIGINT DEFAULT (EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) * 1000)::BIGINT
+                last_active_at BIGINT DEFAULT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
+                inserted_at BIGINT DEFAULT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
         )"]
     }
 

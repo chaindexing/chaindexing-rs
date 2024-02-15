@@ -87,7 +87,7 @@ impl Chaindexing {
 
         let node = ChaindexingRepo::create_node(&mut conn).await;
 
-        Self::wait_for_other_nodes_to_pause().await;
+        Self::wait_for_tasks_of_nodes_to_abort().await;
 
         Self::setup_for_indexing(config, &mut conn, &query_client).await?;
 
@@ -96,7 +96,7 @@ impl Chaindexing {
 
         let config = config.clone();
         tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_millis(Node::ELECTION_RATE_MS));
+            let mut interval = time::interval(Duration::from_secs(Node::ELECTION_RATE_SECS));
 
             let pool = config.repo.get_pool(1).await;
             let mut conn = ChaindexingRepo::get_conn(&pool).await;
@@ -130,8 +130,8 @@ impl Chaindexing {
     async fn setup_for_nodes(client: &ChaindexingRepoRawQueryClient) {
         ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
     }
-    async fn wait_for_other_nodes_to_pause() {
-        time::sleep(Duration::from_millis(Node::ELECTION_RATE_MS)).await;
+    async fn wait_for_tasks_of_nodes_to_abort() {
+        time::sleep(Duration::from_secs(Node::ELECTION_RATE_SECS)).await;
     }
     fn start_indexing_tasks<S: Send + Sync + Clone + Debug + 'static>(
         config: &Config<S>,

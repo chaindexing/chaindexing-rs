@@ -13,11 +13,11 @@ pub struct Node {
 
 impl Node {
     pub const ELECTION_RATE_SECS: u64 = 5;
-    pub const ELECTION_RATE_MS: u64 = Node::ELECTION_RATE_SECS * 1_000;
 
     pub fn get_min_active_at() -> i64 {
         let now = chrono::Utc::now().timestamp();
 
+        // Not active if not kept active at least 2 elections away
         now - (Node::ELECTION_RATE_SECS * 2) as i64
     }
 }
