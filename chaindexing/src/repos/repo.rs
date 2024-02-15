@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use crate::{
     contracts::{ContractAddressID, UnsavedContractAddress},
     events::{Event, PartialEvent},
+    nodes::Node,
     ContractAddress, ReorgedBlock, ResetCount, UnsavedReorgedBlock,
 };
 
@@ -74,6 +75,10 @@ pub trait Repo:
 
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>);
     async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount>;
+
+    async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node;
+    async fn get_active_nodes<'a>(conn: &mut Self::Conn<'a>) -> Vec<Node>;
+    async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node);
 }
 
 #[async_trait::async_trait]
@@ -147,6 +152,7 @@ pub trait Streamable {
 }
 
 pub trait RepoMigrations: Migratable {
+    fn create_nodes_migration() -> &'static [&'static str];
     fn create_contract_addresses_migration() -> &'static [&'static str];
     fn drop_contract_addresses_migration() -> &'static [&'static str];
     fn create_events_migration() -> &'static [&'static str];
@@ -189,6 +195,14 @@ pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
 pub struct SQLikeMigrations;
 
 impl SQLikeMigrations {
+    pub fn create_nodes() -> &'static [&'static str] {
+        &["CREATE TABLE IF NOT EXISTS chaindexing_nodes (
+                id SERIAL PRIMARY KEY,
+                last_active_at BIGINT DEFAULT (EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) * 1000)::BIGINT,
+                inserted_at BIGINT DEFAULT (EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) * 1000)::BIGINT
+        )"]
+    }
+
     pub fn create_contract_addresses() -> &'static [&'static str] {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_contract_addresses (
