@@ -78,6 +78,32 @@ impl Chaindexing {
     ) -> Result<(), ChaindexingError> {
         config.validate()?;
 
+        let mut supervised = Self::start_indexing_in_supervised_mode(config);
+        let config = config.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(60));
+
+            loop {
+                interval.tick().await;
+                if supervised.is_finished() {
+                    supervised = Self::start_indexing_in_supervised_mode(&config);
+                }
+            }
+        });
+
+        Ok(())
+    }
+    fn start_indexing_in_supervised_mode<S: Send + Sync + Clone + Debug + 'static>(
+        config: &Config<S>,
+    ) -> task::JoinHandle<()> {
+        let config = config.clone();
+        tokio::spawn(async move {
+            let _ignored_result = Self::start_indexing(&config).await;
+        })
+    }
+    async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
+        config: &Config<S>,
+    ) -> Result<task::JoinHandle<()>, ChaindexingError> {
         let Config { repo, .. } = config;
         let query_client = repo.get_raw_query_client().await;
         let pool = repo.get_pool(1).await;
@@ -95,7 +121,7 @@ impl Chaindexing {
         let mut tasks_are_aborted = false;
 
         let config = config.clone();
-        tokio::spawn(async move {
+        let nodes_orchestrator = tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_secs(Node::ELECTION_RATE_SECS));
 
             let pool = config.repo.get_pool(1).await;
@@ -125,7 +151,7 @@ impl Chaindexing {
             }
         });
 
-        Ok(())
+        Ok(nodes_orchestrator)
     }
     async fn setup_for_nodes(client: &ChaindexingRepoRawQueryClient) {
         ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
