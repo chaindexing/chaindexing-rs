@@ -61,32 +61,32 @@ impl UnsavedReorgedBlock {
 pub struct ReorgedBlocks;
 
 impl ReorgedBlocks {
-    pub fn only_earliest_per_chain(reorged_blocks: &[ReorgedBlock]) -> Vec<ReorgedBlock> {
+    pub fn only_earliest_per_chain<'a>(
+        reorged_blocks: &'a [ReorgedBlock],
+    ) -> Vec<&'a ReorgedBlock> {
         reorged_blocks
             .iter()
             .fold(
-                HashMap::<i64, ReorgedBlock>::new(),
+                HashMap::<i64, &ReorgedBlock>::new(),
                 |mut reorged_blocks_by_chain, reorged_block| {
                     let ReorgedBlock { chain_id, .. } = reorged_block;
 
                     if let Some(earliest_reorged_block) = reorged_blocks_by_chain.get(chain_id) {
                         if reorged_block.block_number < earliest_reorged_block.block_number {
-                            reorged_blocks_by_chain.insert(*chain_id, reorged_block.clone());
+                            reorged_blocks_by_chain.insert(*chain_id, reorged_block);
                         }
                     } else {
-                        reorged_blocks_by_chain
-                            .insert(reorged_block.chain_id, reorged_block.clone());
+                        reorged_blocks_by_chain.insert(reorged_block.chain_id, reorged_block);
                     }
 
                     reorged_blocks_by_chain
                 },
             )
-            .values()
-            .cloned()
+            .into_values()
             .collect()
     }
 
-    pub fn get_ids(reorged_blocks: &[ReorgedBlock]) -> Vec<i32> {
+    pub fn get_ids<'a>(reorged_blocks: &'a [&'a ReorgedBlock]) -> Vec<i32> {
         reorged_blocks.iter().map(|r| r.id).collect()
     }
 }

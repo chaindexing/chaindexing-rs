@@ -22,7 +22,7 @@ impl Node {
     }
 }
 
-pub fn elect_leader(nodes: &Vec<Node>) -> Node {
+pub fn elect_leader<'a>(nodes: &'a Vec<Node>) -> &'a Node {
     let mut nodes_iter = nodes.iter();
     let mut leader: Option<&Node> = nodes_iter.next();
 
@@ -32,5 +32,5 @@ pub fn elect_leader(nodes: &Vec<Node>) -> Node {
         }
     }
 
-    leader.unwrap().clone()
+    leader.unwrap()
 }
