@@ -11,7 +11,8 @@ An EVM indexing engine that lets you query chain data with SQL.
 It is a great alternative to theGraph [https://thegraph.com/](https://thegraph.com/) if you:
 
 - have a server + relational database setup
-- are NOT indexing thousands of contracts
+- need to manually create side effects for events
+- are NOT indexing hundreds of contracts
 - don't want to deal with an additional external system
 - have written your DApp in RUST (Other Languages soon to come!)
 
