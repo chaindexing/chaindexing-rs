@@ -22,6 +22,14 @@ impl MinConfirmationCount {
 
         max(start_block_number, deduction as u64)
     }
+
+    pub fn is_in_confirmation_window(
+        &self,
+        next_block_number: u64,
+        current_block_number: u64,
+    ) -> bool {
+        next_block_number >= current_block_number - (self.value as u64)
+    }
 }
 
 #[derive(Clone)]

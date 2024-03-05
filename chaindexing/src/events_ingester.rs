@@ -269,11 +269,11 @@ impl Filters {
 
         contract_addresses
             .iter()
-            .map(|contract_address| {
+            .map_while(|contract_address| {
                 let topics_by_contract_name =
                     topics_by_contract_name.get(contract_address.contract_name.as_str()).unwrap();
 
-                Filter::new(
+                Filter::maybe_new(
                     contract_address,
                     topics_by_contract_name,
                     current_block_number,
@@ -320,13 +320,13 @@ struct Filter {
 }
 
 impl Filter {
-    fn new(
+    fn maybe_new(
         contract_address: &ContractAddress,
         topics: &[ContractEventTopic],
         current_block_number: u64,
         blocks_per_batch: u64,
         execution: &Execution,
-    ) -> Filter {
+    ) -> Option<Filter> {
         let ContractAddress {
             id: contract_address_id,
             next_block_number_to_ingest_from,
@@ -335,20 +335,35 @@ impl Filter {
             ..
         } = contract_address;
 
-        let from_block_number = match execution {
-            Execution::Main => *next_block_number_to_ingest_from as u64,
-            Execution::Confirmation(min_confirmation_count) => min_confirmation_count.deduct_from(
-                *next_block_number_to_ingest_from as u64,
-                *start_block_number as u64,
-            ),
-        };
+        let next_block_number_to_ingest_from = *next_block_number_to_ingest_from as u64;
 
-        let to_block_number = match execution {
-            Execution::Main => min(from_block_number + blocks_per_batch, current_block_number),
-            Execution::Confirmation(_mcc) => from_block_number + blocks_per_batch,
-        };
-
-        Filter {
+        match execution {
+            Execution::Main => Some((
+                next_block_number_to_ingest_from,
+                min(
+                    next_block_number_to_ingest_from + blocks_per_batch,
+                    current_block_number,
+                ),
+            )),
+            Execution::Confirmation(min_confirmation_count) => {
+                // TODO: Move logic to higher level
+                if min_confirmation_count.is_in_confirmation_window(
+                    next_block_number_to_ingest_from,
+                    current_block_number,
+                ) {
+                    Some((
+                        min_confirmation_count.deduct_from(
+                            next_block_number_to_ingest_from,
+                            *start_block_number as u64,
+                        ),
+                        next_block_number_to_ingest_from + blocks_per_batch,
+                    ))
+                } else {
+                    None
+                }
+            }
+        }
+        .map(|(from_block_number, to_block_number)| Filter {
             contract_address_id: *contract_address_id,
             address: address.to_string(),
             value: EthersFilter::new()
@@ -356,6 +371,6 @@ impl Filter {
                 .topic0(topics.to_vec())
                 .from_block(from_block_number)
                 .to_block(to_block_number),
-        }
+        })
     }
 }
