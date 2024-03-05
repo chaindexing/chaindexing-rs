@@ -198,7 +198,7 @@ impl ContractAddressID {
 #[diesel(primary_key(id))]
 pub struct ContractAddress {
     pub id: i32,
-    chain_id: i64,
+    pub chain_id: i64,
     pub next_block_number_to_ingest_from: i64,
     pub next_block_number_to_handle_from: i64,
     pub start_block_number: i64,
