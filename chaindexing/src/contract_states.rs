@@ -130,13 +130,13 @@ pub trait ContractState:
     ) -> Vec<Self> {
         let client = context.raw_query_client;
 
-        let context_chain_id = context.event.chain_id;
+        let context_chain_id = context.event.chain_id as u64;
         let context_contract_address = context.event.contract_address.clone();
 
         let raw_query = format!(
             "SELECT * FROM {table_name} 
             WHERE {filters} 
-            AND chain_id={context_chain_id} AND contract_address={context_contract_address}",
+            AND chain_id={context_chain_id} AND contract_address='{context_contract_address}'",
             table_name = Self::table_name(),
             filters = to_and_filters(&filters),
         );
