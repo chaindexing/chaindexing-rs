@@ -45,22 +45,17 @@ async fn handle_events_for_contract_address<'a, S: Send + Sync + Clone + Debug>(
     let mut events_stream = ChaindexingRepo::get_events_stream(
         conn.clone(),
         contract_address.next_block_number_to_handle_from,
+        contract_address.chain_id,
+        contract_address.address.clone(),
     );
 
-    while let Some(events) = events_stream.next().await {
-        // TODO: Move this filter to the stream query level
-        let mut events: Vec<Event> = events
-            .into_iter()
-            .filter(|event| {
-                event.match_contract_address(&contract_address.address) && event.not_removed()
-            })
-            .collect();
+    while let Some(mut events) = events_stream.next().await {
         events.sort_by_key(|e| (e.block_number, e.log_index));
 
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(raw_query_client).await;
 
-        for event in events.clone() {
+        for event in &events {
             let event_handler = event_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
             let event_handler_context = EventHandlerContext::new(
                 event.clone(),
