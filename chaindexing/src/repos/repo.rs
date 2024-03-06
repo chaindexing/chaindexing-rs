@@ -248,8 +248,8 @@ impl SQLikeMigrations {
                 removed BOOLEAN NOT NULL,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
             )",
-            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_events_chain_txn_hash_log_index
-            ON chaindexing_events(chain_id,transaction_hash,log_index)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_events_chain_contract_block_log_index
+            ON chaindexing_events(chain_id,contract_address,block_number,log_index)",
             "CREATE INDEX IF NOT EXISTS chaindexing_events_abi
             ON chaindexing_events(abi)",
         ]
