@@ -13,3 +13,5 @@ pub use repo::{
     ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, Migratable, Repo, RepoError,
     RepoMigrations, SQLikeMigrations, Streamable,
 };
+
+mod streams;

@@ -138,15 +138,8 @@ impl EventsIngester {
         min_confirmation_count: &MinConfirmationCount,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
-        let contract_addresses_stream =
-            ChaindexingRepo::get_contract_addresses_stream(conn.clone());
-        // TODO: Move to Repo Level
-        let mut contract_addresses_stream = contract_addresses_stream.map(|contract_addresses| {
-            contract_addresses
-                .into_iter()
-                .filter(|ca| ca.chain_id as u64 == *chain as u64)
-                .collect::<Vec<_>>()
-        });
+        let mut contract_addresses_stream =
+            ChaindexingRepo::get_contract_addresses_stream_by_chain(conn.clone(), *chain as i64);
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             let contract_addresses = Self::filter_uningested_contract_addresses(

@@ -3,6 +3,8 @@ use std::sync::Arc;
 mod migrations;
 mod raw_queries;
 
+use crate::{get_contract_addresses_stream_by_chain, get_events_stream};
+
 use crate::{
     contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
     events::Event,
@@ -263,20 +265,39 @@ impl Streamable for PostgresRepo {
         )
     }
 
+    fn get_contract_addresses_stream_by_chain<'a>(
+        conn: Arc<Mutex<Self::StreamConn<'a>>>,
+        chain_id_: i64,
+    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
+        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+
+        get_contract_addresses_stream_by_chain!(
+            id,
+            conn,
+            Arc<Mutex<PgPooledConn<'a>>>,
+            ContractAddress,
+            chain_id_,
+            i32
+        )
+    }
+
     fn get_events_stream<'a>(
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
         from: i64,
+        chain_id_: i64,
+        contract_address_: String,
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
         use crate::diesels::schema::chaindexing_events::dsl::*;
 
         const CHUNK_SIZE: i32 = 500;
 
-        get_serial_table_async_stream!(
-            chaindexing_events,
+        get_events_stream!(
             block_number,
             conn,
             Arc<Mutex<PgPooledConn<'a>>>,
             Event,
+            chain_id_,
+            contract_address_,
             i64,
             CHUNK_SIZE,
             Some(from)
