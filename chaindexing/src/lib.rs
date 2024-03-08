@@ -83,13 +83,11 @@ impl Chaindexing {
         let pool = repo.get_pool(1).await;
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
 
-        Self::setup_for_nodes(&query_client).await;
+        let current_node = Node::create(&mut conn, &query_client).await;
 
-        let current_node = ChaindexingRepo::create_node(&mut conn).await;
+        Self::wait_for_non_leader_nodes_to_abort().await;
 
-        Self::wait_for_tasks_of_nodes_to_abort().await;
-
-        Self::setup_for_tasks(config, &mut conn, &query_client).await?;
+        Self::setup(config, &mut conn, &query_client).await?;
 
         let config = config.clone();
         tokio::spawn(async move {
@@ -109,14 +107,10 @@ impl Chaindexing {
 
         Ok(())
     }
-    async fn setup_for_nodes(client: &ChaindexingRepoRawQueryClient) {
-        ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
-    }
-    async fn wait_for_tasks_of_nodes_to_abort() {
+    async fn wait_for_non_leader_nodes_to_abort() {
         time::sleep(Duration::from_secs(Node::ELECTION_RATE_SECS)).await;
     }
-
-    pub async fn setup_for_tasks<'a, S: Sync + Send + Clone>(
+    pub async fn setup<'a, S: Sync + Send + Clone>(
         config: &Config<S>,
         conn: &mut ChaindexingRepoConn<'a>,
         client: &ChaindexingRepoRawQueryClient,

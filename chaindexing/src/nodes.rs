@@ -1,8 +1,10 @@
 use diesel::{prelude::Insertable, Queryable};
 use serde::Deserialize;
 
+use crate::{Migratable, RepoMigrations};
+
 use super::diesels::schema::chaindexing_nodes;
-use super::{ChaindexingRepo, ChaindexingRepoConn, Repo};
+use super::{ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Repo};
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Insertable, Queryable)]
 #[diesel(table_name = chaindexing_nodes)]
@@ -26,6 +28,14 @@ impl Node {
         let leader_node = elect_leader(&active_nodes);
 
         self.id == leader_node.id
+    }
+
+    pub async fn create<'a>(
+        conn: &mut ChaindexingRepoConn<'a>,
+        client: &ChaindexingRepoRawQueryClient,
+    ) -> Node {
+        ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
+        ChaindexingRepo::create_node(conn).await
     }
 }
 
