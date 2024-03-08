@@ -73,11 +73,14 @@ pub trait ContractStateMigrations: Send + Sync {
     fn get_reset_migrations(&self) -> Vec<String> {
         self.get_migrations()
             .iter()
-            .filter(|m| m.starts_with("CREATE TABLE IF NOT EXISTS"))
-            .map(|create_migration| {
-                let table_name = extract_table_name(create_migration);
+            .filter_map(|migration| {
+                if migration.starts_with("CREATE TABLE IF NOT EXISTS") {
+                    let table_name = extract_table_name(migration);
 
-                format!("DROP TABLE IF EXISTS {table_name}")
+                    Some(format!("DROP TABLE IF EXISTS {table_name}"))
+                } else {
+                    None
+                }
             })
             .collect()
     }
@@ -102,14 +105,19 @@ fn extract_table_fields(migration: &str, remove_json_fields: bool) -> Vec<String
         .last()
         .unwrap()
         .split(',')
-        .filter(|field| remove_json_fields && !(field.contains("JSON") || field.contains("JSONB")))
-        .map(|field| {
-            field
-                .split_ascii_whitespace()
-                .collect::<Vec<&str>>()
-                .first()
-                .unwrap()
-                .to_string()
+        .filter_map(|field| {
+            if remove_json_fields && !(field.contains("JSON") || field.contains("JSONB")) {
+                Some(
+                    field
+                        .split_ascii_whitespace()
+                        .collect::<Vec<&str>>()
+                        .first()
+                        .unwrap()
+                        .to_string(),
+                )
+            } else {
+                None
+            }
         })
         .collect()
 }
