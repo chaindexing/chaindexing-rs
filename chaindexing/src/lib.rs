@@ -83,6 +83,7 @@ impl Chaindexing {
         let pool = repo.get_pool(1).await;
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
 
+        ChaindexingRepo::prune_nodes(&query_client, config.max_concurrent_node_count).await;
         let current_node = Node::create(&mut conn, &query_client).await;
 
         Self::wait_for_non_leader_nodes_to_abort().await;
@@ -100,8 +101,6 @@ impl Chaindexing {
 
             loop {
                 node_tasks.orchestrate(&config, &mut conn).await;
-
-                ChaindexingRepo::prune_nodes(&query_client, config.max_concurrent_node_count).await;
 
                 interval.tick().await;
             }
