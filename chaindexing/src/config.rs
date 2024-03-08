@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use ethers::types::Chain;
 use tokio::sync::Mutex;
 
-use crate::{ChaindexingRepo, Chains, Contract, MinConfirmationCount};
+use crate::{nodes, ChaindexingRepo, Chains, Contract, MinConfirmationCount};
 
 pub enum ConfigError {
     NoContract,
@@ -34,6 +34,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub reset_count: u8,
     pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
+    pub max_concurrent_node_count: u16,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -49,6 +50,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             reset_count: 0,
             reset_queries: vec![],
             shared_state: None,
+            max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
         }
     }
 
@@ -102,6 +104,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn with_ingestion_rate_ms(mut self, ingestion_rate_ms: u64) -> Self {
         self.ingestion_rate_ms = ingestion_rate_ms;
+
+        self
+    }
+
+    pub fn with_max_concurrent_node_count(mut self, max_concurrent_node_count: u16) -> Self {
+        self.max_concurrent_node_count = max_concurrent_node_count;
 
         self
     }

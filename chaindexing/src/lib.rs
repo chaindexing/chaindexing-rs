@@ -101,6 +101,8 @@ impl Chaindexing {
             loop {
                 node_tasks.orchestrate(&config, &mut conn).await;
 
+                ChaindexingRepo::prune_nodes(&query_client, config.max_concurrent_node_count).await;
+
                 interval.tick().await;
             }
         });
