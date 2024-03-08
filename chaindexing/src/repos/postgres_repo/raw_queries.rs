@@ -84,15 +84,15 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
     async fn prune_nodes(client: &Self::RawQueryClient, prune_size: u16) {
         let query = format!(
-            "WITH recent_nodes AS (
+            "
+            DELETE FROM chaindexing_nodes
+            WHERE id NOT IN (
                 SELECT id
                 FROM chaindexing_nodes
                 ORDER BY id DESC
                 LIMIT {prune_size}
             )
-            DELETE FROM chaindexing_nodes
-            USING recent_nodes
-            WHERE chaindexing_nodes.id != recent_nodes.id",
+            "
         );
 
         Self::execute_raw_query(client, &query).await;
