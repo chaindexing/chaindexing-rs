@@ -133,8 +133,7 @@ fn get_earliest_block_number((added_events, removed_events): (&Vec<Event>, &Vec<
     let earliest_removed_event = removed_events.iter().min_by_key(|e| e.block_number);
 
     match (earliest_added_event, earliest_removed_event) {
-        (None, Some(event)) => event.block_number,
-        (Some(event), None) => event.block_number,
+        (Some(event), None) | (None, Some(event)) => event.block_number,
         (Some(earliest_added), Some(earliest_removed)) => {
             min(earliest_added.block_number, earliest_removed.block_number)
         }
