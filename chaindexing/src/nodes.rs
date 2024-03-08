@@ -7,7 +7,7 @@ use super::{ChaindexingRepo, ChaindexingRepoConn, Repo};
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Insertable, Queryable)]
 #[diesel(table_name = chaindexing_nodes)]
 pub struct Node {
-    id: i32,
+    pub id: i32,
     last_active_at: i64,
     inserted_at: i64,
 }

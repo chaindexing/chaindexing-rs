@@ -11,22 +11,22 @@ mod nodes;
 mod repos;
 mod reset_counts;
 
-use std::fmt::Debug;
-use std::time::Duration;
-
 pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::Chains;
 pub use config::Config;
-use config::ConfigError;
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, Events};
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
-use nodes::Node;
 pub use repos::*;
 pub use reset_counts::ResetCount;
+
+use config::ConfigError;
+use nodes::{Node, NodeTasks};
+use std::fmt::Debug;
+use std::time::Duration;
 
 #[cfg(feature = "postgres")]
 pub use repos::{PostgresRepo, PostgresRepoConn, PostgresRepoPool};
@@ -48,7 +48,7 @@ pub type ChaindexingRepoRawQueryTxnClient<'a> = PostgresRepoRawQueryTxnClient<'a
 
 #[cfg(feature = "postgres")]
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
-use tokio::{task, time};
+use tokio::time;
 
 pub enum ChaindexingError {
     Config(ConfigError),
@@ -60,7 +60,7 @@ impl From<ConfigError> for ChaindexingError {
     }
 }
 
-impl std::fmt::Debug for ChaindexingError {
+impl Debug for ChaindexingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChaindexingError::Config(config_error) => {
@@ -85,14 +85,11 @@ impl Chaindexing {
 
         Self::setup_for_nodes(&query_client).await;
 
-        let node = ChaindexingRepo::create_node(&mut conn).await;
+        let current_node = ChaindexingRepo::create_node(&mut conn).await;
 
         Self::wait_for_tasks_of_nodes_to_abort().await;
 
-        Self::setup_for_indexing(config, &mut conn, &query_client).await?;
-
-        let mut indexing_tasks = Self::start_indexing_tasks(&config);
-        let mut tasks_are_aborted = false;
+        Self::setup_for_tasks(config, &mut conn, &query_client).await?;
 
         let config = config.clone();
         tokio::spawn(async move {
@@ -101,25 +98,10 @@ impl Chaindexing {
             let pool = config.repo.get_pool(1).await;
             let mut conn = ChaindexingRepo::get_conn(&pool).await;
 
+            let mut node_tasks = NodeTasks::new(&current_node);
+
             loop {
-                let active_nodes = ChaindexingRepo::get_active_nodes(&mut conn).await;
-                let leader_node = nodes::elect_leader(&active_nodes);
-
-                if node.id == leader_node.id {
-                    if tasks_are_aborted {
-                        indexing_tasks = Self::start_indexing_tasks(&config);
-                        tasks_are_aborted = false;
-                    }
-                } else {
-                    if !tasks_are_aborted {
-                        for task in &indexing_tasks {
-                            task.abort();
-                        }
-                        tasks_are_aborted = true;
-                    }
-                }
-
-                ChaindexingRepo::keep_node_active(&mut conn, &node).await;
+                node_tasks.orchestrate(&config, &mut conn).await;
 
                 interval.tick().await;
             }
@@ -133,15 +115,8 @@ impl Chaindexing {
     async fn wait_for_tasks_of_nodes_to_abort() {
         time::sleep(Duration::from_secs(Node::ELECTION_RATE_SECS)).await;
     }
-    fn start_indexing_tasks<S: Send + Sync + Clone + Debug + 'static>(
-        config: &Config<S>,
-    ) -> Vec<task::JoinHandle<()>> {
-        let event_ingester = EventsIngester::start(config);
-        let event_handlers = EventHandlers::start(config);
 
-        vec![event_ingester, event_handlers]
-    }
-    pub async fn setup_for_indexing<'a, S: Sync + Send + Clone>(
+    pub async fn setup_for_tasks<'a, S: Sync + Send + Clone>(
         config: &Config<S>,
         conn: &mut ChaindexingRepoConn<'a>,
         client: &ChaindexingRepoRawQueryClient,
