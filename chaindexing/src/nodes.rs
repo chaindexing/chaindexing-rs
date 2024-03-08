@@ -111,6 +111,8 @@ impl<'a> NodeTasks<'a> {
     }
 }
 
+pub const DEFAULT_MAX_CONCURRENT_NODE_COUNT: u16 = 50;
+
 fn elect_leader<'a>(nodes: &'a Vec<Node>) -> &'a Node {
     let mut nodes_iter = nodes.iter();
     let mut leader: Option<&Node> = nodes_iter.next();

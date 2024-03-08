@@ -114,6 +114,8 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         client: &Self::RawQueryTxnClient<'a>,
         reorged_block_ids: &[i32],
     );
+
+    async fn prune_nodes(client: &Self::RawQueryClient, prune_size: u16);
 }
 
 #[async_trait::async_trait]
