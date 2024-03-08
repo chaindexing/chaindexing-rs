@@ -85,15 +85,15 @@ impl<'a> NodeTasks<'a> {
             match self.state {
                 NodeTasksState::Idle | NodeTasksState::Aborted => self.start(config),
 
-                NodeTasksState::Active => {
-                    ChaindexingRepo::keep_node_active(conn, &self.current_node).await
-                }
+                _ => {}
             }
         } else {
             if self.state == NodeTasksState::Active {
                 self.abort();
             }
         }
+
+        ChaindexingRepo::keep_node_active(conn, &self.current_node).await
     }
 
     fn start<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
