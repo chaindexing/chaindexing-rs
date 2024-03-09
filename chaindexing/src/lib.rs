@@ -20,6 +20,7 @@ pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, Events};
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
+pub use nodes::KeepNodeActiveRequest;
 pub use repos::*;
 pub use reset_counts::ResetCount;
 

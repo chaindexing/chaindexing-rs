@@ -40,25 +40,71 @@ impl Node {
 use super::Config;
 use super::{EventHandlers, EventsIngester};
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(PartialEq, Debug)]
 enum NodeTasksState {
+    /// Initial state of tasks are Idle.
+    /// In this state, no NodeTask is running because nothing has happened yet.
     Idle,
+    /// All NodeTasks are running when Active.
     Active,
+    /// All NodeTasks are NOT running.
+    /// However, when there is a recent KeepNodeActiveRequest, they get reactivated.
+    InActive,
+    /// All NodeTasks are NOT running.
+    /// If there is a recent KeepNodeActiveRequest, it stays aborted.
+    /// Only non-leader Nodes self-abort.
     Aborted,
 }
 
 pub struct NodeTasks<'a> {
     current_node: &'a Node,
     state: NodeTasksState,
-    pub last_keep_active_at: Arc<Mutex<DateTime<Utc>>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
     /// Not used currently. In V2, We will populate NodeTasksErrors here
     pub errors: Vec<String>,
+}
+
+#[derive(Clone)]
+pub struct KeepNodeActiveRequest {
+    /// Both in milliseconds
+    last_refreshed_at_and_active_grace_period: Arc<Mutex<(u64, u32)>>,
+}
+
+impl KeepNodeActiveRequest {
+    pub fn new(active_grace_period: u32) -> Self {
+        Self {
+            last_refreshed_at_and_active_grace_period: Arc::new(Mutex::new((
+                Self::now(),
+                active_grace_period,
+            ))),
+        }
+    }
+    pub async fn refresh(&self) {
+        let mut last_refreshed_at_and_active_grace_period =
+            self.last_refreshed_at_and_active_grace_period.lock().await;
+        *last_refreshed_at_and_active_grace_period =
+            (Self::now(), last_refreshed_at_and_active_grace_period.1);
+    }
+
+    fn now() -> u64 {
+        Utc::now().timestamp_millis() as u64
+    }
+
+    async fn is_stale(&self) -> bool {
+        !self.is_recent().await
+    }
+    async fn is_recent(&self) -> bool {
+        let (last_refreshed_at, active_grace_period) =
+            *self.last_refreshed_at_and_active_grace_period.lock().await;
+        let min_last_refreshed_at = Self::now() - (active_grace_period as u64);
+
+        last_refreshed_at > min_last_refreshed_at
+    }
 }
 
 impl<'a> NodeTasks<'a> {
@@ -66,7 +112,6 @@ impl<'a> NodeTasks<'a> {
         Self {
             current_node,
             state: NodeTasksState::Idle,
-            last_keep_active_at: Arc::new(Mutex::new(Utc::now())),
             tasks: vec![],
             errors: vec![],
         }
@@ -82,9 +127,23 @@ impl<'a> NodeTasks<'a> {
 
         if self.current_node.is_leader(&leader_node) {
             match self.state {
-                NodeTasksState::Idle | NodeTasksState::Aborted => self.start(config),
+                NodeTasksState::Idle | NodeTasksState::Aborted => self.make_active(config),
 
-                NodeTasksState::Active => {}
+                NodeTasksState::Active => {
+                    if let Some(keep_node_active_request) = &config.keep_node_active_request {
+                        if keep_node_active_request.is_stale().await {
+                            self.make_inactive()
+                        }
+                    }
+                }
+
+                NodeTasksState::InActive => {
+                    if let Some(keep_node_active_request) = &config.keep_node_active_request {
+                        if keep_node_active_request.is_recent().await {
+                            self.make_active(config)
+                        }
+                    }
+                }
             }
         } else {
             if self.state == NodeTasksState::Active {
@@ -95,18 +154,29 @@ impl<'a> NodeTasks<'a> {
         ChaindexingRepo::keep_node_active(conn, &self.current_node).await;
     }
 
+    fn make_active<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
+        self.start(config);
+        self.state = NodeTasksState::Active;
+    }
+    fn make_inactive(&mut self) {
+        self.stop();
+        self.state = NodeTasksState::InActive;
+    }
+    fn abort(&mut self) {
+        self.stop();
+        self.state = NodeTasksState::Aborted;
+    }
+
     fn start<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
         let event_ingester = EventsIngester::start(config);
         let event_handlers = EventHandlers::start(config);
 
-        self.state = NodeTasksState::Active;
         self.tasks = vec![event_ingester, event_handlers];
     }
-    fn abort(&mut self) {
+    fn stop(&mut self) {
         for task in &self.tasks {
             task.abort();
         }
-        self.state = NodeTasksState::Aborted;
     }
 }
 
