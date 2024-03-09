@@ -63,8 +63,6 @@ impl EventHandlers {
                 Contracts::get_all_event_handlers_by_event_abi(&config.contracts);
 
             loop {
-                interval.tick().await;
-
                 handle_events::run(
                     conn.clone(),
                     &event_handlers_by_event_abi,
@@ -80,6 +78,8 @@ impl EventHandlers {
                     &state_migrations,
                 )
                 .await;
+
+                interval.tick().await;
             }
         })
     }

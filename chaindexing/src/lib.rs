@@ -13,13 +13,14 @@ mod reset_counts;
 
 pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::Chains;
-pub use config::Config;
+pub use config::{Config, OptimizationConfig};
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use ethers::prelude::Chain;
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, Events};
 pub use events_ingester::{EventsIngester, EventsIngesterJsonRpc};
+pub use nodes::KeepNodeActiveRequest;
 pub use repos::*;
 pub use reset_counts::ResetCount;
 
