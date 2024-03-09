@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{
-    ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
-};
+use crate::Event;
+use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient};
+use crate::{ExecutesWithRawQuery, LoadsDataWithRawQuery};
 
 use super::state_versions::{StateVersion, StateVersions, STATE_VERSIONS_UNIQUE_FIELDS};
 use super::{serde_map_to_string_map, to_and_filters, to_columns_and_values};
@@ -30,9 +30,14 @@ impl StateView {
         state_view: &HashMap<String, String>,
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        event: &Event,
     ) -> HashMap<String, String> {
+        let context_chain_id = event.chain_id;
+        let context_contract_address = &event.contract_address;
+
         let query = format!(
-            "SELECT * FROM {table_name} WHERE {filters}",
+            "SELECT * FROM {table_name} WHERE {filters} 
+            AND chain_id={context_chain_id} AND contract_address='{context_contract_address}'",
             filters = to_and_filters(state_view),
         );
 
