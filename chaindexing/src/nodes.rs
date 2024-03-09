@@ -24,10 +24,8 @@ impl Node {
         now - (Node::ELECTION_RATE_SECS * 2) as i64
     }
 
-    fn is_leader(&self, active_nodes: &Vec<Node>) -> bool {
-        let leader_node = elect_leader(&active_nodes);
-
-        self.id == leader_node.id
+    fn is_leader(&self, leader: &Node) -> bool {
+        self.id == leader.id
     }
 
     pub async fn create<'a>(
@@ -47,7 +45,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum NodeTasksState {
     Idle,
     Active,
@@ -80,12 +78,13 @@ impl<'a> NodeTasks<'a> {
         conn: &mut ChaindexingRepoConn<'b>,
     ) {
         let active_nodes = ChaindexingRepo::get_active_nodes(conn).await;
+        let leader_node = elect_leader(&active_nodes);
 
-        if self.current_node.is_leader(&active_nodes) {
+        if self.current_node.is_leader(&leader_node) {
             match self.state {
                 NodeTasksState::Idle | NodeTasksState::Aborted => self.start(config),
 
-                _ => {}
+                NodeTasksState::Active => {}
             }
         } else {
             if self.state == NodeTasksState::Active {
@@ -93,15 +92,15 @@ impl<'a> NodeTasks<'a> {
             }
         }
 
-        ChaindexingRepo::keep_node_active(conn, &self.current_node).await
+        ChaindexingRepo::keep_node_active(conn, &self.current_node).await;
     }
 
     fn start<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
         let event_ingester = EventsIngester::start(config);
         let event_handlers = EventHandlers::start(config);
 
-        self.tasks = vec![event_ingester, event_handlers];
         self.state = NodeTasksState::Active;
+        self.tasks = vec![event_ingester, event_handlers];
     }
     fn abort(&mut self) {
         for task in &self.tasks {

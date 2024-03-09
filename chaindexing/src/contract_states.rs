@@ -1,3 +1,5 @@
+pub use migrations::ContractStateMigrations;
+
 use std::sync::Arc;
 use std::{collections::HashMap, fmt::Debug};
 
@@ -5,9 +7,9 @@ mod migrations;
 mod state_versions;
 mod state_views;
 
-pub use crate::event_handlers::EventHandlerContext;
+use crate::event_handlers::EventHandlerContext;
+use crate::Event;
 use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, LoadsDataWithRawQuery};
-pub use migrations::ContractStateMigrations;
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -69,10 +71,11 @@ pub trait ContractState:
         &self,
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        event: &Event,
     ) -> HashMap<String, String> {
         let view = self.to_view();
 
-        StateView::get_complete(&view, table_name, client).await
+        StateView::get_complete(&view, table_name, client, event).await
     }
 
     async fn create<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
@@ -96,7 +99,7 @@ pub trait ContractState:
         let client = context.raw_query_client;
 
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(table_name, client).await;
+        let state_view = self.to_complete_view(table_name, client, event).await;
 
         let latest_state_version =
             StateVersion::update(&state_view, &updates, table_name, event, client).await;
@@ -108,7 +111,7 @@ pub trait ContractState:
         let client = context.raw_query_client;
 
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(table_name, client).await;
+        let state_view = self.to_complete_view(table_name, client, event).await;
 
         let latest_state_version =
             StateVersion::delete(&state_view, table_name, event, client).await;
@@ -131,7 +134,7 @@ pub trait ContractState:
         let client = context.raw_query_client;
 
         let context_chain_id = context.event.chain_id as u64;
-        let context_contract_address = context.event.contract_address.clone();
+        let context_contract_address = &context.event.contract_address;
 
         let raw_query = format!(
             "SELECT * FROM {table_name} 
