@@ -107,8 +107,6 @@ impl EventsIngester {
             let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
 
             loop {
-                interval.tick().await;
-
                 for (chain, json_rpc_url) in config.chains.clone() {
                     let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
@@ -124,6 +122,8 @@ impl EventsIngester {
                     .await
                     .unwrap();
                 }
+
+                interval.tick().await;
             }
         })
     }

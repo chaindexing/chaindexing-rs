@@ -1,7 +1,7 @@
 use diesel::{prelude::Insertable, Queryable};
 use serde::Deserialize;
 
-use crate::{Migratable, RepoMigrations};
+use crate::{Migratable, OptimizationConfig, RepoMigrations};
 
 use super::diesels::schema::chaindexing_nodes;
 use super::{ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Repo};
@@ -15,7 +15,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub const ELECTION_RATE_SECS: u64 = 60;
+    pub const ELECTION_RATE_SECS: u64 = 15;
 
     pub fn get_min_active_at() -> i64 {
         let now = chrono::Utc::now().timestamp();
@@ -61,14 +61,6 @@ enum NodeTasksState {
     Aborted,
 }
 
-pub struct NodeTasks<'a> {
-    current_node: &'a Node,
-    state: NodeTasksState,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
-    /// Not used currently. In V2, We will populate NodeTasksErrors here
-    pub errors: Vec<String>,
-}
-
 #[derive(Clone)]
 pub struct KeepNodeActiveRequest {
     /// Both in milliseconds
@@ -107,11 +99,21 @@ impl KeepNodeActiveRequest {
     }
 }
 
+pub struct NodeTasks<'a> {
+    current_node: &'a Node,
+    state: NodeTasksState,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+    started_at_in_secs: u64,
+    /// Not used currently. In V2, We will populate NodeTasksErrors here
+    pub errors: Vec<String>,
+}
+
 impl<'a> NodeTasks<'a> {
     pub fn new(current_node: &'a Node) -> Self {
         Self {
             current_node,
             state: NodeTasksState::Idle,
+            started_at_in_secs: Self::now_in_secs(),
             tasks: vec![],
             errors: vec![],
         }
@@ -130,15 +132,25 @@ impl<'a> NodeTasks<'a> {
                 NodeTasksState::Idle | NodeTasksState::Aborted => self.make_active(config),
 
                 NodeTasksState::Active => {
-                    if let Some(keep_node_active_request) = &config.keep_node_active_request {
-                        if keep_node_active_request.is_stale().await {
+                    if let Some(OptimizationConfig {
+                        keep_node_active_request,
+                        optimize_after_in_secs,
+                    }) = &config.optimization_config
+                    {
+                        if keep_node_active_request.is_stale().await
+                            && self.started_n_seconds_ago(*optimize_after_in_secs)
+                        {
                             self.make_inactive()
                         }
                     }
                 }
 
                 NodeTasksState::InActive => {
-                    if let Some(keep_node_active_request) = &config.keep_node_active_request {
+                    if let Some(OptimizationConfig {
+                        keep_node_active_request,
+                        ..
+                    }) = &config.optimization_config
+                    {
                         if keep_node_active_request.is_recent().await {
                             self.make_active(config)
                         }
@@ -177,6 +189,14 @@ impl<'a> NodeTasks<'a> {
         for task in &self.tasks {
             task.abort();
         }
+    }
+
+    fn started_n_seconds_ago(&self, n_seconds: u64) -> bool {
+        Self::now_in_secs() - self.started_at_in_secs >= n_seconds
+    }
+
+    fn now_in_secs() -> u64 {
+        Utc::now().timestamp() as u64
     }
 }
 
