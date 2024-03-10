@@ -15,13 +15,11 @@ pub struct Node {
 }
 
 impl Node {
-    pub const ELECTION_RATE_SECS: u64 = 15;
-
-    pub fn get_min_active_at() -> i64 {
-        let now = chrono::Utc::now().timestamp();
+    pub fn get_min_active_at(node_election_rate_ms: u64) -> i64 {
+        let now = chrono::Utc::now().timestamp_millis();
 
         // Not active if not kept active at least 2 elections away
-        now - (Node::ELECTION_RATE_SECS * 2) as i64
+        now - node_election_rate_ms as i64
     }
 
     fn is_leader(&self, leader: &Node) -> bool {
@@ -124,7 +122,8 @@ impl<'a> NodeTasks<'a> {
         config: &Config<S>,
         conn: &mut ChaindexingRepoConn<'b>,
     ) {
-        let active_nodes = ChaindexingRepo::get_active_nodes(conn).await;
+        let active_nodes =
+            ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
         let leader_node = elect_leader(&active_nodes);
 
         if self.current_node.is_leader(&leader_node) {

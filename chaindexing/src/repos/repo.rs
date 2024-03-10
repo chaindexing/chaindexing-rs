@@ -77,7 +77,10 @@ pub trait Repo:
     async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount>;
 
     async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node;
-    async fn get_active_nodes<'a>(conn: &mut Self::Conn<'a>) -> Vec<Node>;
+    async fn get_active_nodes<'a>(
+        conn: &mut Self::Conn<'a>,
+        node_election_rate_ms: u64,
+    ) -> Vec<Node>;
     async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node);
 }
 
