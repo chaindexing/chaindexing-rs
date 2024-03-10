@@ -43,7 +43,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub blocks_per_batch: u64,
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
-    pub node_election_rate_ms: Option<u64>,
+    node_election_rate_ms: Option<u64>,
     pub reset_count: u8,
     pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
