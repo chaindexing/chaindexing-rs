@@ -14,7 +14,8 @@ It is a great alternative to theGraph [https://thegraph.com/](https://thegraph.c
 - need to manually create side effects for events
 - are NOT indexing hundreds of contracts
 - don't want to deal with an additional external system
-- have written your DApp in RUST (Other Languages soon to come!)
+- want to optimize and save RPC (Alchemy, Infura) cost
+- have written your DApp's backend in RUST (Other Languages soon to come!)
 
 ### Examples
 
