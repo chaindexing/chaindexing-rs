@@ -43,6 +43,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub blocks_per_batch: u64,
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
+    pub node_election_rate_ms: Option<u64>,
     pub reset_count: u8,
     pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
@@ -60,6 +61,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             blocks_per_batch: 10_000,
             handler_rate_ms: 4_000,
             ingestion_rate_ms: 30_000,
+            node_election_rate_ms: None,
             reset_count: 0,
             reset_queries: vec![],
             shared_state: None,
@@ -122,6 +124,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
+    pub fn with_node_election_rate_ms(mut self, node_election_rate_ms: u64) -> Self {
+        self.node_election_rate_ms = Some(node_election_rate_ms);
+
+        self
+    }
+
     pub fn with_max_concurrent_node_count(mut self, max_concurrent_node_count: u16) -> Self {
         self.max_concurrent_node_count = max_concurrent_node_count;
 
@@ -138,6 +146,10 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     }
     pub fn is_optimization_enabled(&self) -> bool {
         self.optimization_config.is_some()
+    }
+
+    pub(super) fn get_node_election_rate_ms(&self) -> u64 {
+        self.node_election_rate_ms.unwrap_or(self.ingestion_rate_ms)
     }
 
     pub(super) fn validate(&self) -> Result<(), ConfigError> {
