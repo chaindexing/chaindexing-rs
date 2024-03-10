@@ -87,13 +87,14 @@ impl Chaindexing {
         ChaindexingRepo::prune_nodes(&query_client, config.max_concurrent_node_count).await;
         let current_node = Node::create(&mut conn, &query_client).await;
 
-        Self::wait_for_non_leader_nodes_to_abort().await;
+        Self::wait_for_non_leader_nodes_to_abort(config.get_node_election_rate_ms()).await;
 
         Self::setup(config, &mut conn, &query_client).await?;
 
         let config = config.clone();
         tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(Node::ELECTION_RATE_SECS));
+            let mut interval =
+                time::interval(Duration::from_millis(config.get_node_election_rate_ms()));
 
             let pool = config.repo.get_pool(1).await;
             let mut conn = ChaindexingRepo::get_conn(&pool).await;
@@ -109,8 +110,8 @@ impl Chaindexing {
 
         Ok(())
     }
-    async fn wait_for_non_leader_nodes_to_abort() {
-        time::sleep(Duration::from_secs(Node::ELECTION_RATE_SECS)).await;
+    async fn wait_for_non_leader_nodes_to_abort(node_election_rate_ms: u64) {
+        time::sleep(Duration::from_millis(node_election_rate_ms)).await;
     }
     pub async fn setup<'a, S: Sync + Send + Clone>(
         config: &Config<S>,
