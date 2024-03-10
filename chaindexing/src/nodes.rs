@@ -15,11 +15,11 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn get_min_active_at(node_election_rate_ms: u64) -> i64 {
-        let now = chrono::Utc::now().timestamp_millis();
+    pub fn get_min_active_at_in_secs(node_election_rate_ms: u64) -> i64 {
+        let now_ms = chrono::Utc::now().timestamp_millis();
 
         // Not active if not kept active at least 2 elections away
-        now - node_election_rate_ms as i64
+        (now_ms - (2 * node_election_rate_ms) as i64) / 1_000
     }
 
     fn is_leader(&self, leader: &Node) -> bool {

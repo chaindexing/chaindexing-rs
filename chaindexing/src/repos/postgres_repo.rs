@@ -231,7 +231,7 @@ impl Repo for PostgresRepo {
         use crate::diesels::schema::chaindexing_nodes::dsl::*;
 
         chaindexing_nodes
-            .filter(last_active_at.gt(Node::get_min_active_at(node_election_rate_ms)))
+            .filter(last_active_at.gt(Node::get_min_active_at_in_secs(node_election_rate_ms)))
             .load(conn)
             .await
             .unwrap()
