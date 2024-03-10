@@ -66,11 +66,13 @@ pub struct KeepNodeActiveRequest {
 }
 
 impl KeepNodeActiveRequest {
-    pub fn new(active_grace_period: u32) -> Self {
+    /// * `active_grace_period_ms` - how long should the Node wait
+    /// till it goes inactive
+    pub fn new(active_grace_period_ms: u32) -> Self {
         Self {
             last_refreshed_at_and_active_grace_period: Arc::new(Mutex::new((
                 Self::now(),
-                active_grace_period,
+                active_grace_period_ms,
             ))),
         }
     }
