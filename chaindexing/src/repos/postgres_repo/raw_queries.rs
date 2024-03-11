@@ -39,7 +39,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client.commit().await.unwrap();
     }
 
-    async fn update_next_block_number_to_handle_from_in_txn<'a>(
+    async fn update_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         ContractAddressID(contract_address_id): ContractAddressID,
         block_number: i64,
@@ -53,7 +53,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn update_every_next_block_number_to_handle_from_in_txn<'a>(
+    async fn update_every_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         chain_id: i64,
         block_number: i64,
@@ -67,7 +67,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn update_reorged_blocks_as_handled_in_txn<'a>(
+    async fn update_reorged_blocks_as_handled<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         reorged_block_ids: &[i32],
     ) {

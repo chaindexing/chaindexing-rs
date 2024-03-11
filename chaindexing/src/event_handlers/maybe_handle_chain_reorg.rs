@@ -37,7 +37,7 @@ pub async fn run<'a>(
                 &raw_query_txn_client,
             )
             .await;
-            ChaindexingRepo::update_every_next_block_number_to_handle_from_in_txn(
+            ChaindexingRepo::update_every_next_block_number_to_handle_from(
                 &raw_query_txn_client,
                 *chain_id,
                 *block_number,
@@ -46,7 +46,7 @@ pub async fn run<'a>(
         }
 
         let reorged_block_ids = ReorgedBlocks::get_ids(&reorged_blocks);
-        ChaindexingRepo::update_reorged_blocks_as_handled_in_txn(
+        ChaindexingRepo::update_reorged_blocks_as_handled(
             &raw_query_txn_client,
             &reorged_block_ids,
         )
