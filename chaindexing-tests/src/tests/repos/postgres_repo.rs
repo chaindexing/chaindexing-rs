@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod create_initial_contract_addresses {
-    use chaindexing::{Chain, ChaindexingRepo, Repo, UnsavedContractAddress};
+    use chaindexing::{ChainId, ChaindexingRepo, Repo, UnsavedContractAddress};
 
     use crate::test_runner;
 
@@ -11,13 +11,13 @@ mod create_initial_contract_addresses {
         test_runner::run_test(&pool, |mut conn| async move {
             let contract_name = "Test-contract-address";
             let contract_address_value = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e";
-            let chain = Chain::Arbitrum;
+            let chain_id = ChainId::Arbitrum;
             let start_block_number = 0;
 
             let contract_addresses = vec![UnsavedContractAddress::new(
                 contract_name,
                 contract_address_value,
-                &chain,
+                &chain_id,
                 start_block_number,
             )];
             ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
@@ -42,13 +42,13 @@ mod create_initial_contract_addresses {
         test_runner::run_test(&pool, |mut conn| async move {
             let contract_name = "Test-contract-address";
             let contract_address_value = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e";
-            let chain = Chain::Arbitrum;
+            let chain_id = ChainId::Arbitrum;
             let start_block_number = 0;
 
             let contract_addresses = vec![UnsavedContractAddress::new(
                 contract_name,
                 contract_address_value,
-                &chain,
+                &chain_id,
                 start_block_number,
             )];
             ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
@@ -71,13 +71,13 @@ mod create_initial_contract_addresses {
         test_runner::run_test(&pool, |mut conn| async move {
             let contract_name = "Test-contract-address";
             let contract_address_value = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e";
-            let chain = Chain::Arbitrum;
+            let chain_id = ChainId::Arbitrum;
             let start_block_number = 0;
 
             let contract_addresses = vec![UnsavedContractAddress::new(
                 contract_name,
                 contract_address_value,
-                &chain,
+                &chain_id,
                 start_block_number,
             )];
             ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
@@ -101,7 +101,7 @@ mod create_initial_contract_addresses {
             let initial_contract_address = UnsavedContractAddress::new(
                 "initial-contract-address",
                 "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
-                &Chain::Arbitrum,
+                &ChainId::Arbitrum,
                 0,
             );
 
@@ -111,7 +111,7 @@ mod create_initial_contract_addresses {
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-address",
                 "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
-                &Chain::Arbitrum,
+                &ChainId::Arbitrum,
                 0,
             );
             let contract_addresses = vec![updated_contract_address];
@@ -136,7 +136,7 @@ mod create_initial_contract_addresses {
             let initial_contract_address = UnsavedContractAddress::new(
                 "initial-contract-address",
                 "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
-                &Chain::Arbitrum,
+                &ChainId::Arbitrum,
                 initial_start_block_number,
             );
 
@@ -146,7 +146,7 @@ mod create_initial_contract_addresses {
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-address",
                 "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
-                &Chain::Arbitrum,
+                &ChainId::Arbitrum,
                 2000,
             );
             let contract_addresses = vec![updated_contract_address];

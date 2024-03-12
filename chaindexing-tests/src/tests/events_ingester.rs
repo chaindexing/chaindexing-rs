@@ -10,8 +10,8 @@ mod tests {
         json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
     };
     use chaindexing::{
-        Chain, ChaindexingRepo, Contract, EventsIngester, HasRawQueryClient, MinConfirmationCount,
-        Repo,
+        ChainId, ChaindexingRepo, Contract, EventsIngester, HasRawQueryClient,
+        MinConfirmationCount, Repo,
     };
 
     #[tokio::test]
@@ -39,7 +39,7 @@ mod tests {
                 &contracts,
                 10,
                 json_rpc,
-                &Chain::Mainnet,
+                &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
             )
             .await
@@ -89,7 +89,7 @@ mod tests {
                 &contracts,
                 10,
                 json_rpc,
-                &Chain::Mainnet,
+                &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
             )
             .await
@@ -124,7 +124,7 @@ mod tests {
                 &contracts,
                 blocks_per_batch,
                 json_rpc,
-                &Chain::Mainnet,
+                &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
             )
             .await
@@ -163,7 +163,7 @@ mod tests {
                 &contracts,
                 blocks_per_batch,
                 json_rpc,
-                &Chain::Mainnet,
+                &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
             )
             .await
@@ -194,7 +194,7 @@ mod tests {
                 &contracts,
                 10,
                 json_rpc,
-                &Chain::Mainnet,
+                &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
             )
             .await
