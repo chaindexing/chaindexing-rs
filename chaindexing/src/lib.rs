@@ -25,7 +25,7 @@ pub use repos::*;
 pub use reset_counts::ResetCount;
 
 use config::ConfigError;
-use nodes::{Node, NodeTasks};
+use nodes::NodeTasks;
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -84,8 +84,13 @@ impl Chaindexing {
         let pool = repo.get_pool(1).await;
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
 
+        ChaindexingRepo::migrate(
+            &query_client,
+            ChaindexingRepo::create_nodes_migration().to_vec(),
+        )
+        .await;
         ChaindexingRepo::prune_nodes(&query_client, config.max_concurrent_node_count).await;
-        let current_node = Node::create(&mut conn, &query_client).await;
+        let current_node = ChaindexingRepo::create_node(&mut conn).await;
 
         Self::wait_for_non_leader_nodes_to_abort(config.get_node_election_rate_ms()).await;
 
