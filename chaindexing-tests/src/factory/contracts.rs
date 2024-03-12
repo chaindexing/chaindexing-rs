@@ -1,4 +1,4 @@
-use chaindexing::{Chain, Contract};
+use chaindexing::{ChainId, Contract};
 
 use super::{ApprovalForAllTestEventHandler, TransferTestEventHandler};
 
@@ -14,5 +14,5 @@ pub fn bayc_contract() -> Contract<()> {
     Contract::new("BoredApeYachtClub")
         .add_event(TRANSFER_EVENT_ABI, TransferTestEventHandler)
         .add_event(APPROCAL_EVENT_ABI, ApprovalForAllTestEventHandler)
-        .add_address(BAYC_CONTRACT_ADDRESS, &Chain::Mainnet, 17773490)
+        .add_address(BAYC_CONTRACT_ADDRESS, &ChainId::Mainnet, 17773490)
 }

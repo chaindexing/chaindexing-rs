@@ -16,6 +16,7 @@ use tokio::time::{interval, sleep};
 use tokio::{sync::Mutex, task};
 
 use crate::chain_reorg::Execution;
+use crate::chains::{Chain, ChainId};
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::{
@@ -106,7 +107,7 @@ impl EventsIngester {
             let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
 
             loop {
-                for (chain, json_rpc_url) in &config.chains {
+                for chain @ Chain { json_rpc_url, .. } in config.chains.iter() {
                     let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
                     Self::ingest(
@@ -115,7 +116,7 @@ impl EventsIngester {
                         &config.contracts,
                         config.blocks_per_batch,
                         json_rpc,
-                        chain,
+                        &chain.id,
                         &config.min_confirmation_count,
                     )
                     .await
@@ -133,12 +134,12 @@ impl EventsIngester {
         contracts: &Vec<Contract<S>>,
         blocks_per_batch: u64,
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
-        chain: &Chain,
+        chain_id: &ChainId,
         min_confirmation_count: &MinConfirmationCount,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
         let mut contract_addresses_stream =
-            ChaindexingRepo::get_contract_addresses_stream_by_chain(conn.clone(), *chain as i64);
+            ChaindexingRepo::get_contract_addresses_stream_by_chain(conn.clone(), *chain_id as i64);
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             let contract_addresses = Self::filter_uningested_contract_addresses(
@@ -164,7 +165,7 @@ impl EventsIngester {
                 &contract_addresses,
                 contracts,
                 &json_rpc,
-                chain,
+                chain_id,
                 current_block_number,
                 blocks_per_batch,
                 min_confirmation_count,

@@ -1,10 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use ethers::types::Chain;
 use tokio::sync::Mutex;
 
+use crate::chains::{Chain, ChainId};
 use crate::nodes::{self, KeepNodeActiveRequest};
-use crate::{ChaindexingRepo, Chains, Contract, MinConfirmationCount};
+use crate::{ChaindexingRepo, Contract, MinConfirmationCount};
 
 pub enum ConfigError {
     NoContract,
@@ -36,7 +36,7 @@ pub struct OptimizationConfig {
 
 #[derive(Clone)]
 pub struct Config<SharedState: Sync + Send + Clone> {
-    pub chains: Chains,
+    pub chains: Vec<Chain>,
     pub repo: ChaindexingRepo,
     pub contracts: Vec<Contract<SharedState>>,
     pub min_confirmation_count: MinConfirmationCount,
@@ -55,7 +55,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     pub fn new(repo: ChaindexingRepo) -> Self {
         Self {
             repo,
-            chains: HashMap::new(),
+            chains: vec![],
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
             blocks_per_batch: 8_000,
@@ -70,9 +70,8 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         }
     }
 
-    // TODO: Renam to add_chain_id and encapsulate json_rpc_url in Chain::new()
-    pub fn add_chain(mut self, chain: Chain, json_rpc_url: &str) -> Self {
-        self.chains.insert(chain, json_rpc_url.to_string());
+    pub fn add_chain(mut self, chain_id: ChainId, json_rpc_url: &str) -> Self {
+        self.chains.push(Chain::new(chain_id, json_rpc_url));
 
         self
     }
