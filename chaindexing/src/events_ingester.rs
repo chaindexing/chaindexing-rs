@@ -103,20 +103,19 @@ impl EventsIngester {
 
             let raw_query_client = config.repo.get_raw_query_client().await;
 
-            let contracts = config.contracts.clone();
             let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
 
             loop {
-                for (chain, json_rpc_url) in config.chains.clone() {
+                for (chain, json_rpc_url) in &config.chains {
                     let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
 
                     Self::ingest(
                         conn.clone(),
                         &raw_query_client,
-                        &contracts,
+                        &config.contracts,
                         config.blocks_per_batch,
                         json_rpc,
-                        &chain,
+                        chain,
                         &config.min_confirmation_count,
                     )
                     .await
@@ -152,7 +151,7 @@ impl EventsIngester {
             ingest_events::run(
                 &mut conn,
                 raw_query_client,
-                contract_addresses.clone(),
+                &contract_addresses,
                 contracts,
                 &json_rpc,
                 current_block_number,
@@ -162,7 +161,7 @@ impl EventsIngester {
 
             maybe_handle_chain_reorg::run(
                 &mut conn,
-                contract_addresses.clone(),
+                &contract_addresses,
                 contracts,
                 &json_rpc,
                 chain,
