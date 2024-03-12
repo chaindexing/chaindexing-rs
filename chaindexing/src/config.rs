@@ -70,6 +70,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         }
     }
 
+    // TODO: Renam to add_chain_id and encapsulate json_rpc_url in Chain::new()
     pub fn add_chain(mut self, chain: Chain, json_rpc_url: &str) -> Self {
         self.chains.insert(chain, json_rpc_url.to_string());
 

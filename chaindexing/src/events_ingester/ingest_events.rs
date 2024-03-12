@@ -16,7 +16,7 @@ use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Fil
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     raw_query_client: &ChaindexingRepoRawQueryClient,
-    contract_addresses: Vec<ContractAddress>,
+    contract_addresses: &Vec<ContractAddress>,
     contracts: &Vec<Contract<S>>,
     json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
     current_block_number: u64,
@@ -31,12 +31,13 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     );
 
     let filters =
-        remove_already_ingested_filters(&filters, &contract_addresses, raw_query_client).await;
+        remove_already_ingested_filters(&filters, contract_addresses, raw_query_client).await;
 
     if !filters.is_empty() {
         let logs = fetch_logs(&filters, json_rpc).await;
         let blocks_by_tx_hash = fetch_blocks_by_number(&logs, json_rpc).await;
         let events = Events::get(&logs, contracts, &blocks_by_tx_hash);
+        let contract_addresses = contract_addresses.clone();
 
         ChaindexingRepo::run_in_transaction(conn, move |conn| {
             async move {
