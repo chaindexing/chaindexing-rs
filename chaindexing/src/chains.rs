@@ -6,7 +6,7 @@ pub struct Chain {
 }
 
 impl Chain {
-    pub(super) fn new(id: ChainId, json_rpc_url: &str) -> Self {
+    pub fn new(id: ChainId, json_rpc_url: &str) -> Self {
         Self {
             id,
             json_rpc_url: json_rpc_url.to_string(),

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::chains::{Chain, ChainId};
+use crate::chains::Chain;
 use crate::nodes::{self, KeepNodeActiveRequest};
 use crate::{ChaindexingRepo, Contract, MinConfirmationCount};
 
@@ -70,8 +70,8 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         }
     }
 
-    pub fn add_chain(mut self, chain_id: ChainId, json_rpc_url: &str) -> Self {
-        self.chains.push(Chain::new(chain_id, json_rpc_url));
+    pub fn add_chain(mut self, chain: Chain) -> Self {
+        self.chains.push(chain);
 
         self
     }
