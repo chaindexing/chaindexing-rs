@@ -28,7 +28,11 @@ impl MinConfirmationCount {
         next_block_number: u64,
         current_block_number: u64,
     ) -> bool {
-        next_block_number >= current_block_number - (self.value as u64)
+        if self.value as u64 >= current_block_number {
+            false
+        } else {
+            next_block_number >= current_block_number - (self.value as u64)
+        }
     }
 }
 
