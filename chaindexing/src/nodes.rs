@@ -116,6 +116,9 @@ impl<'a> NodeTasks<'a> {
         config: &Config<S>,
         conn: &mut ChaindexingRepoConn<'b>,
     ) {
+        // Keep node active first to guarantee that at least this node is active before election
+        ChaindexingRepo::keep_node_active(conn, &self.current_node).await;
+
         let active_nodes =
             ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
         let leader_node = elect_leader(&active_nodes);
@@ -155,8 +158,6 @@ impl<'a> NodeTasks<'a> {
                 self.abort();
             }
         }
-
-        ChaindexingRepo::keep_node_active(conn, &self.current_node).await;
     }
 
     fn make_active<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
