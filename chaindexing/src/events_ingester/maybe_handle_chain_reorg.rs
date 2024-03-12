@@ -17,7 +17,7 @@ use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Fil
 
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
-    contract_addresses: Vec<ContractAddress>,
+    contract_addresses: &Vec<ContractAddress>,
     contracts: &Vec<Contract<S>>,
     json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
     chain: &Chain,
@@ -26,7 +26,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     min_confirmation_count: &MinConfirmationCount,
 ) -> Result<(), EventsIngesterError> {
     let filters = Filters::get(
-        &contract_addresses,
+        contract_addresses,
         contracts,
         current_block_number,
         blocks_per_batch,
