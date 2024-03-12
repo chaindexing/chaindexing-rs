@@ -224,17 +224,10 @@ impl Repo for PostgresRepo {
             .await
             .unwrap()
     }
-    async fn get_active_nodes<'a>(
-        conn: &mut Self::Conn<'a>,
-        node_election_rate_ms: u64,
-    ) -> Vec<Node> {
+    async fn get_leader_node<'a>(conn: &mut Self::Conn<'a>) -> Node {
         use crate::diesels::schema::chaindexing_nodes::dsl::*;
 
-        chaindexing_nodes
-            .filter(last_active_at.gt(Node::get_min_active_at_in_secs(node_election_rate_ms)))
-            .load(conn)
-            .await
-            .unwrap()
+        chaindexing_nodes.order_by(inserted_at.desc()).first(conn).await.unwrap()
     }
     async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node) {
         use crate::diesels::schema::chaindexing_nodes::dsl::*;

@@ -6,6 +6,8 @@ use crate::OptimizationConfig;
 use super::diesels::schema::chaindexing_nodes;
 use super::{ChaindexingRepo, ChaindexingRepoConn, Repo};
 
+pub const DEFAULT_MAX_CONCURRENT_NODE_COUNT: u16 = 50;
+
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Insertable, Queryable)]
 #[diesel(table_name = chaindexing_nodes)]
 pub struct Node {
@@ -116,9 +118,7 @@ impl<'a> NodeTasks<'a> {
         config: &Config<S>,
         conn: &mut ChaindexingRepoConn<'b>,
     ) {
-        let active_nodes =
-            ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
-        let leader_node = elect_leader(&active_nodes);
+        let leader_node = ChaindexingRepo::get_leader_node(conn).await;
 
         if self.current_node.is_leader(&leader_node) {
             match self.state {
@@ -191,19 +191,4 @@ impl<'a> NodeTasks<'a> {
     fn now_in_secs() -> u64 {
         Utc::now().timestamp() as u64
     }
-}
-
-pub const DEFAULT_MAX_CONCURRENT_NODE_COUNT: u16 = 50;
-
-fn elect_leader<'a>(nodes: &'a Vec<Node>) -> &'a Node {
-    let mut nodes_iter = nodes.iter();
-    let mut leader: Option<&Node> = nodes_iter.next();
-
-    while let Some(node) = nodes_iter.next() {
-        if node.inserted_at > leader.unwrap().inserted_at {
-            leader = Some(node);
-        }
-    }
-
-    leader.unwrap()
 }
