@@ -97,6 +97,22 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
         Self::execute_raw_query(client, &query).await;
     }
+
+    async fn prune_reset_counts(client: &Self::RawQueryClient, prune_size: u64) {
+        let query = format!(
+            "
+            DELETE FROM chaindexing_reset_counts
+            WHERE id NOT IN (
+                SELECT id
+                FROM chaindexing_reset_counts
+                ORDER BY id DESC
+                LIMIT {prune_size}
+            )
+            "
+        );
+
+        Self::execute_raw_query(client, &query).await;
+    }
 }
 
 #[async_trait::async_trait]

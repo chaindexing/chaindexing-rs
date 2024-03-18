@@ -43,7 +43,7 @@ diesel::table! {
 
 diesel::table! {
   chaindexing_reset_counts (id) {
-      id -> Int4,
+      id -> Int8,
       inserted_at -> Timestamptz,
   }
 }

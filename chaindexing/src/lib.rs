@@ -141,21 +141,23 @@ impl Chaindexing {
         Ok(())
     }
     pub async fn maybe_reset<'a, S: Send + Sync + Clone>(
-        reset_count: &u8,
+        reset_count: &u64,
         reset_queries: &Vec<String>,
         contracts: &[Contract<S>],
         client: &ChaindexingRepoRawQueryClient,
         conn: &mut ChaindexingRepoConn<'a>,
     ) {
-        let reset_count = *reset_count as usize;
-        let reset_counts = ChaindexingRepo::get_reset_counts(conn).await;
-        let previous_reset_count = reset_counts.len();
+        let reset_count = *reset_count;
+        let previous_reset_count_id = ChaindexingRepo::get_last_reset_count(conn)
+            .await
+            .map(|rc| rc.get_count())
+            .unwrap_or(0);
 
-        if reset_count > previous_reset_count {
+        if reset_count > previous_reset_count_id {
             Self::reset_internal_migrations(client).await;
             Self::reset_migrations_for_contract_states(client, contracts).await;
             Self::run_user_reset_queries(client, reset_queries).await;
-            for _ in previous_reset_count..reset_count {
+            for _ in previous_reset_count_id..reset_count {
                 ChaindexingRepo::create_reset_count(conn).await;
             }
         }
@@ -167,6 +169,7 @@ impl Chaindexing {
             ChaindexingRepo::create_reset_counts_migration().to_vec(),
         )
         .await;
+        ChaindexingRepo::prune_reset_counts(&client, reset_counts::MAX_RESET_COUNT).await;
     }
     pub async fn run_internal_migrations(client: &ChaindexingRepoRawQueryClient) {
         ChaindexingRepo::migrate(client, ChaindexingRepo::get_internal_migrations()).await;

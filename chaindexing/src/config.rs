@@ -44,7 +44,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
     node_election_rate_ms: Option<u64>,
-    pub reset_count: u8,
+    pub reset_count: u64,
     pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
     pub max_concurrent_node_count: u16,
@@ -88,7 +88,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
-    pub fn reset(mut self, count: u8) -> Self {
+    pub fn reset(mut self, count: u64) -> Self {
         self.reset_count = count;
 
         self
