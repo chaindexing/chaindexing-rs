@@ -47,20 +47,15 @@ impl<S: Send + Sync + Clone> Contract<S> {
         }
     }
 
-    pub fn add_address(&mut self, address: &str, chain: &Chain, start_block_number: i64) -> Self {
-        let mut addresses = self.addresses.clone();
-
-        addresses.push(UnsavedContractAddress::new(
+    pub fn add_address(mut self, address: &str, chain: &Chain, start_block_number: i64) -> Self {
+        self.addresses.push(UnsavedContractAddress::new(
             &self.name,
             address,
             chain,
             start_block_number,
         ));
 
-        Self {
-            addresses,
-            ..self.clone()
-        }
+        self
     }
 
     pub fn add_event(
