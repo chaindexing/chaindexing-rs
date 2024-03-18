@@ -74,7 +74,7 @@ pub trait Repo:
     async fn get_unhandled_reorged_blocks<'a>(conn: &mut Self::Conn<'a>) -> Vec<ReorgedBlock>;
 
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>);
-    async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount>;
+    async fn get_last_reset_count<'a>(conn: &mut Self::Conn<'a>) -> Option<ResetCount>;
 
     async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node;
     async fn get_active_nodes<'a>(
@@ -119,6 +119,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
     );
 
     async fn prune_nodes(client: &Self::RawQueryClient, prune_size: u16);
+    async fn prune_reset_counts(client: &Self::RawQueryClient, prune_size: u64);
 }
 
 #[async_trait::async_trait]
@@ -278,7 +279,7 @@ impl SQLikeMigrations {
 
     pub fn create_reset_counts() -> &'static [&'static str] {
         &["CREATE TABLE IF NOT EXISTS chaindexing_reset_counts (
-                id SERIAL PRIMARY KEY,
+                id BIGSERIAL PRIMARY KEY,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
             )"]
     }

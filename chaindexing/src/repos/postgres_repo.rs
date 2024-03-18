@@ -17,7 +17,7 @@ use diesel::{
     delete,
     result::{DatabaseErrorKind, Error as DieselError},
     upsert::excluded,
-    ExpressionMethods, QueryDsl,
+    ExpressionMethods, OptionalExtension, QueryDsl,
 };
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use diesel_streamer::get_serial_table_async_stream;
@@ -209,10 +209,15 @@ impl Repo for PostgresRepo {
             .unwrap();
     }
 
-    async fn get_reset_counts<'a>(conn: &mut Self::Conn<'a>) -> Vec<ResetCount> {
+    async fn get_last_reset_count<'a>(conn: &mut Self::Conn<'a>) -> Option<ResetCount> {
         use crate::diesels::schema::chaindexing_reset_counts::dsl::*;
 
-        chaindexing_reset_counts.load(conn).await.unwrap()
+        chaindexing_reset_counts
+            .order_by(id.desc())
+            .first(conn)
+            .await
+            .optional()
+            .unwrap()
     }
 
     async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node {
