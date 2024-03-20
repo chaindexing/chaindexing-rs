@@ -143,7 +143,7 @@ impl EventsIngester {
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
         chain_id: &ChainId,
         min_confirmation_count: &MinConfirmationCount,
-        pruning_config: &PruningConfig,
+        pruning_config: &Option<PruningConfig>,
         last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
@@ -181,31 +181,32 @@ impl EventsIngester {
             )
             .await?;
 
-            let PruningConfig { prune_interval, .. } = pruning_config;
-            let now = Utc::now().timestamp() as u64;
-            let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&now);
-            let chain_id_u64 = *chain_id as u64;
-            if now - *last_pruned_at >= *prune_interval {
-                let min_pruning_block_number =
-                    pruning_config.get_min_block_number(current_block_number);
-                ChaindexingRepo::prune_events(
-                    raw_query_client,
-                    min_pruning_block_number,
-                    chain_id_u64,
-                )
-                .await;
+            if let Some(pruning_config @ PruningConfig { prune_interval, .. }) = pruning_config {
+                let now = Utc::now().timestamp() as u64;
+                let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&now);
+                let chain_id_u64 = *chain_id as u64;
+                if now - *last_pruned_at >= *prune_interval {
+                    let min_pruning_block_number =
+                        pruning_config.get_min_block_number(current_block_number);
+                    ChaindexingRepo::prune_events(
+                        raw_query_client,
+                        min_pruning_block_number,
+                        chain_id_u64,
+                    )
+                    .await;
 
-                let state_migrations = Contracts::get_state_migrations(&contracts);
-                let state_table_names = ContractStates::get_all_table_names(&state_migrations);
-                ContractStates::prune_state_versions(
-                    &state_table_names,
-                    &raw_query_client,
-                    min_pruning_block_number,
-                    chain_id_u64,
-                )
-                .await;
+                    let state_migrations = Contracts::get_state_migrations(&contracts);
+                    let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+                    ContractStates::prune_state_versions(
+                        &state_table_names,
+                        &raw_query_client,
+                        min_pruning_block_number,
+                        chain_id_u64,
+                    )
+                    .await;
+                }
+                last_pruned_at_per_chain_id.insert(*chain_id, Utc::now().timestamp() as u64);
             }
-            last_pruned_at_per_chain_id.insert(*chain_id, Utc::now().timestamp() as u64);
         }
 
         Ok(())

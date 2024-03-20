@@ -50,7 +50,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
     pub max_concurrent_node_count: u16,
     pub optimization_config: Option<OptimizationConfig>,
-    pub pruning_config: PruningConfig,
+    pub pruning_config: Option<PruningConfig>,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -69,7 +69,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             shared_state: None,
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
             optimization_config: None,
-            pruning_config: Default::default(),
+            pruning_config: None,
         }
     }
 
@@ -139,14 +139,22 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
-    pub fn with_prune_n_blocks_away(mut self, n_blocks_away: u64) -> Self {
-        self.pruning_config.prune_n_blocks_away = n_blocks_away;
+    pub fn with_prune_n_blocks_away(mut self, prune_n_blocks_away: u64) -> Self {
+        self.pruning_config = PruningConfig {
+            prune_n_blocks_away,
+            ..self.pruning_config.unwrap_or(Default::default())
+        }
+        .to_some();
 
         self
     }
 
     pub fn with_prune_interval(mut self, prune_interval: u64) -> Self {
-        self.pruning_config.prune_interval = prune_interval;
+        self.pruning_config = PruningConfig {
+            prune_interval,
+            ..self.pruning_config.unwrap_or(Default::default())
+        }
+        .to_some();
 
         self
     }

@@ -25,4 +25,7 @@ impl PruningConfig {
             current_block_number - self.prune_n_blocks_away
         }
     }
+    pub fn to_some(self) -> Option<Self> {
+        Some(self)
+    }
 }
