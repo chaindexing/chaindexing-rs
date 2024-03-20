@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -41,6 +42,8 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                &Default::default(),
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -91,6 +94,8 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                &Default::default(),
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -126,6 +131,8 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                &Default::default(),
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -165,6 +172,8 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                &Default::default(),
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -196,6 +205,8 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                &Default::default(),
+                &mut HashMap::new(),
             )
             .await
             .unwrap();

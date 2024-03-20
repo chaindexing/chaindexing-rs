@@ -3,17 +3,17 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::ChaindexingRepo;
+use crate::ContractStates;
 use crate::{
     ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ExecutesWithRawQuery, HasRawQueryClient,
     Repo,
 };
-use crate::{ContractStateMigrations, ContractStates};
 use crate::{ReorgedBlock, ReorgedBlocks};
 
 pub async fn run<'a>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
     raw_query_client: &mut ChaindexingRepoRawQueryClient,
-    state_migrations: &[Arc<dyn ContractStateMigrations>],
+    table_names: &Vec<String>,
 ) {
     let mut conn = conn.lock().await;
     let reorged_blocks = ChaindexingRepo::get_unhandled_reorged_blocks(&mut conn).await;
@@ -31,7 +31,7 @@ pub async fn run<'a>(
         } in &reorged_blocks
         {
             ContractStates::backtrack_states(
-                state_migrations,
+                table_names,
                 *chain_id,
                 *block_number,
                 &raw_query_txn_client,

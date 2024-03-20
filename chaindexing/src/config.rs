@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::chains::Chain;
 use crate::nodes::{self, KeepNodeActiveRequest};
+use crate::pruning::PruningConfig;
 use crate::{ChaindexingRepo, Contract, MinConfirmationCount};
 
 pub enum ConfigError {
@@ -49,6 +50,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
     pub max_concurrent_node_count: u16,
     pub optimization_config: Option<OptimizationConfig>,
+    pub pruning_config: PruningConfig,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -67,6 +69,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             shared_state: None,
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
             optimization_config: None,
+            pruning_config: Default::default(),
         }
     }
 
@@ -132,6 +135,18 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn with_max_concurrent_node_count(mut self, max_concurrent_node_count: u16) -> Self {
         self.max_concurrent_node_count = max_concurrent_node_count;
+
+        self
+    }
+
+    pub fn with_prune_n_blocks_away(mut self, n_blocks_away: u64) -> Self {
+        self.pruning_config.prune_n_blocks_away = n_blocks_away;
+
+        self
+    }
+
+    pub fn with_prune_interval(mut self, prune_interval: u64) -> Self {
+        self.pruning_config.prune_interval = prune_interval;
 
         self
     }

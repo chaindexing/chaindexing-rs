@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use ethers::prelude::Middleware;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider, ProviderError};
@@ -19,9 +20,11 @@ use crate::chain_reorg::Execution;
 use crate::chains::{Chain, ChainId};
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
+use crate::pruning::PruningConfig;
 use crate::{
     ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config, ContractAddress,
-    HasRawQueryClient, MinConfirmationCount, Repo, RepoError, Streamable,
+    ContractStates, ExecutesWithRawQuery, HasRawQueryClient, MinConfirmationCount, Repo, RepoError,
+    Streamable,
 };
 
 #[async_trait::async_trait]
@@ -106,6 +109,8 @@ impl EventsIngester {
 
             let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
 
+            let mut last_pruned_at_per_chain_id = HashMap::new();
+
             loop {
                 for chain @ Chain { json_rpc_url, .. } in config.chains.iter() {
                     let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
@@ -118,6 +123,8 @@ impl EventsIngester {
                         json_rpc,
                         &chain.id,
                         &config.min_confirmation_count,
+                        &config.pruning_config,
+                        &mut last_pruned_at_per_chain_id,
                     )
                     .await
                     .unwrap();
@@ -136,6 +143,8 @@ impl EventsIngester {
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
         chain_id: &ChainId,
         min_confirmation_count: &MinConfirmationCount,
+        pruning_config: &PruningConfig,
+        last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
         let mut contract_addresses_stream =
@@ -171,6 +180,32 @@ impl EventsIngester {
                 min_confirmation_count,
             )
             .await?;
+
+            let PruningConfig { prune_interval, .. } = pruning_config;
+            let now = Utc::now().timestamp() as u64;
+            let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&now);
+            let chain_id_u64 = *chain_id as u64;
+            if now - *last_pruned_at >= *prune_interval {
+                let min_pruning_block_number =
+                    pruning_config.get_min_block_number(current_block_number);
+                ChaindexingRepo::prune_events(
+                    raw_query_client,
+                    min_pruning_block_number,
+                    chain_id_u64,
+                )
+                .await;
+
+                let state_migrations = Contracts::get_state_migrations(&contracts);
+                let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+                ContractStates::prune_state_versions(
+                    &state_table_names,
+                    &raw_query_client,
+                    min_pruning_block_number,
+                    chain_id_u64,
+                )
+                .await;
+            }
+            last_pruned_at_per_chain_id.insert(*chain_id, Utc::now().timestamp() as u64);
         }
 
         Ok(())
