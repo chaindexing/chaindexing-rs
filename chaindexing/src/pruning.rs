@@ -12,7 +12,7 @@ impl Default for PruningConfig {
     fn default() -> Self {
         Self {
             prune_n_blocks_away: 1_000,
-            prune_interval: 12 * 60 * 60,
+            prune_interval: 30 * 24 * 60 * 60, // 30 days,
         }
     }
 }
