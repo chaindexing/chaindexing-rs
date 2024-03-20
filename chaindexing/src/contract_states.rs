@@ -8,8 +8,10 @@ mod state_versions;
 mod state_views;
 
 use crate::event_handlers::EventHandlerContext;
-use crate::Event;
-use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, LoadsDataWithRawQuery};
+use crate::{
+    ChaindexingRepo, ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient, Event,
+    ExecutesWithRawQuery, LoadsDataWithRawQuery,
+};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -20,13 +22,11 @@ pub struct ContractStates;
 
 impl ContractStates {
     pub async fn backtrack_states<'a>(
-        state_migrations: &[Arc<dyn ContractStateMigrations>],
+        table_names: &Vec<String>,
         chain_id: i64,
         block_number: i64,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
-        let table_names = Self::get_all_table_names(state_migrations);
-
         for table_name in table_names {
             let state_versions =
                 StateVersions::get(block_number, chain_id, &table_name, client).await;
@@ -36,6 +36,27 @@ impl ContractStates {
 
             let state_version_group_ids = StateVersions::get_group_ids(&state_versions);
             StateViews::refresh(&state_version_group_ids, &table_name, client).await;
+        }
+    }
+
+    pub async fn prune_state_versions(
+        table_names: &Vec<String>,
+        client: &ChaindexingRepoRawQueryClient,
+        min_block_number: u64,
+    ) {
+        for table_name in table_names {
+            let state_version_table_name = StateVersion::table_name(table_name);
+
+            ChaindexingRepo::execute_raw_query(
+                client,
+                &format!(
+                    "
+            DELETE FROM {state_version_table_name}
+            WHERE block_number < {min_block_number}
+            "
+                ),
+            )
+            .await;
         }
     }
 

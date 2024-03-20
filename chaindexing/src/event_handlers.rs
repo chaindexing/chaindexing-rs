@@ -7,7 +7,7 @@ mod maybe_handle_chain_reorg;
 use tokio::{sync::Mutex, task, time::interval};
 
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
-use crate::{ChaindexingRepoRawQueryTxnClient, HasRawQueryClient};
+use crate::{ChaindexingRepoRawQueryTxnClient, ContractStates, HasRawQueryClient};
 
 #[derive(Clone)]
 pub struct EventHandlerContext<'a, 'b, SharedState: Sync + Send + Clone> {
@@ -75,10 +75,19 @@ impl EventHandlers {
                 .await;
 
                 let state_migrations = Contracts::get_state_migrations(&config.contracts);
+                let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+
                 maybe_handle_chain_reorg::run(
                     conn.clone(),
                     &mut raw_query_client,
-                    &state_migrations,
+                    &state_table_names,
+                )
+                .await;
+
+                ContractStates::prune_state_versions(
+                    &state_table_names,
+                    &raw_query_client,
+                    config.prune_n_blocks_away,
                 )
                 .await;
 

@@ -94,9 +94,7 @@ pub struct StateVersion;
 
 impl StateVersion {
     pub fn table_name(state_table_name: &str) -> String {
-        let mut table_name = STATE_VERSIONS_TABLE_PREFIX.to_string();
-        table_name.push_str(state_table_name);
-        table_name
+        format!("{STATE_VERSIONS_TABLE_PREFIX}{state_table_name}")
     }
 
     pub fn was_deleted(state_version: &HashMap<String, String>) -> bool {
