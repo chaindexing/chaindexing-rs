@@ -139,6 +139,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
+    pub fn with_pruning(mut self) -> Self {
+        self.pruning_config = Some(Default::default());
+
+        self
+    }
+
     pub fn with_prune_n_blocks_away(mut self, prune_n_blocks_away: u64) -> Self {
         self.pruning_config = PruningConfig {
             prune_n_blocks_away,
