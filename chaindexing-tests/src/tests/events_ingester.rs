@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -42,6 +43,8 @@ mod tests {
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 10,
+                0,
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -93,6 +96,8 @@ mod tests {
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 10,
+                0,
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -129,6 +134,8 @@ mod tests {
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 10,
+                0,
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -169,6 +176,8 @@ mod tests {
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 10,
+                0,
+                &mut HashMap::new(),
             )
             .await
             .unwrap();
@@ -201,6 +210,8 @@ mod tests {
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 10,
+                0,
+                &mut HashMap::new(),
             )
             .await
             .unwrap();

@@ -43,6 +43,7 @@ impl ContractStates {
         table_names: &Vec<String>,
         client: &ChaindexingRepoRawQueryClient,
         min_block_number: u64,
+        chain_id: u64,
     ) {
         for table_name in table_names {
             let state_version_table_name = StateVersion::table_name(table_name);
@@ -52,7 +53,8 @@ impl ContractStates {
                 &format!(
                     "
             DELETE FROM {state_version_table_name}
-            WHERE block_number < {min_block_number}
+            WHERE block_number < {min_block_number} 
+            AND chain_id = {chain_id}
             "
                 ),
             )

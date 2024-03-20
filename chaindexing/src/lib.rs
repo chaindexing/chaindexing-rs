@@ -8,6 +8,7 @@ mod event_handlers;
 mod events;
 mod events_ingester;
 mod nodes;
+mod pruning;
 mod repos;
 mod reset_counts;
 

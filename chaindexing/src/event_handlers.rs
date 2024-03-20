@@ -84,13 +84,6 @@ impl EventHandlers {
                 )
                 .await;
 
-                ContractStates::prune_state_versions(
-                    &state_table_names,
-                    &raw_query_client,
-                    config.prune_n_blocks_away,
-                )
-                .await;
-
                 interval.tick().await;
             }
         })

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use ethers::prelude::Middleware;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider, ProviderError};
@@ -20,8 +21,9 @@ use crate::chains::{Chain, ChainId};
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::{
-    ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config, ContractAddress,
-    ExecutesWithRawQuery, HasRawQueryClient, MinConfirmationCount, Repo, RepoError, Streamable,
+    pruning, ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config,
+    ContractAddress, ContractStates, ExecutesWithRawQuery, HasRawQueryClient, MinConfirmationCount,
+    Repo, RepoError, Streamable,
 };
 
 #[async_trait::async_trait]
@@ -106,6 +108,8 @@ impl EventsIngester {
 
             let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
 
+            let mut last_pruned_at_per_chain_id = HashMap::new();
+
             loop {
                 for chain @ Chain { json_rpc_url, .. } in config.chains.iter() {
                     let json_rpc = Arc::new(Provider::<Http>::try_from(json_rpc_url).unwrap());
@@ -119,6 +123,8 @@ impl EventsIngester {
                         &chain.id,
                         &config.min_confirmation_count,
                         config.prune_n_blocks_away,
+                        config.prune_interval,
+                        &mut last_pruned_at_per_chain_id,
                     )
                     .await
                     .unwrap();
@@ -138,6 +144,8 @@ impl EventsIngester {
         chain_id: &ChainId,
         min_confirmation_count: &MinConfirmationCount,
         prune_n_blocks_away: u64,
+        prune_interval: u64,
+        last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
         let mut contract_addresses_stream =
@@ -174,11 +182,29 @@ impl EventsIngester {
             )
             .await?;
 
-            ChaindexingRepo::prune_events(
-                raw_query_client,
-                current_block_number - prune_n_blocks_away,
-            )
-            .await;
+            let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&0);
+            let chain_id_u64 = *chain_id as u64;
+            if now() - *last_pruned_at >= prune_interval {
+                let min_pruning_block_number =
+                    pruning::get_min_block_number(prune_n_blocks_away, current_block_number);
+                ChaindexingRepo::prune_events(
+                    raw_query_client,
+                    min_pruning_block_number,
+                    chain_id_u64,
+                )
+                .await;
+
+                let state_migrations = Contracts::get_state_migrations(&contracts);
+                let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+                ContractStates::prune_state_versions(
+                    &state_table_names,
+                    &raw_query_client,
+                    min_pruning_block_number,
+                    chain_id_u64,
+                )
+                .await;
+            }
+            last_pruned_at_per_chain_id.insert(*chain_id, now());
         }
 
         Ok(())
@@ -194,6 +220,10 @@ impl EventsIngester {
             .cloned()
             .collect()
     }
+}
+
+fn now() -> u64 {
+    Utc::now().timestamp() as u64
 }
 
 async fn fetch_current_block_number(json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> u64 {

@@ -52,6 +52,9 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     /// Retains events inserted within the max age specified
     /// below. Unit in seconds.
     pub prune_n_blocks_away: u64,
+    /// Advnace option for how often stale data gets pruned.
+    /// Unit in seconds.
+    pub prune_interval: u64,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -71,6 +74,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
             optimization_config: None,
             prune_n_blocks_away: 1_000,
+            prune_interval: 12 * 60 * 60,
         }
     }
 
@@ -142,6 +146,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn with_prune_n_blocks_away(mut self, n_blocks_away: u64) -> Self {
         self.prune_n_blocks_away = n_blocks_away;
+
+        self
+    }
+
+    pub fn with_prune_interval(mut self, prune_interval: u64) -> Self {
+        self.prune_interval = prune_interval;
 
         self
     }

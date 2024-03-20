@@ -118,7 +118,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         reorged_block_ids: &[i32],
     );
 
-    async fn prune_events(client: &Self::RawQueryClient, min_block_number: u64);
+    async fn prune_events(client: &Self::RawQueryClient, min_block_number: u64, chain_id: u64);
     async fn prune_nodes(client: &Self::RawQueryClient, retain_size: u16);
     async fn prune_reset_counts(client: &Self::RawQueryClient, retain_size: u64);
 }
