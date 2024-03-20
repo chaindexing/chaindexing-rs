@@ -185,7 +185,7 @@ impl<'a> NodeTasks<'a> {
         }
     }
 
-    fn started_n_seconds_ago(&self, n_seconds: u64) -> bool {
+    pub fn started_n_seconds_ago(&self, n_seconds: u64) -> bool {
         Self::now_in_secs() - self.started_at_in_secs >= n_seconds
     }
 

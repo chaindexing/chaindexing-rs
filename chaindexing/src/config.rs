@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::chains::Chain;
 use crate::nodes::{self, KeepNodeActiveRequest};
-use crate::{ChaindexingRepo, Contract, MinConfirmationCount};
+use crate::{events, ChaindexingRepo, Contract, MinConfirmationCount};
 
 pub enum ConfigError {
     NoContract,
@@ -49,6 +49,12 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
     pub max_concurrent_node_count: u16,
     pub optimization_config: Option<OptimizationConfig>,
+    /// Retains events inserted within the max age specified
+    /// below. Unit in seconds.
+    pub events_max_age: u64,
+    /// Advnace option for how often stale data gets pruned.
+    /// Unit in seconds.
+    pub prune_interval: u64,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -67,6 +73,8 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             shared_state: None,
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
             optimization_config: None,
+            events_max_age: events::DEFAULT_MAX_AGE,
+            prune_interval: 12 * 60 * 60,
         }
     }
 
@@ -132,6 +140,18 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn with_max_concurrent_node_count(mut self, max_concurrent_node_count: u16) -> Self {
         self.max_concurrent_node_count = max_concurrent_node_count;
+
+        self
+    }
+
+    pub fn with_events_max_age(mut self, max_age: u64) -> Self {
+        self.events_max_age = max_age;
+
+        self
+    }
+
+    pub fn with_prune_interval(mut self, prune_interval: u64) -> Self {
+        self.prune_interval = prune_interval;
 
         self
     }

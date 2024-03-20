@@ -82,7 +82,18 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn prune_nodes(client: &Self::RawQueryClient, prune_size: u16) {
+    async fn prune_events(client: &Self::RawQueryClient, min_inserted_at: &str) {
+        let query = format!(
+            "
+            DELETE FROM chaindexing_events
+            WHERE inserted_at < {min_inserted_at}
+            "
+        );
+
+        Self::execute_raw_query(client, &query).await;
+    }
+
+    async fn prune_nodes(client: &Self::RawQueryClient, retain_size: u16) {
         let query = format!(
             "
             DELETE FROM chaindexing_nodes
@@ -90,7 +101,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
                 SELECT id
                 FROM chaindexing_nodes
                 ORDER BY id DESC
-                LIMIT {prune_size}
+                LIMIT {retain_size}
             )
             "
         );
@@ -98,7 +109,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query(client, &query).await;
     }
 
-    async fn prune_reset_counts(client: &Self::RawQueryClient, prune_size: u64) {
+    async fn prune_reset_counts(client: &Self::RawQueryClient, retain_size: u64) {
         let query = format!(
             "
             DELETE FROM chaindexing_reset_counts
@@ -106,7 +117,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
                 SELECT id
                 FROM chaindexing_reset_counts
                 ORDER BY id DESC
-                LIMIT {prune_size}
+                LIMIT {retain_size}
             )
             "
         );
