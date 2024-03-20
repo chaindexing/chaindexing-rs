@@ -11,7 +11,7 @@ pub struct PruningConfig {
 impl Default for PruningConfig {
     fn default() -> Self {
         Self {
-            prune_n_blocks_away: 1_000,
+            prune_n_blocks_away: 30 * 1_000,   // Blocks in the last 30 days ish
             prune_interval: 30 * 24 * 60 * 60, // 30 days,
         }
     }

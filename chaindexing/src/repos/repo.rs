@@ -267,7 +267,7 @@ impl SQLikeMigrations {
 
     pub fn create_reorged_blocks() -> &'static [&'static str] {
         &["CREATE TABLE IF NOT EXISTS chaindexing_reorged_blocks (
-                id BIGSERIAL PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 chain_id BIGINT NOT NULL,
                 block_number BIGINT NOT NULL,
                 handled_at TIMESTAMPTZ,
