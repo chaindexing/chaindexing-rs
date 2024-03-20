@@ -23,7 +23,6 @@ pub use nodes::KeepNodeActiveRequest;
 pub use repos::*;
 pub use reset_counts::ResetCount;
 
-use chrono::Utc;
 use config::ConfigError;
 use nodes::NodeTasks;
 use std::fmt::Debug;
@@ -105,19 +104,9 @@ impl Chaindexing {
             let mut conn = ChaindexingRepo::get_conn(&pool).await;
 
             let mut node_tasks = NodeTasks::new(&current_node);
-            let mut prune_interval_so_far: u64 = 0;
 
             loop {
                 node_tasks.orchestrate(&config, &mut conn).await;
-
-                if node_tasks.started_n_seconds_ago(prune_interval_so_far) {
-                    let min_inserted_at_in_events = (Utc::now()
-                        - chrono::Duration::seconds(config.events_max_age as i64))
-                    .to_rfc3339();
-                    ChaindexingRepo::prune_events(&query_client, &min_inserted_at_in_events).await;
-
-                    prune_interval_so_far = prune_interval_so_far + config.prune_interval;
-                }
 
                 interval.tick().await;
             }

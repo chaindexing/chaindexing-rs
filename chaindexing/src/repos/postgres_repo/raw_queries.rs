@@ -82,11 +82,11 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn prune_events(client: &Self::RawQueryClient, min_inserted_at: &str) {
+    async fn prune_events(client: &Self::RawQueryClient, min_block_number: u64) {
         let query = format!(
             "
             DELETE FROM chaindexing_events
-            WHERE inserted_at < {min_inserted_at}
+            WHERE block_number < {min_block_number}
             "
         );
 

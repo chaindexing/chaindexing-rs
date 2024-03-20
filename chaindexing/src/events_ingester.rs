@@ -21,7 +21,7 @@ use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
 use crate::{
     ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config, ContractAddress,
-    HasRawQueryClient, MinConfirmationCount, Repo, RepoError, Streamable,
+    ExecutesWithRawQuery, HasRawQueryClient, MinConfirmationCount, Repo, RepoError, Streamable,
 };
 
 #[async_trait::async_trait]
@@ -118,6 +118,7 @@ impl EventsIngester {
                         json_rpc,
                         &chain.id,
                         &config.min_confirmation_count,
+                        config.prune_n_blocks_away,
                     )
                     .await
                     .unwrap();
@@ -136,6 +137,7 @@ impl EventsIngester {
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
         chain_id: &ChainId,
         min_confirmation_count: &MinConfirmationCount,
+        prune_n_blocks_away: u64,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
         let mut contract_addresses_stream =
@@ -171,6 +173,12 @@ impl EventsIngester {
                 min_confirmation_count,
             )
             .await?;
+
+            ChaindexingRepo::prune_events(
+                raw_query_client,
+                current_block_number - prune_n_blocks_away,
+            )
+            .await;
         }
 
         Ok(())

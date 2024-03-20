@@ -41,6 +41,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                10,
             )
             .await
             .unwrap();
@@ -91,6 +92,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                10,
             )
             .await
             .unwrap();
@@ -126,6 +128,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                10,
             )
             .await
             .unwrap();
@@ -165,6 +168,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                10,
             )
             .await
             .unwrap();
@@ -196,6 +200,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
+                10,
             )
             .await
             .unwrap();

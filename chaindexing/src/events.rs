@@ -154,5 +154,3 @@ impl Events {
             .collect()
     }
 }
-
-pub const DEFAULT_MAX_AGE: u64 = 12 * 60 * 60;
