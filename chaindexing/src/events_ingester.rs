@@ -20,10 +20,11 @@ use crate::chain_reorg::Execution;
 use crate::chains::{Chain, ChainId};
 use crate::contracts::Contract;
 use crate::contracts::{ContractEventTopic, Contracts};
+use crate::pruning::PruningConfig;
 use crate::{
-    pruning, ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config,
-    ContractAddress, ContractStates, ExecutesWithRawQuery, HasRawQueryClient, MinConfirmationCount,
-    Repo, RepoError, Streamable,
+    ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, Config, ContractAddress,
+    ContractStates, ExecutesWithRawQuery, HasRawQueryClient, MinConfirmationCount, Repo, RepoError,
+    Streamable,
 };
 
 #[async_trait::async_trait]
@@ -122,8 +123,7 @@ impl EventsIngester {
                         json_rpc,
                         &chain.id,
                         &config.min_confirmation_count,
-                        config.prune_n_blocks_away,
-                        config.prune_interval,
+                        &config.pruning_config,
                         &mut last_pruned_at_per_chain_id,
                     )
                     .await
@@ -143,8 +143,7 @@ impl EventsIngester {
         json_rpc: Arc<impl EventsIngesterJsonRpc + 'static>,
         chain_id: &ChainId,
         min_confirmation_count: &MinConfirmationCount,
-        prune_n_blocks_away: u64,
-        prune_interval: u64,
+        pruning_config: &PruningConfig,
         last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
     ) -> Result<(), EventsIngesterError> {
         let current_block_number = fetch_current_block_number(&json_rpc).await;
@@ -182,11 +181,12 @@ impl EventsIngester {
             )
             .await?;
 
+            let PruningConfig { prune_interval, .. } = pruning_config;
             let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&0);
             let chain_id_u64 = *chain_id as u64;
-            if now() - *last_pruned_at >= prune_interval {
+            if now() - *last_pruned_at >= *prune_interval {
                 let min_pruning_block_number =
-                    pruning::get_min_block_number(prune_n_blocks_away, current_block_number);
+                    pruning_config.get_min_block_number(current_block_number);
                 ChaindexingRepo::prune_events(
                     raw_query_client,
                     min_pruning_block_number,

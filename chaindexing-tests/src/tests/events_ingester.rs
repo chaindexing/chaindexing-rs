@@ -42,8 +42,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
-                10,
-                0,
+                &Default::default(),
                 &mut HashMap::new(),
             )
             .await
@@ -95,8 +94,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
-                10,
-                0,
+                &Default::default(),
                 &mut HashMap::new(),
             )
             .await
@@ -133,8 +131,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
-                10,
-                0,
+                &Default::default(),
                 &mut HashMap::new(),
             )
             .await
@@ -175,8 +172,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
-                10,
-                0,
+                &Default::default(),
                 &mut HashMap::new(),
             )
             .await
@@ -209,8 +205,7 @@ mod tests {
                 json_rpc,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
-                10,
-                0,
+                &Default::default(),
                 &mut HashMap::new(),
             )
             .await
