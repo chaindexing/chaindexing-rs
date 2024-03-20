@@ -182,9 +182,10 @@ impl EventsIngester {
             .await?;
 
             let PruningConfig { prune_interval, .. } = pruning_config;
-            let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&0);
+            let now = Utc::now().timestamp() as u64;
+            let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&now);
             let chain_id_u64 = *chain_id as u64;
-            if now() - *last_pruned_at >= *prune_interval {
+            if now - *last_pruned_at >= *prune_interval {
                 let min_pruning_block_number =
                     pruning_config.get_min_block_number(current_block_number);
                 ChaindexingRepo::prune_events(
@@ -204,7 +205,7 @@ impl EventsIngester {
                 )
                 .await;
             }
-            last_pruned_at_per_chain_id.insert(*chain_id, now());
+            last_pruned_at_per_chain_id.insert(*chain_id, Utc::now().timestamp() as u64);
         }
 
         Ok(())
@@ -220,10 +221,6 @@ impl EventsIngester {
             .cloned()
             .collect()
     }
-}
-
-fn now() -> u64 {
-    Utc::now().timestamp() as u64
 }
 
 async fn fetch_current_block_number(json_rpc: &Arc<impl EventsIngesterJsonRpc>) -> u64 {
