@@ -5,7 +5,7 @@ mod contract_states;
 mod contracts;
 mod diesels;
 mod event_handlers;
-mod events;
+pub mod events;
 pub mod events_ingester;
 mod nodes;
 mod pruning;
@@ -18,7 +18,7 @@ pub use config::{Config, OptimizationConfig};
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
-pub use events::{Event, Events};
+pub use events::{Event, EventParam};
 pub use events_ingester::Provider as EventsIngesterProvider;
 pub use nodes::KeepNodeActiveRequest;
 pub use repos::*;
@@ -216,8 +216,7 @@ pub mod hashes {
         serde_json::to_value(h256).unwrap().as_str().unwrap().to_string()
     }
 }
-/// Useful Rust-specific utils for end users
-pub mod utils {
+mod utils {
     use ethers::types::H160;
 
     use crate::hashes;
