@@ -16,8 +16,8 @@ async-trait = "0.1"
 bb8 = "0.8"
 derive_more = "0.99"
 chrono = { version = "0.4", features = ["serde"] }
-diesel = { version = "2", features = ["postgres", "uuid", "sqlite", "chrono", "r2d2", "serde_json"] }
-diesel-async = { version = "0.4", features = ["bb8", "postgres", "deadpool"] }
+diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
+diesel-async = { version = "0.4", features = ["bb8", "postgres"] }
 diesel-streamer = { version = "0.1.12", features = ["async"] }
 pin-project-lite = "0.2.13"
 ethers = "2.0"

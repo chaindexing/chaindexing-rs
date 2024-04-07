@@ -4,6 +4,7 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
+    use crate::db::database_url;
     use crate::factory::{
         bayc_contract, empty_provider, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER,
     };
@@ -11,8 +12,7 @@ mod tests {
         provider_with_empty_logs, provider_with_filter_stubber, provider_with_logs, test_runner,
     };
     use chaindexing::{
-        events_ingester, ChainId, ChaindexingRepo, Contract, HasRawQueryClient,
-        MinConfirmationCount, Repo,
+        events_ingester, ChainId, ChaindexingRepo, Config, HasRawQueryClient, PostgresRepo, Repo,
     };
 
     #[tokio::test]
@@ -21,7 +21,8 @@ mod tests {
 
         test_runner::run_test(&pool, |mut conn| async move {
             let bayc_contract = bayc_contract();
-            let contracts = vec![bayc_contract.clone()];
+            let config =
+                Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
             let provider = Arc::new(provider_with_logs!(
@@ -37,12 +38,9 @@ mod tests {
             events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
-                &contracts,
-                10,
                 provider,
                 &ChainId::Mainnet,
-                &MinConfirmationCount::new(1),
-                &Default::default(),
+                &config,
                 &mut HashMap::new(),
             )
             .await
@@ -65,7 +63,8 @@ mod tests {
 
         test_runner::run_test(&pool, |mut conn| async move {
             let bayc_contract = bayc_contract();
-            let contracts = vec![bayc_contract.clone()];
+            let config =
+                Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
             ChaindexingRepo::create_contract_addresses(&mut conn, &bayc_contract.addresses).await;
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
@@ -89,12 +88,9 @@ mod tests {
             events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
-                &contracts,
-                10,
                 provider,
                 &ChainId::Mainnet,
-                &MinConfirmationCount::new(1),
-                &Default::default(),
+                &config,
                 &mut HashMap::new(),
             )
             .await
@@ -109,7 +105,8 @@ mod tests {
 
         test_runner::run_test(&pool, |mut conn| async move {
             let bayc_contract = bayc_contract();
-            let contracts = vec![bayc_contract.clone()];
+            let config =
+                Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
             let provider = Arc::new(provider_with_logs!(
@@ -123,15 +120,13 @@ mod tests {
             let blocks_per_batch = 10;
 
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+            let config = config.with_blocks_per_batch(blocks_per_batch);
             events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
-                &contracts,
-                blocks_per_batch,
                 provider,
                 &ChainId::Mainnet,
-                &MinConfirmationCount::new(1),
-                &Default::default(),
+                &config,
                 &mut HashMap::new(),
             )
             .await
@@ -159,20 +154,18 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let contracts: Vec<Contract<()>> = vec![];
+            let config: Config<()> = Config::new(PostgresRepo::new(&database_url()));
+
             let provider = Arc::new(empty_provider());
-            let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+
             events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
-                &contracts,
-                blocks_per_batch,
                 provider,
                 &ChainId::Mainnet,
-                &MinConfirmationCount::new(1),
-                &Default::default(),
+                &config,
                 &mut HashMap::new(),
             )
             .await
@@ -189,7 +182,9 @@ mod tests {
 
         test_runner::run_test(&pool, |mut conn| async move {
             let bayc_contract = bayc_contract();
-            let contracts = vec![bayc_contract.clone()];
+            let config =
+                Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
+
             let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
 
             assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
@@ -200,12 +195,9 @@ mod tests {
             events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
-                &contracts,
-                10,
                 provider,
                 &ChainId::Mainnet,
-                &MinConfirmationCount::new(1),
-                &Default::default(),
+                &config,
                 &mut HashMap::new(),
             )
             .await

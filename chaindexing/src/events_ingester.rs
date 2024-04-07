@@ -17,10 +17,9 @@ use tokio::time::interval;
 use tokio::{sync::Mutex, task};
 
 use crate::chains::{Chain, ChainId};
-use crate::contracts::{Contract, Contracts};
+use crate::contracts::Contracts;
 use crate::pruning::PruningConfig;
 use crate::Config;
-use crate::MinConfirmationCount;
 use crate::{ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient};
 use crate::{ContractAddress, ContractStates};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo, Streamable};
@@ -45,12 +44,9 @@ pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> task::Join
                 ingest(
                     conn.clone(),
                     &raw_query_client,
-                    &config.contracts,
-                    config.blocks_per_batch,
                     provider,
                     &chain.id,
-                    &config.min_confirmation_count,
-                    &config.pruning_config,
+                    &config,
                     &mut last_pruned_at_per_chain_id,
                 )
                 .await
@@ -65,12 +61,13 @@ pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> task::Join
 pub async fn ingest<'a, S: Send + Sync + Clone>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
     raw_query_client: &ChaindexingRepoRawQueryClient,
-    contracts: &Vec<Contract<S>>,
-    blocks_per_batch: u64,
     provider: Arc<impl Provider + 'static>,
     chain_id: &ChainId,
-    min_confirmation_count: &MinConfirmationCount,
-    pruning_config: &Option<PruningConfig>,
+    config @ Config {
+        contracts,
+        pruning_config,
+        ..
+    }: &Config<S>,
     last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
 ) -> Result<(), EventsIngesterError> {
     let current_block_number = provider::fetch_current_block_number(&provider).await;
@@ -87,22 +84,19 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
             &mut conn,
             raw_query_client,
             &contract_addresses,
-            contracts,
             &provider,
             current_block_number,
-            blocks_per_batch,
+            config,
         )
         .await?;
 
         maybe_handle_chain_reorg::run(
             &mut conn,
             &contract_addresses,
-            contracts,
             &provider,
             chain_id,
             current_block_number,
-            blocks_per_batch,
-            min_confirmation_count,
+            config,
         )
         .await?;
 
