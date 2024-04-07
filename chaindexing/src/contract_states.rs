@@ -87,7 +87,7 @@ pub trait ContractState:
 
         let map: HashMap<String, serde_json::Value> = serde_json::from_value(state).unwrap();
 
-        serde_map_to_string_map(map)
+        serde_map_to_string_map(&map)
     }
 
     async fn to_complete_view<'a>(
@@ -115,7 +115,7 @@ pub trait ContractState:
 
     async fn update<'a, S: Send + Sync + Clone>(
         &self,
-        updates: HashMap<String, String>,
+        updates: HashMap<&str, &str>,
         context: &EventHandlerContext<S>,
     ) {
         let event = &context.event;
@@ -123,6 +123,10 @@ pub trait ContractState:
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, event).await;
+        let updates = updates
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<HashMap<_, _>>();
 
         let latest_state_version =
             StateVersion::update(&state_view, &updates, table_name, event, client).await;
@@ -142,7 +146,7 @@ pub trait ContractState:
     }
 
     async fn read_one<'a, S: Send + Sync + Clone>(
-        filters: HashMap<String, String>,
+        filters: HashMap<&str, &str>,
         context: &EventHandlerContext<S>,
     ) -> Option<Self> {
         let states = Self::read_many(filters, context).await;
@@ -151,7 +155,7 @@ pub trait ContractState:
     }
 
     async fn read_many<'a, S: Send + Sync + Clone>(
-        filters: HashMap<String, String>,
+        filters: HashMap<&str, &str>,
         context: &EventHandlerContext<S>,
     ) -> Vec<Self> {
         let client = context.raw_query_client;
@@ -183,8 +187,10 @@ pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, V
     )
 }
 
-pub fn to_and_filters(state: &HashMap<String, String>) -> String {
+pub fn to_and_filters(state: &HashMap<impl AsRef<str>, impl AsRef<str>>) -> String {
     let filters = state.iter().fold(vec![], |mut filters, (column, value)| {
+        let column = column.as_ref();
+        let value = value.as_ref();
         filters.push(format!("{column} = '{value}'"));
 
         filters
@@ -194,14 +200,14 @@ pub fn to_and_filters(state: &HashMap<String, String>) -> String {
 }
 
 pub fn serde_map_to_string_map(
-    serde_map: HashMap<String, serde_json::Value>,
+    serde_map: &HashMap<impl AsRef<str>, serde_json::Value>,
 ) -> HashMap<String, String> {
     serde_map.iter().fold(HashMap::new(), |mut map, (key, value)| {
         if !value.is_null() {
             if value.is_object() {
-                map.insert(key.to_owned(), value.to_string());
+                map.insert(key.as_ref().to_owned(), value.to_string());
             } else {
-                map.insert(key.to_owned(), value.to_string().replace('\"', ""));
+                map.insert(key.as_ref().to_owned(), value.to_string().replace('\"', ""));
             }
         }
 
