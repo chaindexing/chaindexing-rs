@@ -131,6 +131,9 @@ impl EventParam {
         }
     }
 
+    pub fn get_string(&self, key: &str) -> String {
+        self.value.get(key).unwrap().to_string()
+    }
     pub fn get_u8_string(&self, key: &str) -> String {
         self.get_u8(key).to_string()
     }
