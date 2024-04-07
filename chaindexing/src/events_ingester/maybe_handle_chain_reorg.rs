@@ -7,9 +7,8 @@ use std::cmp::min;
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::contracts::Contract;
 use crate::events::{Event, Events};
-use crate::{
-    ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, MinConfirmationCount, Repo,
-};
+use crate::Config;
+use crate::{ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, Repo};
 
 use super::filters::{self, Filter};
 use super::Provider;
@@ -18,18 +17,21 @@ use super::{provider, EventsIngesterError};
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     contract_addresses: &Vec<ContractAddress>,
-    contracts: &Vec<Contract<S>>,
     provider: &Arc<impl Provider>,
     chain_id: &ChainId,
     current_block_number: u64,
-    blocks_per_batch: u64,
-    min_confirmation_count: &MinConfirmationCount,
+    Config {
+        contracts,
+        min_confirmation_count,
+        blocks_per_batch,
+        ..
+    }: &Config<S>,
 ) -> Result<(), EventsIngesterError> {
     let filters = filters::get(
         contract_addresses,
         contracts,
         current_block_number,
-        blocks_per_batch,
+        *blocks_per_batch,
         &Execution::Confirmation(min_confirmation_count),
     );
 
