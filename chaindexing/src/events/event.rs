@@ -99,7 +99,7 @@ impl Event {
         }
     }
 
-    pub fn get_params<T>(&self) -> EventParam {
+    pub fn get_params(&self) -> EventParam {
         EventParam::new(&self.parameters)
     }
 
