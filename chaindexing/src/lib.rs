@@ -18,7 +18,7 @@ pub use config::{Config, OptimizationConfig};
 pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
-pub use events::Event;
+pub use events::{Event, EventParam};
 pub use events_ingester::Provider as EventsIngesterProvider;
 pub use nodes::KeepNodeActiveRequest;
 pub use repos::*;

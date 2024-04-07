@@ -1,6 +1,6 @@
 mod event;
 
-pub use event::{Event, PartialEvent};
+pub use event::{Event, EventParam, PartialEvent};
 
 use std::collections::HashMap;
 

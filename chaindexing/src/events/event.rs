@@ -6,7 +6,7 @@ use crate::diesels::schema::chaindexing_events;
 use crate::utils::address_to_string;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
-use ethers::types::Log;
+use ethers::types::{Address, Log, U256};
 
 use crate::{hashes, ContractEvent};
 use uuid::Uuid;
@@ -99,8 +99,8 @@ impl Event {
         }
     }
 
-    pub fn get_params(&self) -> HashMap<String, Token> {
-        serde_json::from_value(self.parameters.clone()).unwrap()
+    pub fn get_params<T>(&self) -> EventParam {
+        EventParam::new(&self.parameters)
     }
 
     pub fn not_removed(&self) -> bool {
@@ -117,5 +117,58 @@ impl Event {
 
             parameters
         })
+    }
+}
+
+pub struct EventParam {
+    value: HashMap<String, Token>,
+}
+
+impl EventParam {
+    pub fn new(parameters: &serde_json::Value) -> EventParam {
+        EventParam {
+            value: serde_json::from_value(parameters.clone()).unwrap(),
+        }
+    }
+
+    pub fn get_u8_string(&self, key: &str) -> String {
+        self.get_u8(key).to_string()
+    }
+    pub fn get_u8(&self, key: &str) -> u8 {
+        self.get_usize(key) as u8
+    }
+    pub fn get_usize(&self, key: &str) -> usize {
+        self.get_uint(key).as_usize()
+    }
+    pub fn get_u32_string(&self, key: &str) -> String {
+        self.get_u32(key).to_string()
+    }
+    pub fn get_u32(&self, key: &str) -> u32 {
+        self.get_uint(key).as_u32()
+    }
+    pub fn get_u64_string(&self, key: &str) -> String {
+        self.get_u64(key).to_string()
+    }
+    pub fn get_u64(&self, key: &str) -> u64 {
+        self.get_uint(key).as_u64()
+    }
+    pub fn get_u128_string(&self, key: &str) -> String {
+        self.get_u128(key).to_string()
+    }
+    pub fn get_u128(&self, key: &str) -> u128 {
+        self.get_uint(key).as_u128()
+    }
+    /// Same as _u256
+    pub fn get_uint_string(&self, key: &str) -> String {
+        self.get_uint(key).to_string()
+    }
+    pub fn get_uint(&self, key: &str) -> U256 {
+        self.value.get(key).unwrap().clone().into_uint().unwrap()
+    }
+    pub fn get_address_string(&self, key: &str) -> String {
+        address_to_string(&self.get_address(key)).to_lowercase()
+    }
+    pub fn get_address(&self, key: &str) -> Address {
+        self.value.get(key).unwrap().clone().into_address().unwrap()
     }
 }
