@@ -1,0 +1,7 @@
+[package]
+name = "contract-state-migrations"
+edition = "2021"
+
+
+[dependencies]
+contract-state-tables = { path = "../contract-state-tables" }

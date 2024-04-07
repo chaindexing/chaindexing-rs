@@ -1,0 +1,12 @@
+[package]
+name = "events"
+edition = "2021"
+
+
+[dependencies]
+chaindexing-diesel = { path = "../chaindexing-diesel" }
+diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
+ethers = "2.0"
+serde = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+

@@ -1,0 +1,9 @@
+[package]
+name = "resets"
+edition = "2021"
+
+
+[dependencies]
+chaindexing-diesel = { path = "../chaindexing-diesel" }
+chrono = { version = "0.4" }
+diesel = { version = "2", features = ["postgres", "uuid", "chrono"] }

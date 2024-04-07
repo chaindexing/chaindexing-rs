@@ -1,0 +1,6 @@
+[package]
+name = "contract-state-tables"
+edition = "2021"
+
+
+[dependencies]

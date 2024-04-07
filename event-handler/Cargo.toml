@@ -1,0 +1,10 @@
+[package]
+name = "event-handler"
+edition = "2021"
+
+
+[dependencies]
+async-trait = "0.1"
+events = { path = "../events" }
+repo-transaction-clients = { path = "../repo-transaction-clients" }
+tokio = "1.29"

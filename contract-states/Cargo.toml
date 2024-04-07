@@ -1,0 +1,23 @@
+[package]
+name = "contract-states"
+edition = "2021"
+
+
+[dependencies]
+async-trait = "0.1"
+bb8 = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
+diesel-async = { version = "0.4", features = ["bb8", "postgres"] }
+diesel-streamer = { version = "0.1.12", features = ["async"] }
+pin-project-lite = "0.2.13"
+ethers = "2.0"
+events = { path = "../events" }
+repo = { path = "../repo" }
+serde = "1"
+serde_json = "1"
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"]}
+tokio = "1.29"
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-core = { version = "0.3", features = ["alloc"] }
+futures-util = "0.3"

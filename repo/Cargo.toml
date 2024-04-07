@@ -1,0 +1,24 @@
+[package]
+name = "repo"
+edition = "2021"
+
+
+[dependencies]
+async-trait = "0.1"
+bb8 = "0.8"
+contracts = { path = "../contracts" }
+events = { path = "../events" }
+nodes = { path = "../nodes" }
+resets = { path = "../resets" }
+derive_more = "0.99"
+chrono = { version = "0.4", features = ["serde"] }
+diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
+diesel-async = { version = "0.4", features = ["bb8", "postgres", "deadpool"] }
+diesel-streamer = { version = "0.1.12", features = ["async"] }
+serde = "1"
+serde_json = "1"
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"]}
+tokio = "1.29"
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-core = { version = "0.3", features = ["alloc"] }
+futures-util = "0.3"

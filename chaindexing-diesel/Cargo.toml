@@ -1,0 +1,8 @@
+[package]
+name = "chaindexing-diesel"
+description = "Houses diesel common interfaces used in Chaindexing"
+edition = "2021"
+
+
+[dependencies]
+diesel = { version = "2", features = ["postgres", "uuid", "chrono"] }

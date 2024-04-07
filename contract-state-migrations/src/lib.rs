@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::STATE_VERSIONS_TABLE_PREFIX;
+use contract_state_tables::STATE_VERSIONS_TABLE_PREFIX;
 
 pub trait ContractStateMigrations: Send + Sync {
     fn migrations(&self) -> Vec<&'static str>;

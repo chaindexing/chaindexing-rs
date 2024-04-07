@@ -1,6 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
+  "chain-reorg",
   "chaindexing",
-  "chaindexing-tests"
+  "chaindexing-diesel",
+  "chaindexing-tests",
+  "chains",
+  "config",
+  "contracts",
+  "events",
+  "events-ingester",
+  "nodes",
+  "repos"
 ]

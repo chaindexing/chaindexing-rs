@@ -1,0 +1,11 @@
+[package]
+name = "contracts"
+edition = "2021"
+
+
+[dependencies]
+chaindexing-diesel = { path = "../chaindexing-diesel" }
+contract-state-migrations = { path = "../contract-state-migrations" }
+ethers = "2.0"
+event-handler = { path = "../event-handler" }
+diesel = { version = "2", features = ["postgres", "uuid", "chrono"] }

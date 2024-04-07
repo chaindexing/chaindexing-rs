@@ -1,0 +1,9 @@
+[package]
+name = "config"
+edition = "2021"
+
+
+[dependencies]
+chains = { path = "../chains" }
+contracts = { path = "../contracts" }
+tokio = "1.29"
