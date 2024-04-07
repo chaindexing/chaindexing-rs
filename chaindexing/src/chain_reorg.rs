@@ -1,10 +1,8 @@
 use std::cmp::max;
 use std::collections::HashMap;
 
-use crate::diesels::schema::chaindexing_reorged_blocks;
+use crate::{diesels::schema::chaindexing_reorged_blocks, ChainId};
 use diesel::prelude::{Insertable, Queryable};
-
-use ethers::types::Chain;
 
 /// Tolerance for chain re-organization
 #[derive(Clone)]
@@ -61,10 +59,10 @@ pub struct UnsavedReorgedBlock {
 }
 
 impl UnsavedReorgedBlock {
-    pub fn new(block_number: i64, chain: &Chain) -> Self {
+    pub fn new(block_number: i64, chain_id: &ChainId) -> Self {
         Self {
             block_number,
-            chain_id: *chain as i64,
+            chain_id: *chain_id as i64,
             inserted_at: chrono::Utc::now().naive_utc(),
         }
     }

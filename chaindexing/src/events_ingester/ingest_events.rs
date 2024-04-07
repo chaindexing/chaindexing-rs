@@ -3,26 +3,28 @@ use std::sync::Arc;
 
 use futures_util::FutureExt;
 
+use super::filters::{self, Filter};
+use super::provider::{self, Provider};
+use super::EventsIngesterError;
+
 use crate::chain_reorg::Execution;
 use crate::contracts::Contract;
 use crate::events::Events;
 use crate::{
     ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ContractAddress,
-    EventsIngesterJsonRpc, LoadsDataWithRawQuery, Repo,
+    LoadsDataWithRawQuery, Repo,
 };
-
-use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Filters};
 
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     raw_query_client: &ChaindexingRepoRawQueryClient,
     contract_addresses: &Vec<ContractAddress>,
     contracts: &Vec<Contract<S>>,
-    json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
+    provider: &Arc<impl Provider>,
     current_block_number: u64,
     blocks_per_batch: u64,
 ) -> Result<(), EventsIngesterError> {
-    let filters = Filters::get(
+    let filters = filters::get(
         &contract_addresses,
         contracts,
         current_block_number,
@@ -34,8 +36,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         remove_already_ingested_filters(&filters, contract_addresses, raw_query_client).await;
 
     if !filters.is_empty() {
-        let logs = fetch_logs(&filters, json_rpc).await;
-        let blocks_by_tx_hash = fetch_blocks_by_number(&logs, json_rpc).await;
+        let logs = provider::fetch_logs(provider, &filters).await;
+        let blocks_by_tx_hash = provider::fetch_blocks_by_number(provider, &logs).await;
         let events = Events::get(&logs, contracts, &blocks_by_tx_hash);
         let contract_addresses = contract_addresses.clone();
 
@@ -109,12 +111,12 @@ async fn update_next_block_numbers_to_ingest_from<'a>(
     contract_addresses: &Vec<ContractAddress>,
     filters: &Vec<Filter>,
 ) {
-    let filters_by_contract_address_id = Filters::group_by_contract_address_id(filters);
+    let filters_by_contract_address_id = filters::group_by_contract_address_id(filters);
 
     for contract_address in contract_addresses {
         let filters = filters_by_contract_address_id.get(&contract_address.id).unwrap();
 
-        if let Some(latest_filter) = Filters::get_latest(filters) {
+        if let Some(latest_filter) = filters::get_latest(filters) {
             let next_block_number_to_ingest_from = latest_filter.value.get_to_block().unwrap() + 1;
 
             ChaindexingRepo::update_next_block_number_to_ingest_from(
