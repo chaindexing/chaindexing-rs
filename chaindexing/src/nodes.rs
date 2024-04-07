@@ -28,7 +28,7 @@ impl Node {
 }
 
 use super::Config;
-use super::{EventHandlers, EventsIngester};
+use super::{events_ingester, EventHandlers};
 
 use chrono::Utc;
 use std::fmt::Debug;
@@ -174,7 +174,7 @@ impl<'a> NodeTasks<'a> {
     }
 
     fn start<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
-        let event_ingester = EventsIngester::start(config);
+        let event_ingester = events_ingester::start(config);
         let event_handlers = EventHandlers::start(config);
 
         self.tasks = vec![event_ingester, event_handlers];

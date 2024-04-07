@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use ethers::prelude::*;
 use futures_util::FutureExt;
 use std::cmp::min;
 
@@ -9,23 +8,24 @@ use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::contracts::Contract;
 use crate::events::{Event, Events};
 use crate::{
-    ChaindexingRepo, ChaindexingRepoConn, ContractAddress, EventsIngesterJsonRpc,
-    MinConfirmationCount, Repo,
+    ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, MinConfirmationCount, Repo,
 };
 
-use super::{fetch_blocks_by_number, fetch_logs, EventsIngesterError, Filter, Filters};
+use super::filters::{self, Filter};
+use super::Provider;
+use super::{provider, EventsIngesterError};
 
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     contract_addresses: &Vec<ContractAddress>,
     contracts: &Vec<Contract<S>>,
-    json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
-    chain: &Chain,
+    provider: &Arc<impl Provider>,
+    chain_id: &ChainId,
     current_block_number: u64,
     blocks_per_batch: u64,
     min_confirmation_count: &MinConfirmationCount,
 ) -> Result<(), EventsIngesterError> {
-    let filters = Filters::get(
+    let filters = filters::get(
         contract_addresses,
         contracts,
         current_block_number,
@@ -35,12 +35,12 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let already_ingested_events = get_already_ingested_events(conn, &filters).await;
-        let json_rpc_events = get_json_rpc_events(&filters, json_rpc, contracts).await;
+        let provider_events = get_events_from_provider(&filters, &provider, contracts).await;
 
         if let Some(added_and_removed_events) =
-            get_json_rpc_added_and_removed_events(&already_ingested_events, &json_rpc_events)
+            get_provider_added_and_removed_events(&already_ingested_events, &provider_events)
         {
-            handle_chain_reorg(conn, chain, added_and_removed_events).await?;
+            handle_chain_reorg(conn, chain_id, added_and_removed_events).await?;
         }
     }
 
@@ -65,24 +65,24 @@ async fn get_already_ingested_events<'a>(
     already_ingested_events
 }
 
-async fn get_json_rpc_events<S: Send + Sync + Clone>(
+async fn get_events_from_provider<S: Send + Sync + Clone>(
     filters: &Vec<Filter>,
-    json_rpc: &Arc<impl EventsIngesterJsonRpc + 'static>,
+    provider: &Arc<impl Provider>,
     contracts: &Vec<Contract<S>>,
 ) -> Vec<Event> {
-    let logs = fetch_logs(filters, json_rpc).await;
-    let blocks_by_number = fetch_blocks_by_number(&logs, json_rpc).await;
+    let logs = provider::fetch_logs(provider, filters).await;
+    let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
 
     Events::get(&logs, contracts, &blocks_by_number)
 }
 
 async fn handle_chain_reorg<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
-    chain: &Chain,
+    chain_id: &ChainId,
     (added_events, removed_events): (Vec<Event>, Vec<Event>),
 ) -> Result<(), EventsIngesterError> {
     let earliest_block_number = get_earliest_block_number((&added_events, &removed_events));
-    let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, chain);
+    let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, chain_id);
 
     ChaindexingRepo::run_in_transaction(conn, move |conn| {
         async move {
@@ -102,14 +102,14 @@ async fn handle_chain_reorg<'a>(
     Ok(())
 }
 
-fn get_json_rpc_added_and_removed_events(
+fn get_provider_added_and_removed_events(
     already_ingested_events: &Vec<Event>,
-    json_rpc_events: &Vec<Event>,
+    provider_events: &Vec<Event>,
 ) -> Option<(Vec<Event>, Vec<Event>)> {
     let already_ingested_events_set: HashSet<_> = already_ingested_events.iter().cloned().collect();
-    let json_rpc_events_set: HashSet<_> = json_rpc_events.iter().cloned().collect();
+    let provider_events_set: HashSet<_> = provider_events.iter().cloned().collect();
 
-    let added_events: Vec<_> = json_rpc_events
+    let added_events: Vec<_> = provider_events
         .iter()
         .filter(|e| !already_ingested_events_set.contains(e))
         .cloned()
@@ -117,7 +117,7 @@ fn get_json_rpc_added_and_removed_events(
 
     let removed_events: Vec<_> = already_ingested_events
         .iter()
-        .filter(|e| !json_rpc_events_set.contains(e))
+        .filter(|e| !provider_events_set.contains(e))
         .cloned()
         .collect();
 

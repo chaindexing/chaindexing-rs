@@ -5,13 +5,13 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::factory::{
-        bayc_contract, empty_json_rpc, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER,
+        bayc_contract, empty_provider, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER,
     };
     use crate::{
-        json_rpc_with_empty_logs, json_rpc_with_filter_stubber, json_rpc_with_logs, test_runner,
+        provider_with_empty_logs, provider_with_filter_stubber, provider_with_logs, test_runner,
     };
     use chaindexing::{
-        ChainId, ChaindexingRepo, Contract, EventsIngester, HasRawQueryClient,
+        events_ingester, ChainId, ChaindexingRepo, Contract, HasRawQueryClient,
         MinConfirmationCount, Repo,
     };
 
@@ -24,7 +24,7 @@ mod tests {
             let contracts = vec![bayc_contract.clone()];
 
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
-            let json_rpc = Arc::new(json_rpc_with_logs!(
+            let provider = Arc::new(provider_with_logs!(
                 BAYC_CONTRACT_ADDRESS,
                 CURRENT_BLOCK_NUMBER
             ));
@@ -34,12 +34,12 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            EventsIngester::ingest(
+            events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 &contracts,
                 10,
-                json_rpc,
+                provider,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 &Default::default(),
@@ -74,7 +74,7 @@ mod tests {
                 bayc_contract_address.next_block_number_to_ingest_from as u32,
                 BAYC_CONTRACT_START_BLOCK_NUMBER
             );
-            let json_rpc = Arc::new(json_rpc_with_filter_stubber!(
+            let provider = Arc::new(provider_with_filter_stubber!(
                 BAYC_CONTRACT_ADDRESS,
                 |filter: &Filter| {
                     assert_eq!(
@@ -86,12 +86,12 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            EventsIngester::ingest(
+            events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 &contracts,
                 10,
-                json_rpc,
+                provider,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 &Default::default(),
@@ -112,7 +112,7 @@ mod tests {
             let contracts = vec![bayc_contract.clone()];
 
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
-            let json_rpc = Arc::new(json_rpc_with_logs!(
+            let provider = Arc::new(provider_with_logs!(
                 BAYC_CONTRACT_ADDRESS,
                 CURRENT_BLOCK_NUMBER
             ));
@@ -123,12 +123,12 @@ mod tests {
             let blocks_per_batch = 10;
 
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            EventsIngester::ingest(
+            events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 &contracts,
                 blocks_per_batch,
-                json_rpc,
+                provider,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 &Default::default(),
@@ -160,16 +160,16 @@ mod tests {
 
         test_runner::run_test(&pool, |conn| async move {
             let contracts: Vec<Contract<()>> = vec![];
-            let json_rpc = Arc::new(empty_json_rpc());
+            let provider = Arc::new(empty_provider());
             let blocks_per_batch = 10;
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            EventsIngester::ingest(
+            events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 &contracts,
                 blocks_per_batch,
-                json_rpc,
+                provider,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 &Default::default(),
@@ -190,19 +190,19 @@ mod tests {
         test_runner::run_test(&pool, |mut conn| async move {
             let bayc_contract = bayc_contract();
             let contracts = vec![bayc_contract.clone()];
-            let json_rpc = Arc::new(json_rpc_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
+            let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
 
             assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
             ChaindexingRepo::create_contract_addresses(&mut conn, &bayc_contract.addresses).await;
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            EventsIngester::ingest(
+            events_ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 &contracts,
                 10,
-                json_rpc,
+                provider,
                 &ChainId::Mainnet,
                 &MinConfirmationCount::new(1),
                 &Default::default(),
