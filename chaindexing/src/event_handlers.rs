@@ -7,7 +7,7 @@ mod maybe_handle_chain_reorg;
 use tokio::{sync::Mutex, task, time::interval};
 
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
-use crate::{ChaindexingRepoRawQueryTxnClient, ContractStates, HasRawQueryClient};
+use crate::{ChaindexingRepoRawQueryTxnClient, ContractStates, EventParam, HasRawQueryClient};
 
 #[derive(Clone)]
 pub struct EventHandlerContext<'a, 'b, SharedState: Sync + Send + Clone> {
@@ -33,6 +33,10 @@ impl<'a, 'b, SharedState: Sync + Send + Clone> EventHandlerContext<'a, 'b, Share
         let shared_state = self.shared_state.clone().unwrap();
         let shared_state = shared_state.lock().await;
         shared_state.clone()
+    }
+
+    pub fn get_event_params(&self) -> EventParam {
+        self.event.get_params()
     }
 }
 
