@@ -38,11 +38,11 @@ impl StateView {
         let query = format!(
             "SELECT * FROM {table_name} WHERE {filters} 
             AND chain_id={context_chain_id} AND contract_address='{context_contract_address}'",
-            filters = to_and_filters(state_view),
+            filters = to_and_filters(state_view.into()),
         );
 
         serde_map_to_string_map(
-            ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
+            &ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
                 HashMap<String, serde_json::Value>,
             >(client, &query)
             .await

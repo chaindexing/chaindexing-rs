@@ -31,7 +31,7 @@ impl StateVersions {
             HashMap<String, serde_json::Value>,
         >(client, &query)
         .await
-        .into_iter()
+        .iter()
         .map(serde_map_to_string_map)
         .collect()
     }
@@ -84,7 +84,7 @@ impl StateVersions {
             HashMap<String, serde_json::Value>,
         >(client, &query)
         .await
-        .into_iter()
+        .iter()
         .map(serde_map_to_string_map)
         .collect()
     }
@@ -162,7 +162,7 @@ impl StateVersion {
         );
 
         serde_map_to_string_map(
-            ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
+            &ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
                 HashMap<String, serde_json::Value>,
             >(client, &query)
             .await
