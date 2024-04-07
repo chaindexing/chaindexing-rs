@@ -216,8 +216,7 @@ pub mod hashes {
         serde_json::to_value(h256).unwrap().as_str().unwrap().to_string()
     }
 }
-/// Useful Rust-specific utils for end users
-pub mod utils {
+mod utils {
     use ethers::types::H160;
 
     use crate::hashes;
