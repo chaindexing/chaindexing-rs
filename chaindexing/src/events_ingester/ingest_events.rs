@@ -8,7 +8,7 @@ use super::provider::{self, Provider};
 use super::EventsIngesterError;
 
 use crate::chain_reorg::Execution;
-use crate::events::Events;
+use crate::events;
 use crate::Config;
 use crate::{
     ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ContractAddress,
@@ -41,7 +41,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     if !filters.is_empty() {
         let logs = provider::fetch_logs(provider, &filters).await;
         let blocks_by_tx_hash = provider::fetch_blocks_by_number(provider, &logs).await;
-        let events = Events::get(&logs, contracts, &blocks_by_tx_hash);
+        let events = events::get(&logs, contracts, &blocks_by_tx_hash);
         let contract_addresses = contract_addresses.clone();
 
         ChaindexingRepo::run_in_transaction(conn, move |conn| {

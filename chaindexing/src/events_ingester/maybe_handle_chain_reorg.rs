@@ -6,7 +6,7 @@ use std::cmp::min;
 
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::contracts::Contract;
-use crate::events::{Event, Events};
+use crate::events::{self, Event};
 use crate::Config;
 use crate::{ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, Repo};
 
@@ -75,7 +75,7 @@ async fn get_events_from_provider<S: Send + Sync + Clone>(
     let logs = provider::fetch_logs(provider, filters).await;
     let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
 
-    Events::get(&logs, contracts, &blocks_by_number)
+    events::get(&logs, contracts, &blocks_by_number)
 }
 
 async fn handle_chain_reorg<'a>(
