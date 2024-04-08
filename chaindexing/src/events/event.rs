@@ -3,12 +3,11 @@ use std::hash::{Hash, Hasher};
 
 use crate::contracts::UnsavedContractAddress;
 use crate::diesels::schema::chaindexing_events;
-use crate::utils::address_to_string;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
 use ethers::types::{Address, Log, U256};
 
-use crate::{hashes, ContractEvent};
+use crate::ContractEvent;
 use uuid::Uuid;
 
 use serde::Deserialize;
@@ -82,7 +81,7 @@ impl Event {
         Self {
             id: uuid::Uuid::new_v4(),
             chain_id: contract_address.chain_id,
-            contract_address: address_to_string(&log.address).to_lowercase(),
+            contract_address: utils::address_to_string(&log.address).to_lowercase(),
             contract_name: contract_address.contract_name.to_owned(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),
@@ -169,9 +168,31 @@ impl EventParam {
         self.value.get(key).unwrap().clone().into_uint().unwrap()
     }
     pub fn get_address_string(&self, key: &str) -> String {
-        address_to_string(&self.get_address(key)).to_lowercase()
+        utils::address_to_string(&self.get_address(key)).to_lowercase()
     }
     pub fn get_address(&self, key: &str) -> Address {
         self.value.get(key).unwrap().clone().into_address().unwrap()
+    }
+}
+
+mod hashes {
+    use ethers::types::{H160, H256};
+
+    pub fn h160_to_string(h160: &H160) -> String {
+        serde_json::to_value(h160).unwrap().as_str().unwrap().to_string()
+    }
+
+    pub fn h256_to_string(h256: &H256) -> String {
+        serde_json::to_value(h256).unwrap().as_str().unwrap().to_string()
+    }
+}
+
+mod utils {
+    use ethers::types::H160;
+
+    use super::hashes;
+
+    pub fn address_to_string(address: &H160) -> String {
+        hashes::h160_to_string(address)
     }
 }
