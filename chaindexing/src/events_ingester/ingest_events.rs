@@ -18,7 +18,7 @@ use crate::{
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
     raw_query_client: &ChaindexingRepoRawQueryClient,
-    contract_addresses: &Vec<ContractAddress>,
+    contract_addresses: Vec<ContractAddress>,
     provider: &Arc<impl Provider>,
     current_block_number: u64,
     Config {
@@ -36,7 +36,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     );
 
     let filters =
-        remove_already_ingested_filters(&filters, contract_addresses, raw_query_client).await;
+        remove_already_ingested_filters(&filters, &contract_addresses, raw_query_client).await;
 
     if !filters.is_empty() {
         let logs = provider::fetch_logs(provider, &filters).await;
@@ -73,7 +73,7 @@ async fn remove_already_ingested_filters(
     if current_block_filters.is_empty() {
         filters.to_owned()
     } else {
-        let addresses = contract_addresses.iter().map(|c| c.address.clone()).collect();
+        let addresses: Vec<_> = contract_addresses.iter().map(|c| c.address.clone()).collect();
 
         let latest_ingested_events =
             ChaindexingRepo::load_latest_events(raw_query_client, &addresses).await;
@@ -111,8 +111,8 @@ async fn remove_already_ingested_filters(
 
 async fn update_next_block_numbers_to_ingest_from<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
-    contract_addresses: &Vec<ContractAddress>,
-    filters: &Vec<Filter>,
+    contract_addresses: &[ContractAddress],
+    filters: &[Filter],
 ) {
     let filters_by_contract_address_id = filters::group_by_contract_address_id(filters);
 

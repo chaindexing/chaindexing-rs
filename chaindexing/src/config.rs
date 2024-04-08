@@ -146,21 +146,19 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     }
 
     pub fn with_prune_n_blocks_away(mut self, prune_n_blocks_away: u64) -> Self {
-        self.pruning_config = PruningConfig {
+        self.pruning_config = Some(PruningConfig {
             prune_n_blocks_away,
-            ..self.pruning_config.unwrap_or(Default::default())
-        }
-        .to_some();
+            ..self.pruning_config.unwrap_or_default()
+        });
 
         self
     }
 
     pub fn with_prune_interval(mut self, prune_interval: u64) -> Self {
-        self.pruning_config = PruningConfig {
+        self.pruning_config = Some(PruningConfig {
             prune_interval,
-            ..self.pruning_config.unwrap_or(Default::default())
-        }
-        .to_some();
+            ..self.pruning_config.unwrap_or_default()
+        });
 
         self
     }

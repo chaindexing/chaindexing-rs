@@ -117,13 +117,13 @@ impl<'a> NodeTasks<'a> {
         conn: &mut ChaindexingRepoConn<'b>,
     ) {
         // Keep node active first to guarantee that at least this node is active before election
-        ChaindexingRepo::keep_node_active(conn, &self.current_node).await;
+        ChaindexingRepo::keep_node_active(conn, self.current_node).await;
 
         let active_nodes =
             ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
         let leader_node = elect_leader(&active_nodes);
 
-        if self.current_node.is_leader(&leader_node) {
+        if self.current_node.is_leader(leader_node) {
             match self.state {
                 NodeTasksState::Idle | NodeTasksState::Aborted => self.make_active(config),
 
@@ -153,10 +153,8 @@ impl<'a> NodeTasks<'a> {
                     }
                 }
             }
-        } else {
-            if self.state == NodeTasksState::Active {
-                self.abort();
-            }
+        } else if self.state == NodeTasksState::Active {
+            self.abort();
         }
     }
 
@@ -196,11 +194,11 @@ impl<'a> NodeTasks<'a> {
 
 pub const DEFAULT_MAX_CONCURRENT_NODE_COUNT: u16 = 50;
 
-fn elect_leader<'a>(nodes: &'a Vec<Node>) -> &'a Node {
+fn elect_leader(nodes: &[Node]) -> &Node {
     let mut nodes_iter = nodes.iter();
     let mut leader: Option<&Node> = nodes_iter.next();
 
-    while let Some(node) = nodes_iter.next() {
+    for node in nodes_iter {
         if node.inserted_at > leader.unwrap().inserted_at {
             leader = Some(node);
         }

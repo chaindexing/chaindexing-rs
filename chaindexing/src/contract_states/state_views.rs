@@ -38,7 +38,7 @@ impl StateView {
         let query = format!(
             "SELECT * FROM {table_name} WHERE {filters} 
             AND chain_id={context_chain_id} AND contract_address='{context_contract_address}'",
-            filters = to_and_filters(state_view.into()),
+            filters = to_and_filters(state_view),
         );
 
         serde_map_to_string_map(

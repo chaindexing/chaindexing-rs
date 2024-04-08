@@ -115,7 +115,9 @@ macro_rules! provider_with_filter_stubber {
             }
 
             async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError> {
-                ($filter_stubber)(filter);
+                let filter_stubber = $filter_stubber;
+
+                filter_stubber(filter);
 
                 Ok(vec![])
             }

@@ -131,7 +131,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
 impl LoadsDataWithRawQuery for PostgresRepo {
     async fn load_latest_events<'a>(
         client: &Self::RawQueryClient,
-        addresses: &Vec<String>,
+        addresses: &[String],
     ) -> Vec<PartialEvent> {
         let query = format!(
             "WITH EventsWithRowNumbers AS (

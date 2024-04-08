@@ -55,13 +55,11 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@clippy
-      # - run: cargo clippy --tests -- -Dclippy::all
-      - run: cargo clippy
+      - run: cargo clippy --tests -- -Dclippy::all
 
   fmt:
     name: fmt
@@ -84,10 +82,8 @@ jobs:
   outdated:
     name: Outdated
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/install@cargo-outdated
-      - run: cargo outdated --workspace
-      # - run: cargo outdated --workspace --exit-code 1
+      - run: cargo outdated --workspace --exit-code 1

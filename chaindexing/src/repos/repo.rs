@@ -42,7 +42,7 @@ pub trait Repo:
 
     async fn create_contract_addresses<'a>(
         conn: &mut Self::Conn<'a>,
-        contract_addresses: &Vec<UnsavedContractAddress>,
+        contract_addresses: &[UnsavedContractAddress],
     );
     async fn get_all_contract_addresses<'a>(conn: &mut Self::Conn<'a>) -> Vec<ContractAddress>;
 
@@ -54,7 +54,7 @@ pub trait Repo:
         from: u64,
         to: u64,
     ) -> Vec<Event>;
-    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &Vec<Uuid>);
+    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &[Uuid]);
 
     async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,
@@ -127,7 +127,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
     async fn load_latest_events<'a>(
         client: &Self::RawQueryClient,
-        addresses: &Vec<String>,
+        addresses: &[String],
     ) -> Vec<PartialEvent>;
     async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,

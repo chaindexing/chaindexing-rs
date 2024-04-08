@@ -11,7 +11,7 @@ use crate::Contract;
 
 pub fn get<S: Send + Sync + Clone>(
     logs: &[Log],
-    contracts: &Vec<Contract<S>>,
+    contracts: &[Contract<S>],
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
 ) -> Vec<Event> {
     let events_by_topics = Contracts::group_events_by_topics(contracts);

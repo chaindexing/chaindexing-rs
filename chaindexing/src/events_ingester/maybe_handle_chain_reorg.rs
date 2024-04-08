@@ -16,7 +16,7 @@ use super::{provider, EventsIngesterError};
 
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
-    contract_addresses: &Vec<ContractAddress>,
+    contract_addresses: Vec<ContractAddress>,
     provider: &Arc<impl Provider>,
     chain_id: &ChainId,
     current_block_number: u64,
@@ -28,7 +28,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     }: &Config<S>,
 ) -> Result<(), EventsIngesterError> {
     let filters = filters::get(
-        contract_addresses,
+        &contract_addresses,
         contracts,
         current_block_number,
         *blocks_per_batch,
@@ -37,7 +37,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let already_ingested_events = get_already_ingested_events(conn, &filters).await;
-        let provider_events = get_events_from_provider(&filters, &provider, contracts).await;
+        let provider_events = get_events_from_provider(&filters, provider, contracts).await;
 
         if let Some(added_and_removed_events) =
             get_provider_added_and_removed_events(&already_ingested_events, &provider_events)
@@ -68,9 +68,9 @@ async fn get_already_ingested_events<'a>(
 }
 
 async fn get_events_from_provider<S: Send + Sync + Clone>(
-    filters: &Vec<Filter>,
+    filters: &[Filter],
     provider: &Arc<impl Provider>,
-    contracts: &Vec<Contract<S>>,
+    contracts: &[Contract<S>],
 ) -> Vec<Event> {
     let logs = provider::fetch_logs(provider, filters).await;
     let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
@@ -90,7 +90,7 @@ async fn handle_chain_reorg<'a>(
         async move {
             ChaindexingRepo::create_reorged_block(conn, &new_reorged_block).await;
 
-            let event_ids = removed_events.iter().map(|e| e.id).collect();
+            let event_ids: Vec<_> = removed_events.iter().map(|e| e.id).collect();
             ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
 
             ChaindexingRepo::create_events(conn, &added_events).await;
@@ -105,8 +105,8 @@ async fn handle_chain_reorg<'a>(
 }
 
 fn get_provider_added_and_removed_events(
-    already_ingested_events: &Vec<Event>,
-    provider_events: &Vec<Event>,
+    already_ingested_events: &[Event],
+    provider_events: &[Event],
 ) -> Option<(Vec<Event>, Vec<Event>)> {
     let already_ingested_events_set: HashSet<_> = already_ingested_events.iter().cloned().collect();
     let provider_events_set: HashSet<_> = provider_events.iter().cloned().collect();
