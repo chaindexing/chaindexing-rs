@@ -130,11 +130,59 @@ impl EventParam {
         }
     }
 
-    /// Ensure you trust the source contract
-    /// otherwise, you expose your DB to SQL Injections
+    /// N/B: This function is UNSAFE.
+    /// Ensure source contract can be trusted
+    /// Otherwise, a potential attacker could inject SQL string statements
     pub fn get_string_unsafely(&self, key: &str) -> String {
         self.value.get(key).unwrap().to_string()
     }
+
+    /// Returns `bytes` or bytes1, bytes2. bytes3...bytes32
+    pub fn get_bytes(&self, key: &str) -> Vec<u8> {
+        let token = self.get_token(key);
+
+        token.clone().into_fixed_bytes().or(token.into_bytes()).unwrap()
+    }
+
+    pub fn get_u8_array(&self, key: &str) -> Vec<u8> {
+        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_usize() as u8)
+    }
+    pub fn get_u32_array(&self, key: &str) -> Vec<u32> {
+        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_u32())
+    }
+    pub fn get_u64_array(&self, key: &str) -> Vec<u64> {
+        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_u64())
+    }
+    pub fn get_u128_array(&self, key: &str) -> Vec<u128> {
+        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_u128())
+    }
+    pub fn get_uint_array(&self, key: &str) -> Vec<U256> {
+        self.get_array_and_transform(key, |token| token.into_uint().unwrap())
+    }
+    pub fn get_address_array(&self, key: &str) -> Vec<Address> {
+        self.get_array_and_transform(key, |token| token.into_address().unwrap())
+    }
+    pub fn get_address_string_array(&self, key: &str) -> Vec<String> {
+        self.get_array_and_transform(key, |token| {
+            utils::address_to_string(&token.into_address().unwrap()).to_lowercase()
+        })
+    }
+    fn get_array_and_transform<TokenTransformer, Output>(
+        &self,
+        key: &str,
+        token_mapper: TokenTransformer,
+    ) -> Vec<Output>
+    where
+        TokenTransformer: Fn(Token) -> Output,
+    {
+        self.get_array(key).into_iter().map(token_mapper).collect()
+    }
+    fn get_array(&self, key: &str) -> Vec<Token> {
+        let token = self.get_token(key);
+
+        token.clone().into_fixed_array().or(token.into_array()).unwrap()
+    }
+
     pub fn get_u8_string(&self, key: &str) -> String {
         self.get_u8(key).to_string()
     }
@@ -162,18 +210,23 @@ impl EventParam {
     pub fn get_u128(&self, key: &str) -> u128 {
         self.get_uint(key).as_u128()
     }
-    /// Same as _u256
+    /// Same as get_u256_string
     pub fn get_uint_string(&self, key: &str) -> String {
         self.get_uint(key).to_string()
     }
+    /// Same as get_u256
     pub fn get_uint(&self, key: &str) -> U256 {
-        self.value.get(key).unwrap().clone().into_uint().unwrap()
+        self.get_token(key).into_uint().unwrap()
     }
     pub fn get_address_string(&self, key: &str) -> String {
         utils::address_to_string(&self.get_address(key)).to_lowercase()
     }
     pub fn get_address(&self, key: &str) -> Address {
-        self.value.get(key).unwrap().clone().into_address().unwrap()
+        self.get_token(key).into_address().unwrap()
+    }
+
+    fn get_token(&self, key: &str) -> Token {
+        self.value.get(key).unwrap().clone()
     }
 }
 
