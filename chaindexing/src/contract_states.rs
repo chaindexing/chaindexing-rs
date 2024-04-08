@@ -72,10 +72,6 @@ impl ContractStates {
     }
 }
 
-// TODO:
-// Investigate HashMap Interface Vs Json (Serde)
-// Move Queries to Repo level and prevent SQLInjection
-// Create Into<StateVersionEvent> to extract events fields we care about once and avoid passing around the whole Event struct
 #[async_trait::async_trait]
 pub trait ContractState:
     DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static

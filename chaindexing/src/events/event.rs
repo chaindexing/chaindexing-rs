@@ -130,7 +130,9 @@ impl EventParam {
         }
     }
 
-    pub fn get_string(&self, key: &str) -> String {
+    /// Ensure you trust the source contract
+    /// otherwise, you expose your DB to SQL Injections
+    pub fn get_string_unsafely(&self, key: &str) -> String {
         self.value.get(key).unwrap().to_string()
     }
     pub fn get_u8_string(&self, key: &str) -> String {
