@@ -51,6 +51,8 @@ pub type ChaindexingRepoRawQueryTxnClient<'a> = PostgresRepoRawQueryTxnClient<'a
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
 use tokio::time;
 
+pub use ethers::types::{Address, U256, U256 as BigInt, U256 as Uint};
+
 pub enum ChaindexingError {
     Config(ConfigError),
 }
@@ -202,26 +204,5 @@ impl Chaindexing {
         for reset_query in reset_queries {
             ChaindexingRepo::execute_raw_query(client, reset_query).await;
         }
-    }
-}
-
-pub mod hashes {
-    use ethers::types::{H160, H256};
-
-    pub fn h160_to_string(h160: &H160) -> String {
-        serde_json::to_value(h160).unwrap().as_str().unwrap().to_string()
-    }
-
-    pub fn h256_to_string(h256: &H256) -> String {
-        serde_json::to_value(h256).unwrap().as_str().unwrap().to_string()
-    }
-}
-mod utils {
-    use ethers::types::H160;
-
-    use crate::hashes;
-
-    pub fn address_to_string(address: &H160) -> String {
-        hashes::h160_to_string(address)
     }
 }
