@@ -1,7 +1,7 @@
 use crate::db;
 use chaindexing::{
-    Chaindexing, ChaindexingRepo, ChaindexingRepoAsyncConnection, ChaindexingRepoConn,
-    ChaindexingRepoPool, HasRawQueryClient, Repo,
+    ChaindexingRepo, ChaindexingRepoAsyncConnection, ChaindexingRepoConn, ChaindexingRepoPool,
+    HasRawQueryClient, Repo,
 };
 use dotenvy::dotenv;
 use std::env;
@@ -22,7 +22,7 @@ where
         db::setup();
 
         let raw_query_client = new_repo().get_raw_query_client().await;
-        Chaindexing::run_internal_migrations(&raw_query_client).await;
+        chaindexing::run_internal_migrations(&raw_query_client).await;
     }
 
     conn.begin_test_transaction().await.unwrap();

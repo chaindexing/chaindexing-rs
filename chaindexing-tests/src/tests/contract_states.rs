@@ -73,7 +73,7 @@ mod tests {
     }
 }
 
-use chaindexing::{Chaindexing, ContractState, ContractStateMigrations, HasRawQueryClient};
+use chaindexing::{ContractState, ContractStateMigrations, HasRawQueryClient};
 use serde::{Deserialize, Serialize};
 
 use crate::{factory::bayc_contract, test_runner};
@@ -101,5 +101,5 @@ impl ContractStateMigrations for NftStateMigrations {
 pub async fn setup() {
     let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
     let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-    Chaindexing::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract]).await;
+    chaindexing::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract]).await;
 }
