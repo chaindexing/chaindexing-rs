@@ -14,7 +14,7 @@ pub fn transfer_event_with_contract(contract: Contract<()>) -> Event {
             ..Default::default()
         },
     )]);
-    events::get(&vec![transfer_log], &vec![contract], &blocks_by_number)
+    events::get(&[transfer_log], &[contract], &blocks_by_number)
         .first()
         .cloned()
         .unwrap()

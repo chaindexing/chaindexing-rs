@@ -83,7 +83,7 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
         ingest_events::run(
             &mut conn,
             raw_query_client,
-            &contract_addresses,
+            contract_addresses.clone(),
             &provider,
             current_block_number,
             config,
@@ -92,7 +92,7 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
 
         maybe_handle_chain_reorg::run(
             &mut conn,
-            &contract_addresses,
+            contract_addresses,
             &provider,
             chain_id,
             current_block_number,
@@ -114,11 +114,11 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
                 )
                 .await;
 
-                let state_migrations = Contracts::get_state_migrations(&contracts);
+                let state_migrations = Contracts::get_state_migrations(contracts);
                 let state_table_names = ContractStates::get_all_table_names(&state_migrations);
                 ContractStates::prune_state_versions(
                     &state_table_names,
-                    &raw_query_client,
+                    raw_query_client,
                     min_pruning_block_number,
                     chain_id_u64,
                 )

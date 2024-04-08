@@ -4,7 +4,7 @@
 #[macro_export]
 macro_rules! get_contract_addresses_stream_by_chain {
     ( $cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty) => {{
-        use crate::get_contract_addresses_stream_by_chain;
+        use get_contract_addresses_stream_by_chain;
 
         let default_chunk_size = 500;
         let default_from = None;
@@ -24,7 +24,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
     }};
 
     ($cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty, $chunk_size:expr) => {{
-        use crate::get_contract_addresses_stream_by_chain;
+        use get_contract_addresses_stream_by_chain;
 
         let mut default_from = None;
         let default_to = None;
@@ -43,7 +43,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
     }};
 
     ($cursor_field:expr, $conn: expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty, $chunk_size:expr, $from: expr) => {{
-        use crate::get_contract_addresses_stream_by_chain;
+        use get_contract_addresses_stream_by_chain;
 
         let default_to = None;
 
@@ -75,7 +75,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
         type DataStream = Vec<$table_struct>;
 
         enum SerialTableStreamState<'a> {
-            GetFromAndToFuture,
+            GetFromAndTo,
             PollFromAndToFuture(
                 Pin<Box<dyn Future<Output = ($fromToType, $fromToType)> + Send + 'a>>,
             ),
@@ -118,7 +118,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
                 let to = *this.to;
 
                 match this.state {
-                    SerialTableStreamState::GetFromAndToFuture => {
+                    SerialTableStreamState::GetFromAndTo => {
                         let conn = this.conn.clone();
 
                         *this.state = SerialTableStreamState::PollFromAndToFuture(
@@ -222,7 +222,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
             from: $from,
             to: $to,
             chunk_size: $chunk_size,
-            state: SerialTableStreamState::GetFromAndToFuture,
+            state: SerialTableStreamState::GetFromAndTo,
             conn: $conn,
         })
     }};
@@ -232,7 +232,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
 #[macro_export]
 macro_rules! get_events_stream {
     ( $cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $contract_address:expr, $fromToType:ty) => {{
-        use crate::get_events_stream;
+        use get_events_stream;
 
         let default_chunk_size = 500;
         let default_from = None;
@@ -253,7 +253,7 @@ macro_rules! get_events_stream {
     }};
 
     ($cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $contract_address:expr, $fromToType:ty, $chunk_size:expr) => {{
-        use crate::get_events_stream;
+        use get_events_stream;
 
         let mut default_from = None;
         let default_to = None;
@@ -273,7 +273,7 @@ macro_rules! get_events_stream {
     }};
 
     ($cursor_field:expr, $conn: expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $contract_address:expr, $fromToType:ty, $chunk_size:expr, $from: expr) => {{
-        use crate::get_events_stream;
+        use get_events_stream;
 
         let default_to = None;
 
@@ -306,7 +306,7 @@ macro_rules! get_events_stream {
         type DataStream = Vec<$table_struct>;
 
         enum SerialTableStreamState<'a> {
-            GetFromAndToFuture,
+            GetFromAndTo,
             PollFromAndToFuture(
                 Pin<Box<dyn Future<Output = ($fromToType, $fromToType)> + Send + 'a>>,
             ),
@@ -351,7 +351,7 @@ macro_rules! get_events_stream {
                 let to = *this.to;
 
                 match this.state {
-                    SerialTableStreamState::GetFromAndToFuture => {
+                    SerialTableStreamState::GetFromAndTo => {
                         let conn = this.conn.clone();
 
                         *this.state = SerialTableStreamState::PollFromAndToFuture(
@@ -462,7 +462,7 @@ macro_rules! get_events_stream {
             from: $from,
             to: $to,
             chunk_size: $chunk_size,
-            state: SerialTableStreamState::GetFromAndToFuture,
+            state: SerialTableStreamState::GetFromAndTo,
             conn: $conn,
         })
     }};

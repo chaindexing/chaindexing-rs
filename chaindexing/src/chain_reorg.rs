@@ -71,9 +71,7 @@ impl UnsavedReorgedBlock {
 pub struct ReorgedBlocks;
 
 impl ReorgedBlocks {
-    pub fn only_earliest_per_chain<'a>(
-        reorged_blocks: &'a [ReorgedBlock],
-    ) -> Vec<&'a ReorgedBlock> {
+    pub fn only_earliest_per_chain(reorged_blocks: &[ReorgedBlock]) -> Vec<&ReorgedBlock> {
         reorged_blocks
             .iter()
             .fold(

@@ -90,7 +90,7 @@ pub async fn fetch_current_block_number(provider: &Arc<impl Provider>) -> u64 {
     maybe_current_block_number.unwrap()
 }
 
-pub async fn fetch_logs(provider: &Arc<impl Provider>, filters: &Vec<Filter>) -> Vec<Log> {
+pub async fn fetch_logs(provider: &Arc<impl Provider>, filters: &[Filter]) -> Vec<Log> {
     let mut maybe_logs = None;
     let mut retries_so_far = 0;
 

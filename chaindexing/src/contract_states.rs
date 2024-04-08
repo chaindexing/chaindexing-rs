@@ -29,13 +29,13 @@ impl ContractStates {
     ) {
         for table_name in table_names {
             let state_versions =
-                StateVersions::get(block_number, chain_id, &table_name, client).await;
+                StateVersions::get(block_number, chain_id, table_name, client).await;
 
             let state_version_ids = StateVersions::get_ids(&state_versions);
-            StateVersions::delete_by_ids(&state_version_ids, &table_name, client).await;
+            StateVersions::delete_by_ids(&state_version_ids, table_name, client).await;
 
             let state_version_group_ids = StateVersions::get_group_ids(&state_versions);
-            StateViews::refresh(&state_version_group_ids, &table_name, client).await;
+            StateViews::refresh(&state_version_group_ids, table_name, client).await;
         }
     }
 

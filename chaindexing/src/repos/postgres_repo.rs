@@ -91,7 +91,7 @@ impl Repo for PostgresRepo {
 
     async fn create_contract_addresses<'a>(
         conn: &mut Conn<'a>,
-        contract_addresses: &Vec<UnsavedContractAddress>,
+        contract_addresses: &[UnsavedContractAddress],
     ) {
         use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
 
@@ -140,7 +140,7 @@ impl Repo for PostgresRepo {
             .await
             .unwrap()
     }
-    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &Vec<Uuid>) {
+    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &[Uuid]) {
         use crate::diesels::schema::chaindexing_events::dsl::*;
 
         delete(chaindexing_events).filter(id.eq_any(ids)).execute(conn).await.unwrap();
