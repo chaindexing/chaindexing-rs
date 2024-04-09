@@ -9,6 +9,9 @@ pub struct TransferTestEventHandler;
 impl EventHandler for TransferTestEventHandler {
     type SharedState = ();
 
+    fn abi(&self) -> &'static str {
+        "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+    }
     async fn handle_event<'a>(&self, _event_context: EventContext<'a, Self::SharedState>) {}
 }
 
@@ -18,5 +21,8 @@ pub struct ApprovalForAllTestEventHandler;
 impl EventHandler for ApprovalForAllTestEventHandler {
     type SharedState = ();
 
+    fn abi(&self) -> &'static str {
+        "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)"
+    }
     async fn handle_event<'a>(&self, _event_context: EventContext<'a, Self::SharedState>) {}
 }
