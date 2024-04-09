@@ -60,10 +60,9 @@ impl<S: Send + Sync + Clone> Contract<S> {
 
     pub fn add_event(
         mut self,
-        event_abi: EventAbi,
         event_handler: impl EventHandler<SharedState = S> + 'static,
     ) -> Self {
-        self.event_handlers.insert(event_abi, Arc::new(event_handler));
+        self.event_handlers.insert(event_handler.abi(), Arc::new(event_handler));
 
         self
     }

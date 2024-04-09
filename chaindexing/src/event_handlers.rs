@@ -44,6 +44,12 @@ impl<'a, SharedState: Sync + Send + Clone> EventHandlerContext<'a, SharedState> 
 pub trait EventHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
 
+    /// The human-readable ABI of the event being handled.
+    /// For example, Uniswap's PoolCreated event's name is:
+    /// PoolCreated(index_topic_1 address token0, index_topic_2 address token1, index_topic_3 uint24 fee, int24 tickSpacing, address pool)
+    /// The chain explorer's event section of the indexed contract
+    /// can also be used to infer this
+    fn abi(&self) -> &'static str;
     async fn handle_event<'a>(&self, event_context: EventHandlerContext<'a, Self::SharedState>);
 }
 
