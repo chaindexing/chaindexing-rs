@@ -58,7 +58,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
         self
     }
 
-    pub fn add_event(
+    pub fn add_event_handler(
         mut self,
         event_handler: impl EventHandler<SharedState = S> + 'static,
     ) -> Self {
