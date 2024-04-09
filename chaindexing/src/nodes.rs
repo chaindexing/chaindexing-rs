@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use crate::OptimizationConfig;
 
-use super::diesels::schema::chaindexing_nodes;
+use super::diesel::schema::chaindexing_nodes;
 use super::{ChaindexingRepo, ChaindexingRepoConn, Repo};
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Insertable, Queryable)]

@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::collections::HashMap;
 
-use crate::{diesels::schema::chaindexing_reorged_blocks, ChainId};
+use crate::{diesel::schema::chaindexing_reorged_blocks, ChainId};
 use diesel::prelude::{Insertable, Queryable};
 
 /// Tolerance for chain re-organization

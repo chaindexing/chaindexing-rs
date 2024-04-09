@@ -3,7 +3,7 @@ mod chains;
 mod config;
 mod contract_states;
 mod contracts;
-mod diesels;
+mod diesel;
 mod event_handlers;
 pub mod events;
 pub mod events_ingester;

@@ -1,4 +1,4 @@
-use crate::diesels::schema::chaindexing_reset_counts;
+use crate::diesel::schema::chaindexing_reset_counts;
 use diesel::{Insertable, Queryable};
 
 #[derive(Debug, Clone, PartialEq, Queryable, Insertable)]

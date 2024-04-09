@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use crate::contracts::UnsavedContractAddress;
-use crate::diesels::schema::chaindexing_events;
+use crate::diesel::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
 use ethers::types::{Address, Log, U256};

@@ -93,7 +93,7 @@ impl Repo for PostgresRepo {
         conn: &mut Conn<'a>,
         contract_addresses: &[UnsavedContractAddress],
     ) {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::insert_into(chaindexing_contract_addresses)
             .values(contract_addresses)
@@ -106,13 +106,13 @@ impl Repo for PostgresRepo {
     }
 
     async fn get_all_contract_addresses<'a>(conn: &mut Conn<'a>) -> Vec<ContractAddress> {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) {
-        use crate::diesels::schema::chaindexing_events::dsl::*;
+        use crate::diesel::schema::chaindexing_events::dsl::*;
 
         diesel::insert_into(chaindexing_events)
             .values(events)
@@ -121,7 +121,7 @@ impl Repo for PostgresRepo {
             .unwrap();
     }
     async fn get_all_events<'a>(conn: &mut Conn<'a>) -> Vec<Event> {
-        use crate::diesels::schema::chaindexing_events::dsl::*;
+        use crate::diesel::schema::chaindexing_events::dsl::*;
 
         chaindexing_events.load(conn).await.unwrap()
     }
@@ -131,7 +131,7 @@ impl Repo for PostgresRepo {
         from: u64,
         to: u64,
     ) -> Vec<Event> {
-        use crate::diesels::schema::chaindexing_events::dsl::*;
+        use crate::diesel::schema::chaindexing_events::dsl::*;
 
         chaindexing_events
             .filter(contract_address.eq(address.to_lowercase()))
@@ -141,7 +141,7 @@ impl Repo for PostgresRepo {
             .unwrap()
     }
     async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &[Uuid]) {
-        use crate::diesels::schema::chaindexing_events::dsl::*;
+        use crate::diesel::schema::chaindexing_events::dsl::*;
 
         delete(chaindexing_events).filter(id.eq_any(ids)).execute(conn).await.unwrap();
     }
@@ -151,7 +151,7 @@ impl Repo for PostgresRepo {
         contract_address: &ContractAddress,
         block_number: i64,
     ) {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq(contract_address.id))
@@ -166,7 +166,7 @@ impl Repo for PostgresRepo {
         contract_address_id: i32,
         block_number: i64,
     ) {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::update(chaindexing_contract_addresses)
             .filter(id.eq(contract_address_id))
@@ -180,7 +180,7 @@ impl Repo for PostgresRepo {
         conn: &mut Self::Conn<'a>,
         reorged_block: &UnsavedReorgedBlock,
     ) {
-        use crate::diesels::schema::chaindexing_reorged_blocks::dsl::*;
+        use crate::diesel::schema::chaindexing_reorged_blocks::dsl::*;
 
         diesel::insert_into(chaindexing_reorged_blocks)
             .values(reorged_block)
@@ -190,7 +190,7 @@ impl Repo for PostgresRepo {
     }
 
     async fn get_unhandled_reorged_blocks<'a>(conn: &mut Self::Conn<'a>) -> Vec<ReorgedBlock> {
-        use crate::diesels::schema::chaindexing_reorged_blocks::dsl::*;
+        use crate::diesel::schema::chaindexing_reorged_blocks::dsl::*;
 
         chaindexing_reorged_blocks
             .filter(handled_at.is_null())
@@ -200,7 +200,7 @@ impl Repo for PostgresRepo {
     }
 
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>) {
-        use crate::diesels::schema::chaindexing_reset_counts::dsl::*;
+        use crate::diesel::schema::chaindexing_reset_counts::dsl::*;
 
         diesel::insert_into(chaindexing_reset_counts)
             .default_values()
@@ -210,7 +210,7 @@ impl Repo for PostgresRepo {
     }
 
     async fn get_last_reset_count<'a>(conn: &mut Self::Conn<'a>) -> Option<ResetCount> {
-        use crate::diesels::schema::chaindexing_reset_counts::dsl::*;
+        use crate::diesel::schema::chaindexing_reset_counts::dsl::*;
 
         chaindexing_reset_counts
             .order_by(id.desc())
@@ -221,7 +221,7 @@ impl Repo for PostgresRepo {
     }
 
     async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node {
-        use crate::diesels::schema::chaindexing_nodes::dsl::*;
+        use crate::diesel::schema::chaindexing_nodes::dsl::*;
 
         diesel::insert_into(chaindexing_nodes)
             .default_values()
@@ -233,7 +233,7 @@ impl Repo for PostgresRepo {
         conn: &mut Self::Conn<'a>,
         node_election_rate_ms: u64,
     ) -> Vec<Node> {
-        use crate::diesels::schema::chaindexing_nodes::dsl::*;
+        use crate::diesel::schema::chaindexing_nodes::dsl::*;
 
         chaindexing_nodes
             .filter(last_active_at.gt(Node::get_min_active_at_in_secs(node_election_rate_ms)))
@@ -242,7 +242,7 @@ impl Repo for PostgresRepo {
             .unwrap()
     }
     async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node) {
-        use crate::diesels::schema::chaindexing_nodes::dsl::*;
+        use crate::diesel::schema::chaindexing_nodes::dsl::*;
 
         let now = chrono::offset::Utc::now().timestamp();
 
@@ -261,7 +261,7 @@ impl Streamable for PostgresRepo {
     fn get_contract_addresses_stream<'a>(
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         get_serial_table_async_stream!(
             chaindexing_contract_addresses,
@@ -277,7 +277,7 @@ impl Streamable for PostgresRepo {
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
         chain_id_: i64,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
-        use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;
+        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         get_contract_addresses_stream_by_chain!(
             id,
@@ -295,7 +295,7 @@ impl Streamable for PostgresRepo {
         chain_id_: i64,
         contract_address_: String,
     ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
-        use crate::diesels::schema::chaindexing_events::dsl::*;
+        use crate::diesel::schema::chaindexing_events::dsl::*;
 
         const CHUNK_SIZE: i32 = 500;
 

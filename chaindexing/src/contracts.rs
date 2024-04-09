@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::diesels::schema::chaindexing_contract_addresses;
+use crate::diesel::schema::chaindexing_contract_addresses;
 use crate::{ContractStateMigrations, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
