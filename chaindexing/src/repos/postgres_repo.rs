@@ -55,16 +55,18 @@ pub struct PostgresRepo {
 
 type PgPooledConn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
 
-#[async_trait::async_trait]
-impl Repo for PostgresRepo {
-    type Conn<'a> = PgPooledConn<'a>;
-    type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
-
-    fn new(url: &str) -> Self {
+impl PostgresRepo {
+    pub fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
         }
     }
+}
+
+#[async_trait::async_trait]
+impl Repo for PostgresRepo {
+    type Conn<'a> = PgPooledConn<'a>;
+    type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
 
     async fn get_pool(&self, max_size: u32) -> Pool {
         let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(&self.url);
