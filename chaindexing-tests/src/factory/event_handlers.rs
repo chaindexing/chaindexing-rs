@@ -9,7 +9,7 @@ pub struct TransferTestEventHandler;
 impl EventHandler for TransferTestEventHandler {
     type SharedState = ();
 
-    async fn handle_event<'a, 'b>(&self, _event_context: EventContext<'a, 'b, Self::SharedState>) {}
+    async fn handle_event<'a>(&self, _event_context: EventContext<'a, Self::SharedState>) {}
 }
 
 pub struct ApprovalForAllTestEventHandler;
@@ -18,5 +18,5 @@ pub struct ApprovalForAllTestEventHandler;
 impl EventHandler for ApprovalForAllTestEventHandler {
     type SharedState = ();
 
-    async fn handle_event<'a, 'b>(&self, _event_context: EventContext<'a, 'b, Self::SharedState>) {}
+    async fn handle_event<'a>(&self, _event_context: EventContext<'a, Self::SharedState>) {}
 }

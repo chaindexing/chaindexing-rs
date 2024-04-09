@@ -10,22 +10,22 @@ use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
 use crate::{ChaindexingRepoRawQueryTxnClient, ContractStates, EventParam, HasRawQueryClient};
 
 #[derive(Clone)]
-pub struct EventHandlerContext<'a, 'b, SharedState: Sync + Send + Clone> {
+pub struct EventHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub event: Event,
     pub(super) raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
-    shared_state: &'b Option<Arc<Mutex<SharedState>>>,
+    shared_state: Option<Arc<Mutex<SharedState>>>,
 }
 
-impl<'a, 'b, SharedState: Sync + Send + Clone> EventHandlerContext<'a, 'b, SharedState> {
+impl<'a, SharedState: Sync + Send + Clone> EventHandlerContext<'a, SharedState> {
     pub fn new(
         event: Event,
         client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
-        shared_state: &'b Option<Arc<Mutex<SharedState>>>,
+        shared_state: &Option<Arc<Mutex<SharedState>>>,
     ) -> Self {
         Self {
             event,
             raw_query_client: client,
-            shared_state,
+            shared_state: shared_state.clone(),
         }
     }
 
@@ -44,10 +44,7 @@ impl<'a, 'b, SharedState: Sync + Send + Clone> EventHandlerContext<'a, 'b, Share
 pub trait EventHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
 
-    async fn handle_event<'a, 'b>(
-        &self,
-        event_context: EventHandlerContext<'a, 'b, Self::SharedState>,
-    );
+    async fn handle_event<'a>(&self, event_context: EventHandlerContext<'a, Self::SharedState>);
 }
 
 // TODO: Use just raw query client through for mutations

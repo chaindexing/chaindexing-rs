@@ -26,7 +26,6 @@ pub trait Repo:
     type Pool;
     type Conn<'a>;
 
-    fn new(url: &str) -> Self;
     async fn get_pool(&self, max_size: u32) -> Self::Pool;
     async fn get_conn<'a>(pool: &'a Self::Pool) -> Self::Conn<'a>;
 

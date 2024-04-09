@@ -1,4 +1,4 @@
-use chaindexing::{ChaindexingRepo, HasRawQueryClient, Repo};
+use chaindexing::{ChaindexingRepo, HasRawQueryClient};
 use chaindexing_tests::{db, tests};
 
 #[tokio::main]
