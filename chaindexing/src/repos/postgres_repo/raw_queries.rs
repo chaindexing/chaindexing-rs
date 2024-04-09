@@ -1,6 +1,7 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::events::PartialEvent;
+use crate::UnsavedContractAddress;
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
 use serde::de::DeserializeOwned;
 
@@ -36,6 +37,23 @@ impl ExecutesWithRawQuery for PostgresRepo {
     }
     async fn commit_raw_query_txns<'a>(client: Self::RawQueryTxnClient<'a>) {
         client.commit().await.unwrap();
+    }
+
+    async fn create_contract_address<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        contract_address: &UnsavedContractAddress,
+    ) {
+        let address = &contract_address.address;
+        let contract_name = &contract_address.contract_name;
+        let chain_id = contract_address.chain_id;
+        let start_block_number = contract_address.start_block_number;
+
+        let query = format!(
+            "INSERT INTO chaindexing_contract_addresses (address, contract_name, chain_id, start_block_number)
+            VALUES ('{address}', '{contract_name}', {chain_id}, {start_block_number})"
+        );
+
+        Self::execute_raw_query_in_txn(client, &query).await;
     }
 
     async fn update_next_block_number_to_handle_from<'a>(

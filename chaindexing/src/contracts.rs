@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::diesel::schema::chaindexing_contract_addresses;
-use crate::{ContractStateMigrations, EventHandler};
+use crate::{ChainId, ContractStateMigrations, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::{
@@ -159,19 +159,24 @@ impl Contracts {
 #[diesel(table_name = chaindexing_contract_addresses)]
 pub struct UnsavedContractAddress {
     pub contract_name: String,
-    address: String,
+    pub address: String,
     pub chain_id: i64,
-    start_block_number: i64,
+    pub start_block_number: i64,
     next_block_number_to_ingest_from: i64,
     next_block_number_to_handle_from: i64,
 }
 
 impl UnsavedContractAddress {
-    pub fn new(contract_name: &str, address: &str, chain: &Chain, start_block_number: i64) -> Self {
+    pub fn new(
+        contract_name: &str,
+        address: &str,
+        chain_id: &ChainId,
+        start_block_number: i64,
+    ) -> Self {
         UnsavedContractAddress {
             contract_name: contract_name.to_string(),
             address: address.to_lowercase().to_string(),
-            chain_id: *chain as i64,
+            chain_id: *chain_id as i64,
             start_block_number,
             next_block_number_to_ingest_from: start_block_number,
             next_block_number_to_handle_from: start_block_number,
