@@ -12,7 +12,7 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+        let event_context: EventContext<'_, ()> = EventContext::new(
             transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
             &None,
@@ -34,7 +34,7 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+        let event_context: EventContext<'_, ()> = EventContext::new(
             transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
             &None,
@@ -58,7 +58,7 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+        let event_context: EventContext<'_, ()> = EventContext::new(
             transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
             &None,
