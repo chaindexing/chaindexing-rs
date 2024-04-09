@@ -74,6 +74,21 @@ impl Debug for ChaindexingError {
     }
 }
 
+pub async fn include_contract_in_indexing<'a, S: Send + Sync + Clone>(
+    event_context: &EventContext<'a, S>,
+    contract_name: &str,
+    address: &str,
+) {
+    let chain_id = event_context.event.get_chain_id();
+    let start_block_number = event_context.event.block_number;
+
+    let contract_address =
+        UnsavedContractAddress::new(contract_name, address, &chain_id, start_block_number);
+
+    ChaindexingRepo::create_contract_address(event_context.raw_query_client, &contract_address)
+        .await;
+}
+
 pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     config: &Config<S>,
 ) -> Result<(), ChaindexingError> {

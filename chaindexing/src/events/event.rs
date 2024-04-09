@@ -5,9 +5,9 @@ use crate::contracts::UnsavedContractAddress;
 use crate::diesel::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
-use ethers::types::{Address, Log, U256};
+use ethers::types::{Address, Log, U256, U64};
 
-use crate::ContractEvent;
+use crate::{ChainId, ContractEvent};
 use uuid::Uuid;
 
 use serde::Deserialize;
@@ -100,6 +100,10 @@ impl Event {
 
     pub fn get_params(&self) -> EventParam {
         EventParam::new(&self.parameters)
+    }
+
+    pub fn get_chain_id(&self) -> ChainId {
+        U64::from(self.chain_id).try_into().unwrap()
     }
 
     pub fn not_removed(&self) -> bool {
