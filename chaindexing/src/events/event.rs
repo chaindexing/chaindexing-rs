@@ -131,8 +131,9 @@ impl EventParam {
     }
 
     /// N/B: This function is UNSAFE.
-    /// Ensure source contract can be trusted
-    /// Otherwise, a potential attacker could inject SQL string statements
+    /// Ensure source contract can be trusted before using it or
+    /// preprocess the string before indexing.
+    /// A potential attacker could inject SQL string statements from  here.
     pub fn get_string_unsafely(&self, key: &str) -> String {
         self.value.get(key).unwrap().to_string()
     }
