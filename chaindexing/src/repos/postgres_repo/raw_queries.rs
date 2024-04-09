@@ -1,6 +1,5 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
-use crate::contracts::ContractAddressID;
 use crate::events::PartialEvent;
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
 use serde::de::DeserializeOwned;
@@ -41,7 +40,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
     async fn update_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        ContractAddressID(contract_address_id): ContractAddressID,
+        contract_address_id: i32,
         block_number: i64,
     ) {
         let query = format!(

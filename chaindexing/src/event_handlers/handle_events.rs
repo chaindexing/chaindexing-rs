@@ -67,7 +67,7 @@ async fn handle_events_for_contract_address<'a, S: Send + Sync + Clone + Debug>(
             let next_block_number_to_handle_from = block_number + 1;
             ChaindexingRepo::update_next_block_number_to_handle_from(
                 &raw_query_txn_client,
-                contract_address.id(),
+                contract_address.id,
                 next_block_number_to_handle_from,
             )
             .await;

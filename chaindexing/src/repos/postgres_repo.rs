@@ -6,7 +6,7 @@ mod raw_queries;
 use crate::{get_contract_addresses_stream_by_chain, get_events_stream};
 
 use crate::{
-    contracts::{ContractAddress, ContractAddressID, UnsavedContractAddress},
+    contracts::{ContractAddress, UnsavedContractAddress},
     events::Event,
     nodes::Node,
     ReorgedBlock, ResetCount, Streamable, UnsavedReorgedBlock,
@@ -163,7 +163,7 @@ impl Repo for PostgresRepo {
 
     async fn update_next_block_number_to_handle_from<'a>(
         conn: &mut Conn<'a>,
-        ContractAddressID(contract_address_id): ContractAddressID,
+        contract_address_id: i32,
         block_number: i64,
     ) {
         use crate::diesels::schema::chaindexing_contract_addresses::dsl::*;

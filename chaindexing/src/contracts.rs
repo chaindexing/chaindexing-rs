@@ -179,15 +179,7 @@ impl UnsavedContractAddress {
     }
 }
 
-pub struct ContractAddressID(pub i32);
-
-impl ContractAddressID {
-    pub fn value(self) -> i32 {
-        self.0
-    }
-}
-/// Answers: Where is a given EVM contract located
-/// N/B: The order has to match ./schema.rs to stop diesel from mixing up fields...lol
+/// N/B: The order has to match ./schema.rs to stop diesel from mixing up fields
 #[derive(Debug, Clone, PartialEq, Queryable, Identifiable)]
 #[diesel(table_name = chaindexing_contract_addresses)]
 #[diesel(primary_key(id))]
@@ -199,10 +191,4 @@ pub struct ContractAddress {
     pub start_block_number: i64,
     pub address: String,
     pub contract_name: String,
-}
-
-impl ContractAddress {
-    pub fn id(&self) -> ContractAddressID {
-        ContractAddressID(self.id)
-    }
 }

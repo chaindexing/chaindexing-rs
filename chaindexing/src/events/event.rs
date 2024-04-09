@@ -170,12 +170,12 @@ impl EventParam {
     fn get_array_and_transform<TokenTransformer, Output>(
         &self,
         key: &str,
-        token_mapper: TokenTransformer,
+        token_transformer: TokenTransformer,
     ) -> Vec<Output>
     where
         TokenTransformer: Fn(Token) -> Output,
     {
-        self.get_array(key).into_iter().map(token_mapper).collect()
+        self.get_array(key).into_iter().map(token_transformer).collect()
     }
     fn get_array(&self, key: &str) -> Vec<Token> {
         let token = self.get_token(key);

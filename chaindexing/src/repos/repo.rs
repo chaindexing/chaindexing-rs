@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 
 use crate::{
-    contracts::{ContractAddressID, UnsavedContractAddress},
+    contracts::UnsavedContractAddress,
     events::{Event, PartialEvent},
     nodes::Node,
     ContractAddress, ReorgedBlock, ResetCount, UnsavedReorgedBlock,
@@ -63,7 +63,7 @@ pub trait Repo:
     );
     async fn update_next_block_number_to_handle_from<'a>(
         conn: &mut Self::Conn<'a>,
-        contract_address_id: ContractAddressID,
+        contract_address_id: i32,
         block_number: i64,
     );
 
@@ -103,7 +103,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 
     async fn update_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        contract_address_id: ContractAddressID,
+        contract_address_id: i32,
         block_number: i64,
     );
 
