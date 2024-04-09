@@ -164,6 +164,9 @@ impl EventParam {
     pub fn get_uint_array(&self, key: &str) -> Vec<U256> {
         self.get_array_and_transform(key, |token| token.into_uint().unwrap())
     }
+    pub fn get_int_array(&self, key: &str) -> Vec<U256> {
+        self.get_array_and_transform(key, |token| token.into_int().unwrap())
+    }
     pub fn get_address_array(&self, key: &str) -> Vec<Address> {
         self.get_array_and_transform(key, |token| token.into_address().unwrap())
     }
@@ -222,6 +225,9 @@ impl EventParam {
     /// Same as get_u256
     pub fn get_uint(&self, key: &str) -> U256 {
         self.get_token(key).into_uint().unwrap()
+    }
+    pub fn get_int(&self, key: &str) -> U256 {
+        self.get_token(key).into_int().unwrap()
     }
     pub fn get_address_string(&self, key: &str) -> String {
         utils::address_to_string(&self.get_address(key)).to_lowercase()
