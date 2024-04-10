@@ -16,7 +16,7 @@ use serde::Deserialize;
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
     pub id: Uuid,
-    pub chain_id: i64,
+    pub(crate) chain_id: i64,
     pub contract_address: String,
     pub contract_name: String,
     pub abi: String,
@@ -24,11 +24,11 @@ pub struct Event {
     parameters: serde_json::Value,
     topics: serde_json::Value,
     pub block_hash: String,
-    pub block_number: i64,
-    pub block_timestamp: i64,
+    pub(crate) block_number: i64,
+    block_timestamp: i64,
     pub transaction_hash: String,
-    pub transaction_index: i32,
-    pub log_index: i32,
+    pub(crate) transaction_index: i32,
+    pub(crate) log_index: i32,
     removed: bool,
     inserted_at: chrono::NaiveDateTime,
 }
@@ -98,6 +98,19 @@ impl Event {
         }
     }
 
+    pub fn get_block_number(&self) -> u64 {
+        self.block_number as u64
+    }
+    pub fn get_block_timestamp(&self) -> u64 {
+        self.block_timestamp as u64
+    }
+    pub fn get_transaction_index(&self) -> u32 {
+        self.transaction_index as u32
+    }
+    pub fn get_log_index(&self) -> u32 {
+        self.transaction_index as u32
+    }
+
     pub fn get_params(&self) -> EventParam {
         EventParam::new(&self.parameters)
     }
@@ -128,7 +141,7 @@ pub struct EventParam {
 }
 
 impl EventParam {
-    pub fn new(parameters: &serde_json::Value) -> EventParam {
+    pub(crate) fn new(parameters: &serde_json::Value) -> EventParam {
         EventParam {
             value: serde_json::from_value(parameters.clone()).unwrap(),
         }

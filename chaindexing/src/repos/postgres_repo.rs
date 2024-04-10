@@ -3,13 +3,15 @@ use std::sync::Arc;
 mod migrations;
 mod raw_queries;
 
+use crate::chain_reorg::{ReorgedBlock, UnsavedReorgedBlock};
+use crate::reset_counts::ResetCount;
 use crate::{get_contract_addresses_stream_by_chain, get_events_stream};
 
 use crate::{
     contracts::{ContractAddress, UnsavedContractAddress},
     events::Event,
     nodes::Node,
-    ReorgedBlock, ResetCount, Streamable, UnsavedReorgedBlock,
+    Streamable,
 };
 use diesel_async::RunQueryDsl;
 

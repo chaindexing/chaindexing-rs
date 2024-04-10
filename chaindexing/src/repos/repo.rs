@@ -6,11 +6,13 @@ use futures_core::{future::BoxFuture, Stream};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 
+use crate::chain_reorg::{ReorgedBlock, UnsavedReorgedBlock};
 use crate::{
     contracts::UnsavedContractAddress,
     events::{Event, PartialEvent},
     nodes::Node,
-    ContractAddress, ReorgedBlock, ResetCount, UnsavedReorgedBlock,
+    reset_counts::ResetCount,
+    ContractAddress,
 };
 
 #[derive(Debug, Display)]

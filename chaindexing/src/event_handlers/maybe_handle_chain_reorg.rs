@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use crate::chain_reorg::{ReorgedBlock, ReorgedBlocks};
+use crate::contract_states::ContractStates;
 use crate::ChaindexingRepo;
-use crate::ContractStates;
 use crate::{
     ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ExecutesWithRawQuery, HasRawQueryClient,
     Repo,
 };
-use crate::{ReorgedBlock, ReorgedBlocks};
 
 pub async fn run<'a>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,

@@ -30,7 +30,10 @@ mod create_initial_contract_addresses {
                 contract_address.address,
                 contract_address_value.to_lowercase()
             );
-            assert_eq!(contract_address.start_block_number, start_block_number);
+            assert_eq!(
+                contract_address.start_block_number,
+                start_block_number as i64
+            );
         })
         .await;
     }
@@ -58,7 +61,7 @@ mod create_initial_contract_addresses {
 
             assert_eq!(
                 contract_address.next_block_number_to_ingest_from,
-                start_block_number
+                start_block_number as i64
             );
         })
         .await;
@@ -87,7 +90,7 @@ mod create_initial_contract_addresses {
 
             assert_eq!(
                 contract_address.next_block_number_to_handle_from,
-                start_block_number
+                start_block_number as i64
             );
         })
         .await;
@@ -155,6 +158,7 @@ mod create_initial_contract_addresses {
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
+            let initial_start_block_number = initial_start_block_number as i64;
 
             assert_eq!(
                 contract_address.start_block_number,

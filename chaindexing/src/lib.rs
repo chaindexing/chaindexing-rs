@@ -12,17 +12,15 @@ mod pruning;
 mod repos;
 mod reset_counts;
 
-pub use chain_reorg::{MinConfirmationCount, ReorgedBlock, ReorgedBlocks, UnsavedReorgedBlock};
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
-pub use contract_states::{ContractState, ContractStateMigrations, ContractStates};
+pub use contract_states::{ContractState, ContractStateMigrations};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, EventParam};
 pub use events_ingester::Provider as EventsIngesterProvider;
 pub use nodes::KeepNodeActiveRequest;
 pub use repos::*;
-pub use reset_counts::ResetCount;
 
 use config::ConfigError;
 use nodes::NodeTasks;
@@ -80,7 +78,7 @@ pub async fn include_contract_in_indexing<'a, S: Send + Sync + Clone>(
     address: &str,
 ) {
     let chain_id = event_context.event.get_chain_id();
-    let start_block_number = event_context.event.block_number;
+    let start_block_number = event_context.event.get_block_number();
 
     let contract_address =
         UnsavedContractAddress::new(contract_name, address, &chain_id, start_block_number);
