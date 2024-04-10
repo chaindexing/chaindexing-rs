@@ -1,7 +1,8 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
+use crate::contract_states::ContractStateMigrations;
 use crate::diesel::schema::chaindexing_contract_addresses;
-use crate::{ChainId, ContractStateMigrations, EventHandler};
+use crate::{ChainId, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::{

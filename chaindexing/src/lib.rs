@@ -1,7 +1,7 @@
 mod chain_reorg;
 mod chains;
 mod config;
-mod contract_states;
+pub mod contract_states;
 mod contracts;
 mod diesel;
 mod event_handlers;
@@ -14,7 +14,6 @@ mod reset_counts;
 
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
-pub use contract_states::{ContractState, ContractStateMigrations};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
 pub use events::{Event, EventParam};
