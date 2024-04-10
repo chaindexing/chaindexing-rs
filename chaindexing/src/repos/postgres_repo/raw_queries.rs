@@ -49,8 +49,9 @@ impl ExecutesWithRawQuery for PostgresRepo {
         let start_block_number = contract_address.start_block_number;
 
         let query = format!(
-            "INSERT INTO chaindexing_contract_addresses (address, contract_name, chain_id, start_block_number)
-            VALUES ('{address}', '{contract_name}', {chain_id}, {start_block_number})"
+            "INSERT INTO chaindexing_contract_addresses 
+            (address, contract_name, chain_id, start_block_number, next_block_number_to_ingest_from, next_block_number_to_handle_from)
+            VALUES ('{address}', '{contract_name}', {chain_id}, {start_block_number}, {start_block_number}, {start_block_number})"
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
