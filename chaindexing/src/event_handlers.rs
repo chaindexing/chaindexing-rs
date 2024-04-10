@@ -47,9 +47,8 @@ pub trait EventHandler: Send + Sync {
 
     /// The human-readable ABI of the event being handled.
     /// For example, Uniswap's PoolCreated event's name is:
-    /// PoolCreated(index_topic_1 address token0, index_topic_2 address token1, index_topic_3 uint24 fee, int24 tickSpacing, address pool)
-    /// The chain explorer's event section of the indexed contract
-    /// can also be used to infer this
+    /// PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
+    /// The chain explorer's event section can also be used to easily infer this
     fn abi(&self) -> &'static str;
     async fn handle_event<'a>(&self, event_context: EventHandlerContext<'a, Self::SharedState>);
 }
