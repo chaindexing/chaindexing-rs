@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use crate::contracts::UnsavedContractAddress;
 use crate::diesel::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
 use ethers::types::{Address, Log, U256, U64};
 
-use crate::{ChainId, ContractEvent};
+use crate::{ChainId, ContractEvent, UnsavedContractAddress};
 use uuid::Uuid;
 
 use serde::Deserialize;

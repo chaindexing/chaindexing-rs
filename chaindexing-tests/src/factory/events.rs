@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chaindexing::{events, Contract, Event};
+use chaindexing::{events, ChainId, Contract, Event};
 use ethers::types::Block;
 
 use super::{transfer_log, BAYC_CONTRACT_ADDRESS};
@@ -14,8 +14,14 @@ pub fn transfer_event_with_contract(contract: Contract<()>) -> Event {
             ..Default::default()
         },
     )]);
-    events::get(&[transfer_log], &[contract], &blocks_by_number)
-        .first()
-        .cloned()
-        .unwrap()
+
+    events::get(
+        &[transfer_log],
+        &[contract],
+        &ChainId::Mainnet,
+        &blocks_by_number,
+    )
+    .first()
+    .cloned()
+    .unwrap()
 }

@@ -8,8 +8,8 @@ use super::provider::{self, Provider};
 use super::EventsIngesterError;
 
 use crate::chain_reorg::Execution;
-use crate::events;
 use crate::Config;
+use crate::{events, ChainId};
 use crate::{
     ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ContractAddress,
     LoadsDataWithRawQuery, Repo,
@@ -20,6 +20,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     raw_query_client: &ChaindexingRepoRawQueryClient,
     contract_addresses: Vec<ContractAddress>,
     provider: &Arc<impl Provider>,
+    chain_id: &ChainId,
     current_block_number: u64,
     Config {
         contracts,
@@ -41,7 +42,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     if !filters.is_empty() {
         let logs = provider::fetch_logs(provider, &filters).await;
         let blocks_by_tx_hash = provider::fetch_blocks_by_number(provider, &logs).await;
-        let events = events::get(&logs, contracts, &blocks_by_tx_hash);
+        let events = events::get(&logs, contracts, chain_id, &blocks_by_tx_hash);
         let contract_addresses = contract_addresses.clone();
 
         ChaindexingRepo::run_in_transaction(conn, move |conn| {

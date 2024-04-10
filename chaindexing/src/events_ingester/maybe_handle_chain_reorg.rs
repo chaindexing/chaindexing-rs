@@ -37,7 +37,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let already_ingested_events = get_already_ingested_events(conn, &filters).await;
-        let provider_events = get_events_from_provider(&filters, provider, contracts).await;
+        let provider_events =
+            get_events_from_provider(&filters, provider, chain_id, contracts).await;
 
         if let Some(added_and_removed_events) =
             get_provider_added_and_removed_events(&already_ingested_events, &provider_events)
@@ -70,12 +71,13 @@ async fn get_already_ingested_events<'a>(
 async fn get_events_from_provider<S: Send + Sync + Clone>(
     filters: &[Filter],
     provider: &Arc<impl Provider>,
+    chain_id: &ChainId,
     contracts: &[Contract<S>],
 ) -> Vec<Event> {
     let logs = provider::fetch_logs(provider, filters).await;
     let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
 
-    events::get(&logs, contracts, &blocks_by_number)
+    events::get(&logs, contracts, chain_id, &blocks_by_number)
 }
 
 async fn handle_chain_reorg<'a>(
