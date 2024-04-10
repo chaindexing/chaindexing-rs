@@ -47,7 +47,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
         }
     }
 
-    pub fn add_address(mut self, address: &str, chain: &Chain, start_block_number: i64) -> Self {
+    pub fn add_address(mut self, address: &str, chain: &Chain, start_block_number: u64) -> Self {
         self.addresses.push(UnsavedContractAddress::new(
             &self.name,
             address,
@@ -170,8 +170,10 @@ impl UnsavedContractAddress {
         contract_name: &str,
         address: &str,
         chain_id: &ChainId,
-        start_block_number: i64,
+        start_block_number: u64,
     ) -> Self {
+        let start_block_number = start_block_number as i64;
+
         UnsavedContractAddress {
             contract_name: contract_name.to_string(),
             address: address.to_lowercase().to_string(),

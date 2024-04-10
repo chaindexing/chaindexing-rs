@@ -9,9 +9,10 @@ pub use postgres_repo::{
 
 mod repo;
 
-pub use repo::{
-    ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, Migratable, Repo, RepoError,
-    RepoMigrations, SQLikeMigrations, Streamable,
+pub use repo::{ExecutesWithRawQuery, HasRawQueryClient, Repo, RepoError};
+
+pub(crate) use repo::{
+    LoadsDataWithRawQuery, Migratable, RepoMigrations, SQLikeMigrations, Streamable,
 };
 
 mod streams;

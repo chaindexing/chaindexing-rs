@@ -17,11 +17,12 @@ use tokio::time::interval;
 use tokio::{sync::Mutex, task};
 
 use crate::chains::{Chain, ChainId};
+use crate::contract_states::ContractStates;
 use crate::contracts::Contracts;
 use crate::pruning::PruningConfig;
 use crate::Config;
+use crate::ContractAddress;
 use crate::{ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient};
-use crate::{ContractAddress, ContractStates};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo, Streamable};
 
 pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> task::JoinHandle<()> {

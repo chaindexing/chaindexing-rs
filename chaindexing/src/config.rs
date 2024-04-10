@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use crate::chain_reorg::MinConfirmationCount;
 use crate::chains::Chain;
 use crate::nodes::{self, KeepNodeActiveRequest};
 use crate::pruning::PruningConfig;
-use crate::{ChaindexingRepo, Contract, MinConfirmationCount};
+use crate::{ChaindexingRepo, Contract};
 
 pub enum ConfigError {
     NoContract,
