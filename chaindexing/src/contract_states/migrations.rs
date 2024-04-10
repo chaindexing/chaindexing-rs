@@ -267,7 +267,12 @@ impl DefaultMigration {
         migration
             .split(',')
             .fold(vec![], |mut unique_migration_tokens, migration_token| {
-                match repeating_state_fields.iter().find(|field| migration_token.contains(**field))
+                let migration_token_field =
+                    migration_token.split_ascii_whitespace().next().unwrap();
+
+                match repeating_state_fields
+                    .iter()
+                    .find(|field| (***field) == migration_token_field)
                 {
                     Some(field) => {
                         let previous_count = repeating_state_fields_count.get(field).unwrap();
@@ -322,9 +327,14 @@ mod contract_state_migrations_get_migration_test {
         let migrations = contract_state.get_migrations();
         let create_state_migration = migrations.first().unwrap();
 
-        DefaultMigration::get_fields().iter().for_each(|state_field| {
-            assert_eq!(create_state_migration.matches(state_field).count(), 1)
-        });
+        assert_eq!(
+            create_state_migration.matches("contract_address").count(),
+            2
+        );
+        assert_eq!(
+            create_state_migration.matches("pool_contract_address").count(),
+            1
+        )
     }
 
     #[test]
@@ -404,6 +414,7 @@ mod contract_state_migrations_get_migration_test {
                 "CREATE TABLE IF NOT EXISTS nft_states (
                       token_id INTEGER NOT NULL,
                       contract_address VARCHAR NOT NULL,
+                      pool_contract_address VARCHAR NOT NULL,
                       owner_address VARCHAR NOT NULL
                   )",
                 "UPDATE nft_states
