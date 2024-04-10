@@ -6,7 +6,7 @@ use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
 use ethers::types::{Address, Log, U256, U64};
 
-use crate::{ChainId, ContractEvent, UnsavedContractAddress};
+use crate::{ChainId, ContractEvent};
 use uuid::Uuid;
 
 use serde::Deserialize;
@@ -71,7 +71,8 @@ impl Event {
     pub fn new(
         log: &Log,
         event: &ContractEvent,
-        contract_address: &UnsavedContractAddress,
+        chain_id: &ChainId,
+        contract_name: &str,
         block_timestamp: i64,
     ) -> Self {
         let log_params = event.value.parse_log(log.clone().into()).unwrap().params;
@@ -79,9 +80,9 @@ impl Event {
 
         Self {
             id: uuid::Uuid::new_v4(),
-            chain_id: contract_address.chain_id,
+            chain_id: *chain_id as i64,
             contract_address: utils::address_to_string(&log.address).to_lowercase(),
-            contract_name: contract_address.contract_name.to_owned(),
+            contract_name: contract_name.to_owned(),
             abi: event.abi.clone(),
             log_params: serde_json::to_value(log_params).unwrap(),
             parameters: serde_json::to_value(parameters).unwrap(),
