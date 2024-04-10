@@ -18,7 +18,7 @@ use serde::Serialize;
 use state_versions::{StateVersion, StateVersions, STATE_VERSIONS_TABLE_PREFIX};
 use state_views::{StateView, StateViews};
 
-pub struct ContractStates;
+pub(crate) struct ContractStates;
 
 impl ContractStates {
     pub async fn backtrack_states<'a>(
@@ -72,6 +72,25 @@ impl ContractStates {
     }
 }
 
+pub type Filters = FiltersOrUpdates;
+pub type Updates = FiltersOrUpdates;
+
+#[derive(Clone, Debug)]
+pub struct FiltersOrUpdates {
+    values: HashMap<String, String>,
+}
+
+impl FiltersOrUpdates {
+    pub fn new(field: impl ToString, value: impl ToString) -> Self {
+        Self {
+            values: HashMap::from([(field.to_string(), value.to_string())]),
+        }
+    }
+    pub fn add(mut self, field: impl ToString, value: impl ToString) -> Self {
+        self.values.insert(field.to_string(), value.to_string());
+        self
+    }
+}
 #[async_trait::async_trait]
 pub trait ContractState:
     DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static
@@ -111,7 +130,7 @@ pub trait ContractState:
 
     async fn update<'a, S: Send + Sync + Clone>(
         &self,
-        updates: HashMap<impl ToString + Send, impl ToString + Send>,
+        updates: &Updates,
         context: &EventHandlerContext<S>,
     ) {
         let event = &context.event;
@@ -119,13 +138,9 @@ pub trait ContractState:
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, event).await;
-        let updates = updates
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect::<HashMap<_, _>>();
 
         let latest_state_version =
-            StateVersion::update(&state_view, &updates, table_name, event, client).await;
+            StateVersion::update(&state_view, &updates.values, table_name, event, client).await;
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
@@ -142,7 +157,7 @@ pub trait ContractState:
     }
 
     async fn read_one<'a, S: Send + Sync + Clone>(
-        filters: HashMap<impl ToString + Send, impl ToString + Send>,
+        filters: &Filters,
         context: &EventHandlerContext<S>,
     ) -> Option<Self> {
         let states = Self::read_many(filters, context).await;
@@ -151,7 +166,7 @@ pub trait ContractState:
     }
 
     async fn read_many<'a, S: Send + Sync + Clone>(
-        filters: HashMap<impl ToString + Send, impl ToString + Send>,
+        filters: &Filters,
         context: &EventHandlerContext<S>,
     ) -> Vec<Self> {
         let client = context.raw_query_client;
@@ -164,14 +179,14 @@ pub trait ContractState:
             WHERE {filters} 
             AND chain_id={context_chain_id} AND contract_address='{context_contract_address}'",
             table_name = Self::table_name(),
-            filters = to_and_filters(&filters),
+            filters = to_and_filters(&filters.values),
         );
 
         ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query).await
     }
 }
 
-pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
+pub(crate) fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
     state.iter().fold(
         (vec![], vec![]),
         |(mut columns, mut values), (column, value)| {
@@ -183,7 +198,9 @@ pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, V
     )
 }
 
-pub fn to_and_filters(state: &HashMap<impl ToString + Send, impl ToString + Send>) -> String {
+pub(crate) fn to_and_filters(
+    state: &HashMap<impl ToString + Send, impl ToString + Send>,
+) -> String {
     let filters = state.iter().fold(vec![], |mut filters, (column, value)| {
         let column = column.to_string();
         let value = value.to_string();
@@ -195,7 +212,7 @@ pub fn to_and_filters(state: &HashMap<impl ToString + Send, impl ToString + Send
     filters.join(" AND ")
 }
 
-pub fn serde_map_to_string_map(
+pub(crate) fn serde_map_to_string_map(
     serde_map: &HashMap<impl AsRef<str>, serde_json::Value>,
 ) -> HashMap<String, String> {
     serde_map.iter().fold(HashMap::new(), |mut map, (key, value)| {
