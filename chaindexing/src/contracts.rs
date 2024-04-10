@@ -5,6 +5,7 @@ use crate::diesel::schema::chaindexing_contract_addresses;
 use crate::{ChainId, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
+use ethers::types::U64;
 use ethers::{
     abi::{Address, Event, HumanReadableParser},
     prelude::Chain,
@@ -136,23 +137,6 @@ impl Contracts {
             .map(|e| (e.value.signature(), e))
             .collect()
     }
-
-    pub fn get_all_contract_addresses_grouped_by_address<S: Send + Sync + Clone>(
-        contracts: &[Contract<S>],
-    ) -> HashMap<Address, &UnsavedContractAddress> {
-        contracts.iter().fold(HashMap::new(), |mut contracts_by_addresses, contract| {
-            contract.addresses.iter().for_each(
-                |contract_address @ UnsavedContractAddress { address, .. }| {
-                    contracts_by_addresses.insert(
-                        Address::from_str(address.as_str()).unwrap(),
-                        contract_address,
-                    );
-                },
-            );
-
-            contracts_by_addresses
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Insertable)]
@@ -198,4 +182,29 @@ pub struct ContractAddress {
     pub start_block_number: i64,
     pub address: String,
     pub contract_name: String,
+}
+
+impl ContractAddress {
+    fn get_chain_id(&self) -> ChainId {
+        U64::from(self.chain_id).try_into().unwrap()
+    }
+
+    pub fn group_contract_addresses_by_address_and_chain_id(
+        contract_addresses: &[ContractAddress],
+    ) -> HashMap<(Address, ChainId), &ContractAddress> {
+        contract_addresses.iter().fold(
+            HashMap::new(),
+            |mut contracts_by_addresses, contract_address @ ContractAddress { address, .. }| {
+                contracts_by_addresses.insert(
+                    (
+                        Address::from_str(address.as_str()).unwrap(),
+                        contract_address.get_chain_id(),
+                    ),
+                    contract_address,
+                );
+
+                contracts_by_addresses
+            },
+        )
+    }
 }

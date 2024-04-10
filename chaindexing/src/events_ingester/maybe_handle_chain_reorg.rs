@@ -5,7 +5,6 @@ use futures_util::FutureExt;
 use std::cmp::min;
 
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
-use crate::contracts::Contract;
 use crate::events::{self, Event};
 use crate::Config;
 use crate::{ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, Repo};
@@ -37,7 +36,16 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let already_ingested_events = get_already_ingested_events(conn, &filters).await;
-        let provider_events = get_events_from_provider(&filters, provider, contracts).await;
+        let logs = provider::fetch_logs(provider, &filters).await;
+        let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
+
+        let provider_events = events::get(
+            &logs,
+            contracts,
+            &contract_addresses,
+            chain_id,
+            &blocks_by_number,
+        );
 
         if let Some(added_and_removed_events) =
             get_provider_added_and_removed_events(&already_ingested_events, &provider_events)
@@ -65,17 +73,6 @@ async fn get_already_ingested_events<'a>(
     }
 
     already_ingested_events
-}
-
-async fn get_events_from_provider<S: Send + Sync + Clone>(
-    filters: &[Filter],
-    provider: &Arc<impl Provider>,
-    contracts: &[Contract<S>],
-) -> Vec<Event> {
-    let logs = provider::fetch_logs(provider, filters).await;
-    let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
-
-    events::get(&logs, contracts, &blocks_by_number)
 }
 
 async fn handle_chain_reorg<'a>(

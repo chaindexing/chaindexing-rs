@@ -86,6 +86,7 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
             raw_query_client,
             contract_addresses.clone(),
             &provider,
+            chain_id,
             current_block_number,
             config,
         )
