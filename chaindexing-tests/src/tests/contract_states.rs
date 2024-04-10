@@ -23,7 +23,7 @@ mod tests {
         new_state.create(&event_context).await;
 
         let returned_state =
-            NftState::read_one([("token_id", "2")].into(), &event_context).await.unwrap();
+            NftState::read_one([("token_id", 2)].into(), &event_context).await.unwrap();
 
         assert_eq!(new_state, returned_state);
     }
@@ -45,10 +45,10 @@ mod tests {
         let updates = [("token_id", "4")];
         new_state.update(updates.into(), &event_context).await;
 
-        let initial_state = NftState::read_one([("token_id", "1")].into(), &event_context).await;
+        let initial_state = NftState::read_one([("token_id", 1)].into(), &event_context).await;
         assert_eq!(initial_state, None);
 
-        let updated_state = NftState::read_one([("token_id", "4")].into(), &event_context).await;
+        let updated_state = NftState::read_one([("token_id", 4)].into(), &event_context).await;
         assert!(updated_state.is_some());
     }
 
@@ -68,7 +68,7 @@ mod tests {
         new_state.create(&event_context).await;
         new_state.delete(&event_context).await;
 
-        let state = NftState::read_one([("token_id", "9")].into(), &event_context).await;
+        let state = NftState::read_one([("token_id", 9)].into(), &event_context).await;
         assert_eq!(state, None);
     }
 }

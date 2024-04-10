@@ -111,7 +111,7 @@ pub trait ContractState:
 
     async fn update<'a, S: Send + Sync + Clone>(
         &self,
-        updates: HashMap<impl AsRef<str> + Send, impl AsRef<str> + Send>,
+        updates: HashMap<impl ToString + Send, impl ToString + Send>,
         context: &EventHandlerContext<S>,
     ) {
         let event = &context.event;
@@ -121,7 +121,7 @@ pub trait ContractState:
         let state_view = self.to_complete_view(table_name, client, event).await;
         let updates = updates
             .iter()
-            .map(|(k, v)| (k.as_ref().to_string(), v.as_ref().to_string()))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect::<HashMap<_, _>>();
 
         let latest_state_version =
@@ -142,7 +142,7 @@ pub trait ContractState:
     }
 
     async fn read_one<'a, S: Send + Sync + Clone>(
-        filters: HashMap<impl AsRef<str> + Send, impl AsRef<str> + Send>,
+        filters: HashMap<impl ToString + Send, impl ToString + Send>,
         context: &EventHandlerContext<S>,
     ) -> Option<Self> {
         let states = Self::read_many(filters, context).await;
@@ -151,7 +151,7 @@ pub trait ContractState:
     }
 
     async fn read_many<'a, S: Send + Sync + Clone>(
-        filters: HashMap<impl AsRef<str> + Send, impl AsRef<str> + Send>,
+        filters: HashMap<impl ToString + Send, impl ToString + Send>,
         context: &EventHandlerContext<S>,
     ) -> Vec<Self> {
         let client = context.raw_query_client;
@@ -183,10 +183,10 @@ pub fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, V
     )
 }
 
-pub fn to_and_filters(state: &HashMap<impl AsRef<str>, impl AsRef<str>>) -> String {
+pub fn to_and_filters(state: &HashMap<impl ToString + Send, impl ToString + Send>) -> String {
     let filters = state.iter().fold(vec![], |mut filters, (column, value)| {
-        let column = column.as_ref();
-        let value = value.as_ref();
+        let column = column.to_string();
+        let value = value.to_string();
         filters.push(format!("{column} = '{value}'"));
 
         filters
