@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::contract_states::ContractStateMigrations;
@@ -91,6 +92,15 @@ impl<S: Send + Sync + Clone> Contract<S> {
 
     pub fn build_events(&self) -> Vec<ContractEvent> {
         self.get_event_abis().iter().map(|abi| ContractEvent::new(abi)).collect()
+    }
+}
+
+impl<S: Send + Sync + Clone> Debug for Contract<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Contract")
+            .field("name", &self.name)
+            .field("addresses", &self.addresses)
+            .finish()
     }
 }
 

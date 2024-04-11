@@ -48,7 +48,7 @@ enum NodeTasksState {
     Aborted,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct KeepNodeActiveRequest {
     /// Both in milliseconds
     last_refreshed_at_and_active_grace_period: Arc<Mutex<(u64, u32)>>,

@@ -26,7 +26,7 @@ impl std::fmt::Debug for ConfigError {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OptimizationConfig {
     pub keep_node_active_request: KeepNodeActiveRequest,
     /// Optimization starts after the seconds specified here.
@@ -36,7 +36,7 @@ pub struct OptimizationConfig {
     pub optimize_after_in_secs: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Config<SharedState: Sync + Send + Clone> {
     pub chains: Vec<Chain>,
     pub repo: ChaindexingRepo,

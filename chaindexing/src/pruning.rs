@@ -1,4 +1,4 @@
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PruningConfig {
     /// Retains events inserted within the max age specified
     /// below. Unit in seconds.

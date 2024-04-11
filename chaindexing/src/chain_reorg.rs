@@ -5,7 +5,7 @@ use crate::{diesel::schema::chaindexing_reorged_blocks, ChainId};
 use diesel::prelude::{Insertable, Queryable};
 
 /// Tolerance for chain re-organization
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MinConfirmationCount {
     value: u8,
 }

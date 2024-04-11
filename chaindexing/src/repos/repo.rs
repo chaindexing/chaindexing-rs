@@ -1,4 +1,5 @@
 use derive_more::Display;
+use std::fmt::Debug;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -23,7 +24,7 @@ pub enum RepoError {
 
 #[async_trait::async_trait]
 pub trait Repo:
-    Sync + Send + Migratable + Streamable + ExecutesWithRawQuery + LoadsDataWithRawQuery + Clone
+    Sync + Send + Migratable + Streamable + ExecutesWithRawQuery + LoadsDataWithRawQuery + Clone + Debug
 {
     type Pool;
     type Conn<'a>;

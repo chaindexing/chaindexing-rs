@@ -50,7 +50,7 @@ impl From<DieselError> for RepoError {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PostgresRepo {
     url: String,
 }
