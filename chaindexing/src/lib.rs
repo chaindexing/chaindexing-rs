@@ -7,6 +7,7 @@ mod diesel;
 mod event_handlers;
 pub mod events;
 pub mod events_ingester;
+mod node_task;
 mod nodes;
 mod pruning;
 mod repos;
@@ -15,7 +16,7 @@ mod reset_counts;
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
 pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
-pub use event_handlers::{EventHandler, EventHandlerContext as EventContext, EventHandlers};
+pub use event_handlers::{EventHandler, EventHandlerContext as EventContext};
 pub use events::{Event, EventParam};
 pub use events_ingester::Provider as EventsIngesterProvider;
 pub use nodes::KeepNodeActiveRequest;
@@ -115,11 +116,26 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
 
         let pool = config.repo.get_pool(1).await;
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
+        let conn = &mut conn;
 
         let mut node_tasks = NodeTasks::new(&current_node);
 
         loop {
-            node_tasks.orchestrate(&config, &mut conn).await;
+            // Keep node active first to guarantee that at least this node is active before election
+            ChaindexingRepo::keep_node_active(conn, &current_node).await;
+            let active_nodes =
+                ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
+
+            let start_tasks = || {
+                let event_ingester = events_ingester::start(&config);
+                let event_handlers = event_handlers::start(&config);
+
+                vec![event_ingester, event_handlers]
+            };
+
+            node_tasks
+                .orchestrate(&config.optimization_config, &active_nodes, &start_tasks)
+                .await;
 
             interval.tick().await;
         }

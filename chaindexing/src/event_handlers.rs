@@ -4,9 +4,10 @@ use std::{sync::Arc, time::Duration};
 mod handle_events;
 mod maybe_handle_chain_reorg;
 
-use tokio::{sync::Mutex, task, time::interval};
+use tokio::{sync::Mutex, time::interval};
 
 use crate::contract_states::ContractStates;
+use crate::node_task::NodeTask;
 use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
 use crate::{ChaindexingRepoRawQueryTxnClient, EventParam, HasRawQueryClient};
 
@@ -54,45 +55,37 @@ pub trait EventHandler: Send + Sync {
 }
 
 // TODO: Use just raw query client through for mutations
-pub struct EventHandlers;
+pub fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>) -> NodeTask {
+    let config = config.clone();
+    let task = tokio::spawn(async move {
+        let pool = config.repo.get_pool(1).await;
+        let conn = ChaindexingRepo::get_conn(&pool).await;
 
-impl EventHandlers {
-    pub fn start<S: Send + Sync + Clone + Debug + 'static>(
-        config: &Config<S>,
-    ) -> task::JoinHandle<()> {
-        let config = config.clone();
-        tokio::spawn(async move {
-            let pool = config.repo.get_pool(1).await;
-            let conn = ChaindexingRepo::get_conn(&pool).await;
+        let mut raw_query_client = config.repo.get_raw_query_client().await;
 
-            let mut raw_query_client = config.repo.get_raw_query_client().await;
+        let conn = Arc::new(Mutex::new(conn));
+        let mut interval = interval(Duration::from_millis(config.handler_rate_ms));
+        let event_handlers_by_event_abi =
+            Contracts::get_all_event_handlers_by_event_abi(&config.contracts);
 
-            let conn = Arc::new(Mutex::new(conn));
-            let mut interval = interval(Duration::from_millis(config.handler_rate_ms));
-            let event_handlers_by_event_abi =
-                Contracts::get_all_event_handlers_by_event_abi(&config.contracts);
+        loop {
+            handle_events::run(
+                conn.clone(),
+                &event_handlers_by_event_abi,
+                &mut raw_query_client,
+                &config.shared_state,
+            )
+            .await;
 
-            loop {
-                handle_events::run(
-                    conn.clone(),
-                    &event_handlers_by_event_abi,
-                    &mut raw_query_client,
-                    &config.shared_state,
-                )
+            let state_migrations = Contracts::get_state_migrations(&config.contracts);
+            let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+
+            maybe_handle_chain_reorg::run(conn.clone(), &mut raw_query_client, &state_table_names)
                 .await;
 
-                let state_migrations = Contracts::get_state_migrations(&config.contracts);
-                let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+            interval.tick().await;
+        }
+    });
 
-                maybe_handle_chain_reorg::run(
-                    conn.clone(),
-                    &mut raw_query_client,
-                    &state_table_names,
-                )
-                .await;
-
-                interval.tick().await;
-            }
-        })
-    }
+    NodeTask::new(vec![task])
 }

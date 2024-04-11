@@ -7,56 +7,69 @@ mod provider;
 pub use error::EventsIngesterError;
 pub use provider::{Provider, ProviderError};
 
+use std::cmp::max;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use futures_util::StreamExt;
+use tokio::sync::Mutex;
 use tokio::time::interval;
-use tokio::{sync::Mutex, task};
 
-use crate::chains::{Chain, ChainId};
+use crate::chains::ChainId;
 use crate::contract_states::ContractStates;
 use crate::contracts::Contracts;
+use crate::node_task::NodeTask;
 use crate::pruning::PruningConfig;
+use crate::Chain;
 use crate::Config;
 use crate::ContractAddress;
 use crate::{ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo, Streamable};
 
-pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> task::JoinHandle<()> {
-    let config = config.clone();
-    tokio::spawn(async move {
-        let pool = config.repo.get_pool(1).await;
-        let conn = ChaindexingRepo::get_conn(&pool).await;
-        let conn = Arc::new(Mutex::new(conn));
+pub fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> NodeTask {
+    let chains: Vec<_> = config.chains.clone();
+    let chunk_size = max(chains.len() / config.chain_concurrency as usize, 1);
+    let chunked_chains: Vec<_> = chains.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-        let raw_query_client = config.repo.get_raw_query_client().await;
+    let mut tasks = Vec::new();
+    for chains in chunked_chains {
+        let config = config.clone();
 
-        let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
+        let task = tokio::spawn(async move {
+            let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
+            let mut last_pruned_at_per_chain_id = HashMap::new();
 
-        let mut last_pruned_at_per_chain_id = HashMap::new();
+            loop {
+                for Chain { id, json_rpc_url } in chains.iter() {
+                    let provider = provider::get(json_rpc_url);
 
-        loop {
-            for chain @ Chain { json_rpc_url, .. } in config.chains.iter() {
-                let provider = provider::get(json_rpc_url);
+                    let raw_query_client = config.repo.get_raw_query_client().await;
+                    let pool = config.repo.get_pool(1).await;
+                    let conn = ChaindexingRepo::get_conn(&pool).await;
+                    let conn = Arc::new(Mutex::new(conn));
 
-                ingest(
-                    conn.clone(),
-                    &raw_query_client,
-                    provider,
-                    &chain.id,
-                    &config,
-                    &mut last_pruned_at_per_chain_id,
-                )
-                .await
-                .unwrap();
+                    ingest(
+                        conn.clone(),
+                        &raw_query_client,
+                        provider,
+                        id,
+                        &config,
+                        &mut last_pruned_at_per_chain_id,
+                    )
+                    .await
+                    .unwrap();
+                }
+
+                interval.tick().await;
             }
+        });
 
-            interval.tick().await;
-        }
-    })
+        tasks.push(task);
+    }
+
+    NodeTask::new(tasks)
 }
 
 pub async fn ingest<'a, S: Send + Sync + Clone>(

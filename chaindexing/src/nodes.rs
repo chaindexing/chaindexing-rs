@@ -1,10 +1,10 @@
 use diesel::{prelude::Insertable, Queryable};
 use serde::Deserialize;
 
+use crate::node_task::NodeTask;
 use crate::OptimizationConfig;
 
 use super::diesel::schema::chaindexing_nodes;
-use super::{ChaindexingRepo, ChaindexingRepoConn, Repo};
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, Insertable, Queryable)]
 #[diesel(table_name = chaindexing_nodes)]
@@ -26,9 +26,6 @@ impl Node {
         self.id == leader.id
     }
 }
-
-use super::Config;
-use super::{events_ingester, EventHandlers};
 
 use chrono::Utc;
 use std::fmt::Debug;
@@ -94,7 +91,7 @@ impl KeepNodeActiveRequest {
 pub struct NodeTasks<'a> {
     current_node: &'a Node,
     state: NodeTasksState,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
+    tasks: Vec<NodeTask>,
     started_at_in_secs: u64,
     /// Not used currently. In V2, We will populate NodeTasksErrors here
     pub errors: Vec<String>,
@@ -111,27 +108,25 @@ impl<'a> NodeTasks<'a> {
         }
     }
 
-    pub async fn orchestrate<'b, S: Send + Sync + Clone + Debug + 'static>(
+    pub async fn orchestrate<StartTasks>(
         &mut self,
-        config: &Config<S>,
-        conn: &mut ChaindexingRepoConn<'b>,
-    ) {
-        // Keep node active first to guarantee that at least this node is active before election
-        ChaindexingRepo::keep_node_active(conn, self.current_node).await;
-
-        let active_nodes =
-            ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
-        let leader_node = elect_leader(&active_nodes);
+        optimization_config: &Option<OptimizationConfig>,
+        active_nodes: &[Node],
+        start_tasks: &StartTasks,
+    ) where
+        StartTasks: Fn() -> Vec<NodeTask>,
+    {
+        let leader_node = elect_leader(active_nodes);
 
         if self.current_node.is_leader(leader_node) {
             match self.state {
-                NodeTasksState::Idle | NodeTasksState::Aborted => self.make_active(config),
+                NodeTasksState::Idle | NodeTasksState::Aborted => self.make_active(start_tasks),
 
                 NodeTasksState::Active => {
                     if let Some(OptimizationConfig {
                         keep_node_active_request,
                         optimize_after_in_secs,
-                    }) = &config.optimization_config
+                    }) = optimization_config
                     {
                         if keep_node_active_request.is_stale().await
                             && self.started_n_seconds_ago(*optimize_after_in_secs)
@@ -145,10 +140,10 @@ impl<'a> NodeTasks<'a> {
                     if let Some(OptimizationConfig {
                         keep_node_active_request,
                         ..
-                    }) = &config.optimization_config
+                    }) = optimization_config
                     {
                         if keep_node_active_request.is_recent().await {
-                            self.make_active(config)
+                            self.make_active(start_tasks)
                         }
                     }
                 }
@@ -158,8 +153,11 @@ impl<'a> NodeTasks<'a> {
         }
     }
 
-    fn make_active<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
-        self.start(config);
+    fn make_active<StartTasks>(&mut self, start_tasks: &StartTasks)
+    where
+        StartTasks: Fn() -> Vec<NodeTask>,
+    {
+        self.tasks = start_tasks();
         self.state = NodeTasksState::Active;
     }
     fn make_inactive(&mut self) {
@@ -170,16 +168,9 @@ impl<'a> NodeTasks<'a> {
         self.stop();
         self.state = NodeTasksState::Aborted;
     }
-
-    fn start<S: Send + Sync + Clone + Debug + 'static>(&mut self, config: &Config<S>) {
-        let event_ingester = events_ingester::start(config);
-        let event_handlers = EventHandlers::start(config);
-
-        self.tasks = vec![event_ingester, event_handlers];
-    }
     fn stop(&mut self) {
         for task in &self.tasks {
-            task.abort();
+            task.stop();
         }
     }
 
