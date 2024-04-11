@@ -45,6 +45,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub blocks_per_batch: u64,
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
+    pub chain_concurrency: u32,
     node_election_rate_ms: Option<u64>,
     pub reset_count: u64,
     pub reset_queries: Vec<String>,
@@ -64,6 +65,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             blocks_per_batch: 8_000,
             handler_rate_ms: 4_000,
             ingestion_rate_ms: 20_000,
+            chain_concurrency: 4,
             node_election_rate_ms: None,
             reset_count: 0,
             reset_queries: vec![],
@@ -124,6 +126,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn with_ingestion_rate_ms(mut self, ingestion_rate_ms: u64) -> Self {
         self.ingestion_rate_ms = ingestion_rate_ms;
+
+        self
+    }
+
+    pub fn with_chain_concurrency(mut self, chain_concurrency: u32) -> Self {
+        self.chain_concurrency = chain_concurrency;
 
         self
     }
