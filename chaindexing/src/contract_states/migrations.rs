@@ -161,6 +161,8 @@ fn append_migration(migration: &str, migration_to_append: &str) -> String {
 fn get_remaining_state_versions_migration() -> String {
     // TOOO:: Maybe add `chaindexing_` here to prevent the user from
     // overriding these fields (including state_version_group_id)
+    // state_version_id helps distinguish between state versions uniquely
+    // Helps in rare case of no state view change but new state version
     format!(
         "state_version_id BIGSERIAL PRIMARY KEY,
         state_version_is_deleted BOOL NOT NULL default false,
