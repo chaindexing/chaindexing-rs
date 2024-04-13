@@ -20,7 +20,7 @@ mod create_initial_contract_addresses {
                 &chain_id,
                 start_block_number,
             )];
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -54,7 +54,7 @@ mod create_initial_contract_addresses {
                 &chain_id,
                 start_block_number,
             )];
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -80,7 +80,7 @@ mod create_initial_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
 
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-address",
@@ -90,7 +90,7 @@ mod create_initial_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -101,7 +101,7 @@ mod create_initial_contract_addresses {
     }
 
     #[tokio::test]
-    pub async fn does_not_update_block_number_related_fields() {
+    pub async fn updates_start_block_number() {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
@@ -115,7 +115,46 @@ mod create_initial_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+
+            let updated_contract_address_start_block_number = 2000;
+            let updated_contract_address = UnsavedContractAddress::new(
+                "updated-contract-address",
+                "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
+                &ChainId::Arbitrum,
+                updated_contract_address_start_block_number,
+            );
+            let contract_addresses = vec![updated_contract_address];
+
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+
+            let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
+            let contract_address = contract_addresses.first().unwrap();
+
+            assert_eq!(
+                contract_address.start_block_number as u64,
+                updated_contract_address_start_block_number
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    pub async fn does_not_update_next_block_number_to_ingest_from() {
+        let pool = test_runner::get_pool().await;
+
+        test_runner::run_test(&pool, |mut conn| async move {
+            let initial_start_block_number = 400;
+
+            let initial_contract_address = UnsavedContractAddress::new(
+                "initial-contract-address",
+                "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
+                &ChainId::Arbitrum,
+                initial_start_block_number,
+            );
+
+            let contract_addresses = vec![initial_contract_address];
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
 
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-address",
@@ -125,16 +164,12 @@ mod create_initial_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
             let initial_start_block_number = initial_start_block_number as i64;
 
-            assert_eq!(
-                contract_address.start_block_number,
-                initial_start_block_number
-            );
             assert_eq!(
                 contract_address.next_block_number_to_ingest_from,
                 initial_start_block_number
