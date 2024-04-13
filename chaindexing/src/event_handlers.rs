@@ -83,7 +83,8 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
             let deferred_mutations_for_mcs = DeferredFutures::new();
 
             let chain_ids: Vec<_> = config.chains.iter().map(|c| c.id as u64).collect();
-            let chunk_size = max(chain_ids.len() / config.chain_concurrency as usize, 1);
+            let chain_ids_count = chain_ids.len();
+            let chunk_size = max(chain_ids_count / config.chain_concurrency as usize, 1);
             let chunked_chain_ids: Vec<_> =
                 chain_ids.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
@@ -131,7 +132,9 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                 let state_migrations = contracts::get_state_migrations(&config.contracts);
                 let state_table_names = states::get_all_table_names(&state_migrations);
 
-                let mut interval = interval(Duration::from_millis(config.handler_rate_ms));
+                let mut interval = interval(Duration::from_millis(
+                    chain_ids_count as u64 * config.handler_rate_ms,
+                ));
 
                 loop {
                     maybe_handle_chain_reorg::run(
