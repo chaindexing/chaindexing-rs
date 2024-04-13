@@ -3,7 +3,7 @@ mod tests {
     use std::sync::Arc;
 
     use chaindexing::deferred_futures::DeferredFutures;
-    use chaindexing::states::{Filters, Updates};
+    use chaindexing::states::Filters;
     use chaindexing::{ChaindexingRepo, EventContext, HasRawQueryClient};
     use tokio::sync::Mutex;
 
@@ -55,7 +55,7 @@ mod tests {
 
         let new_state = NftState { token_id: 1 };
         new_state.create(&event_context).await;
-        new_state.update(&Updates::new("token_id", 4), &event_context).await;
+        new_state.update(&Filters::new("token_id", 4), &event_context).await;
 
         let initial_state = NftState::read_one(&Filters::new("token_id", 1), &event_context).await;
         assert_eq!(initial_state, None);

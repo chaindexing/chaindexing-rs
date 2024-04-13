@@ -4,11 +4,11 @@ use std::fmt::Debug;
 use crate::event_handlers::EventHandlerContext;
 use crate::{ChaindexingRepoRawQueryTxnClient, Event};
 
+use super::filters::Filters;
 use super::state;
 use super::state::read_many;
 use super::state_versions::StateVersion;
 use super::state_views::StateView;
-use super::{Filters, Updates};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -36,7 +36,7 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
 
     async fn update<'a, S: Send + Sync + Clone>(
         &self,
-        updates: &Updates,
+        updates: &Filters,
         context: &EventHandlerContext<S>,
     ) {
         let event = &context.event;
@@ -48,7 +48,7 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
         Self::must_be_within_chain(&state_view, event);
 
         let latest_state_version =
-            StateVersion::update(&state_view, &updates.values, table_name, event, client).await;
+            StateVersion::update(&state_view, &updates.get(event), table_name, event, client).await;
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 

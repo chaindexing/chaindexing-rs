@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::event_handlers::EventHandlerContext;
 use crate::{ChaindexingRepo, LoadsDataWithRawQuery};
 
+use super::filters::Filters;
 use super::state_versions::StateVersion;
 use super::state_views::StateView;
-use super::Filters;
 use super::{serde_map_to_string_map, to_and_filters};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -32,7 +32,7 @@ pub async fn read_many<'a, 'b, S: Send + Sync + Clone, T: Send + DeserializeOwne
         "SELECT * FROM {table_name} 
         WHERE {filters}",
         table_name = table_name,
-        filters = to_and_filters(&filters.values),
+        filters = to_and_filters(&filters.get(&context.event)),
     );
 
     ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query).await

@@ -4,10 +4,10 @@ use std::fmt::Debug;
 use crate::event_handlers::EventHandlerContext;
 use crate::{ChaindexingRepoRawQueryTxnClient, Event};
 
+use super::filters::Filters;
 use super::state::{self, read_many};
 use super::state_versions::StateVersion;
 use super::state_views::StateView;
-use super::{Filters, Updates};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -38,7 +38,7 @@ pub trait MultiChainState:
 
     async fn update<'a, 'b, 'life1: 'b, S: Send + Sync + Clone>(
         &self,
-        updates: &'life1 Updates,
+        updates: &'life1 Filters,
         context: &'life1 EventHandlerContext<'a, 'b, S>,
     ) {
         let event = context.event.clone();
@@ -54,7 +54,7 @@ pub trait MultiChainState:
 
                 let latest_state_version = StateVersion::update_without_txn(
                     &state_view,
-                    &updates.values,
+                    &updates.get(&event),
                     table_name,
                     &event,
                     &mut client,

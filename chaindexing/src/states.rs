@@ -1,7 +1,7 @@
 pub use migrations::StateMigrations;
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::{collections::HashMap, fmt::Debug};
 
 mod migrations;
 mod state_versions;
@@ -9,8 +9,11 @@ mod state_views;
 
 mod chain_state;
 mod contract_state;
+mod filters;
 mod multi_chain_state;
 mod state;
+
+pub use filters::Filters;
 
 use crate::{
     ChaindexingRepo, ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient,
@@ -69,26 +72,6 @@ pub fn get_all_table_names(state_migrations: &[Arc<dyn StateMigrations>]) -> Vec
         .iter()
         .flat_map(|state_migration| state_migration.get_table_names())
         .collect()
-}
-
-pub type Filters = FiltersOrUpdates;
-pub type Updates = FiltersOrUpdates;
-
-#[derive(Clone, Debug)]
-pub struct FiltersOrUpdates {
-    values: HashMap<String, String>,
-}
-
-impl FiltersOrUpdates {
-    pub fn new(field: impl ToString, value: impl ToString) -> Self {
-        Self {
-            values: HashMap::from([(field.to_string(), value.to_string())]),
-        }
-    }
-    pub fn add(mut self, field: impl ToString, value: impl ToString) -> Self {
-        self.values.insert(field.to_string(), value.to_string());
-        self
-    }
 }
 
 pub(crate) fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<String>, Vec<String>) {
