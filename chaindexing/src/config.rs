@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::chain_reorg::MinConfirmationCount;
 use crate::chains::Chain;
-use crate::nodes::{self, KeepNodeActiveRequest};
+use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
 use crate::{ChaindexingRepo, Contract};
 
@@ -28,22 +28,19 @@ impl std::fmt::Debug for ConfigError {
 
 #[derive(Clone, Debug)]
 pub struct OptimizationConfig {
-    pub(crate) keep_node_active_request: KeepNodeActiveRequest,
+    pub(crate) node_heartbeat: NodeHeartbeat,
     /// Optimization starts after the seconds specified here.
     /// This is the typically the estimated time to complete initial indexing
     /// i.e. the estimated time in seconds for chaindexing to reach
     /// the current block for all chains being indexed.
-    pub(crate) optimize_after_in_secs: u64,
+    pub(crate) start_after_in_secs: u64,
 }
 
 impl OptimizationConfig {
-    pub fn new(
-        keep_node_active_request: &KeepNodeActiveRequest,
-        optimize_after_in_secs: u64,
-    ) -> Self {
+    pub fn new(node_heartbeat: &NodeHeartbeat, start_after_in_secs: u64) -> Self {
         Self {
-            keep_node_active_request: keep_node_active_request.clone(),
-            optimize_after_in_secs,
+            node_heartbeat: node_heartbeat.clone(),
+            start_after_in_secs,
         }
     }
 }

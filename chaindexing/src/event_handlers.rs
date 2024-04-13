@@ -8,7 +8,7 @@ mod maybe_handle_chain_reorg;
 use tokio::{sync::Mutex, time::interval};
 
 use crate::deferred_futures::DeferredFutures;
-use crate::node_task::NodeTask;
+use crate::nodes::NodeTask;
 use crate::{
     contracts, states, ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient, EventParam,
     HasRawQueryClient,

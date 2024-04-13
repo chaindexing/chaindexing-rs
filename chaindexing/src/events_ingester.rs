@@ -19,7 +19,7 @@ use tokio::time::interval;
 
 use crate::chains::ChainId;
 use crate::contracts;
-use crate::node_task::NodeTask;
+use crate::nodes::NodeTask;
 use crate::pruning::PruningConfig;
 use crate::states;
 use crate::Chain;
