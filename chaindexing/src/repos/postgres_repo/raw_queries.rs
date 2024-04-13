@@ -227,7 +227,7 @@ impl LoadsDataWithRawQuery for PostgresRepo {
     async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock> {
         Self::load_data_list_from_raw_query(
             client,
-            "SELECT * chaindexing_reorged_blocks WHERE handled_at is NULL",
+            "SELECT * FROM chaindexing_reorged_blocks WHERE handled_at is NULL",
         )
         .await
     }
