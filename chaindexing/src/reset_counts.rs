@@ -5,7 +5,6 @@ use diesel::{Insertable, Queryable};
 #[diesel(table_name = chaindexing_reset_counts)]
 pub struct ResetCount {
     id: i64,
-    inserted_at: chrono::NaiveDateTime,
 }
 
 impl ResetCount {

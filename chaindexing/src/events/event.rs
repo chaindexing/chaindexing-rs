@@ -19,7 +19,6 @@ pub struct Event {
     pub contract_address: String,
     pub contract_name: String,
     pub abi: String,
-    log_params: serde_json::Value,
     parameters: serde_json::Value,
     topics: serde_json::Value,
     pub block_hash: String,
@@ -29,7 +28,6 @@ pub struct Event {
     pub(crate) transaction_index: i32,
     pub(crate) log_index: i32,
     removed: bool,
-    inserted_at: chrono::NaiveDateTime,
 }
 
 /// Introduced to allow computing with a subset of Event struct
@@ -52,7 +50,6 @@ impl PartialEq for Event {
         self.chain_id == other.chain_id
             && self.contract_address == other.contract_address
             && self.abi == other.abi
-            && self.log_params == other.log_params
             && self.block_hash == other.block_hash
     }
 }
@@ -62,7 +59,6 @@ impl Hash for Event {
         self.chain_id.hash(state);
         self.contract_address.hash(state);
         self.abi.hash(state);
-        self.log_params.to_string().hash(state);
         self.block_hash.hash(state);
     }
 }
@@ -84,7 +80,6 @@ impl Event {
             contract_address: utils::address_to_string(&log.address).to_lowercase(),
             contract_name: contract_name.to_owned(),
             abi: event.abi.clone(),
-            log_params: serde_json::to_value(log_params).unwrap(),
             parameters: serde_json::to_value(parameters).unwrap(),
             topics: serde_json::to_value(&log.topics).unwrap(),
             block_hash: hashes::h256_to_string(&log.block_hash.unwrap()).to_lowercase(),
@@ -94,7 +89,6 @@ impl Event {
             transaction_index: log.transaction_index.unwrap().as_u32() as i32,
             log_index: log.log_index.unwrap().as_u32() as i32,
             removed: log.removed.unwrap(),
-            inserted_at: chrono::Utc::now().naive_utc(),
         }
     }
 

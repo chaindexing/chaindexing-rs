@@ -1,7 +1,8 @@
 use std::cmp::max;
 use std::collections::HashMap;
 
-use crate::{diesel::schema::chaindexing_reorged_blocks, ChainId};
+use crate::diesel::schema::chaindexing_reorged_blocks;
+use crate::ChainId;
 use diesel::prelude::Insertable;
 use serde::Deserialize;
 
@@ -47,7 +48,6 @@ pub struct ReorgedBlock {
     pub block_number: i64,
     pub chain_id: i64,
     handled_at: Option<chrono::NaiveDateTime>,
-    inserted_at: chrono::NaiveDateTime,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -55,7 +55,6 @@ pub struct ReorgedBlock {
 pub struct UnsavedReorgedBlock {
     pub block_number: i64,
     pub chain_id: i64,
-    inserted_at: chrono::NaiveDateTime,
 }
 
 impl UnsavedReorgedBlock {
@@ -63,7 +62,6 @@ impl UnsavedReorgedBlock {
         Self {
             block_number,
             chain_id: *chain_id as i64,
-            inserted_at: chrono::Utc::now().naive_utc(),
         }
     }
 }

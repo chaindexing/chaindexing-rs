@@ -27,7 +27,6 @@ pub mod schema {
           contract_address -> VarChar,
           contract_name -> VarChar,
           abi -> Text,
-          log_params -> Json,
           parameters -> Json,
           topics -> Json,
           block_hash -> VarChar,
@@ -37,14 +36,12 @@ pub mod schema {
           transaction_index -> Int4,
           log_index -> Int4,
           removed -> Bool,
-          inserted_at -> Timestamptz,
       }
     }
 
     diesel::table! {
       chaindexing_reset_counts (id) {
           id -> Int8,
-          inserted_at -> Timestamptz,
       }
     }
 
@@ -53,8 +50,7 @@ pub mod schema {
           id -> Int4,
           block_number -> Int8,
           chain_id -> Int8,
-          handled_at -> Nullable<Timestamptz>,
-          inserted_at -> Timestamptz,
+          handled_at -> Nullable<Int8>,
       }
     }
 
