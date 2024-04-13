@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::Event;
 use crate::{ChaindexingRepo, ChaindexingRepoRawQueryTxnClient};
+use crate::{ChaindexingRepoRawQueryClient, Event};
 use crate::{ExecutesWithRawQuery, LoadsDataWithRawQuery};
 
 use super::state_versions::{StateVersion, StateVersions, STATE_VERSIONS_UNIQUE_FIELDS};
@@ -23,6 +23,7 @@ impl StateViews {
         }
     }
 }
+
 pub struct StateView;
 
 impl StateView {
@@ -67,6 +68,23 @@ impl StateView {
         }
     }
 
+    pub async fn refresh_without_txn(
+        latest_state_version: &HashMap<String, String>,
+        table_name: &str,
+        client: &ChaindexingRepoRawQueryClient,
+    ) {
+        let state_version_group_id = StateVersion::get_group_id(latest_state_version);
+
+        if StateVersion::was_deleted(latest_state_version) {
+            Self::delete_without_txn(&state_version_group_id, table_name, client).await;
+        } else {
+            let new_state_view = Self::from_latest_state_version(latest_state_version);
+
+            Self::delete_without_txn(&state_version_group_id, table_name, client).await;
+            Self::create_without_txn(&new_state_view, table_name, client).await;
+        }
+    }
+
     fn from_latest_state_version(
         latest_state_version: &HashMap<String, String>,
     ) -> HashMap<String, String> {
@@ -82,11 +100,27 @@ impl StateView {
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
-        let query = format!(
+        ChaindexingRepo::execute_raw_query_in_txn(
+            client,
+            &Self::delete_query(state_version_group_id, table_name),
+        )
+        .await;
+    }
+    async fn delete_without_txn(
+        state_version_group_id: &str,
+        table_name: &str,
+        client: &ChaindexingRepoRawQueryClient,
+    ) {
+        ChaindexingRepo::execute_raw_query(
+            client,
+            &Self::delete_query(state_version_group_id, table_name),
+        )
+        .await;
+    }
+    fn delete_query(state_version_group_id: &str, table_name: &str) -> String {
+        format!(
             "DELETE FROM {table_name} WHERE state_version_group_id = '{state_version_group_id}'",
-        );
-
-        ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
+        )
     }
 
     async fn create<'a>(
@@ -94,13 +128,26 @@ impl StateView {
         table_name: &str,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) {
+        ChaindexingRepo::execute_raw_query_in_txn(
+            client,
+            &Self::create_query(new_state_view, table_name),
+        )
+        .await;
+    }
+    async fn create_without_txn(
+        new_state_view: &HashMap<String, String>,
+        table_name: &str,
+        client: &ChaindexingRepoRawQueryClient,
+    ) {
+        ChaindexingRepo::execute_raw_query(client, &Self::create_query(new_state_view, table_name))
+            .await;
+    }
+    fn create_query(new_state_view: &HashMap<String, String>, table_name: &str) -> String {
         let (columns, values) = to_columns_and_values(new_state_view);
-        let query = format!(
+        format!(
             "INSERT INTO {table_name} ({columns}) VALUES ({values})",
             columns = columns.join(","),
             values = values.join(",")
-        );
-
-        ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
+        )
     }
 }

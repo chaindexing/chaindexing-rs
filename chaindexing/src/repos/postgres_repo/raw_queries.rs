@@ -1,7 +1,9 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
+use crate::chain_reorg::ReorgedBlock;
+use crate::event_handler_subscriptions::EventHandlerSubscription;
 use crate::events::PartialEvent;
-use crate::UnsavedContractAddress;
+use crate::{Event, UnsavedContractAddress};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
 use serde::de::DeserializeOwned;
 
@@ -39,6 +41,25 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client.commit().await.unwrap();
     }
 
+    async fn create_event_handler_subscriptions(
+        client: &Self::RawQueryClient,
+        event_handler_subscriptions: &[EventHandlerSubscription],
+    ) {
+        for EventHandlerSubscription {
+            chain_id,
+            next_block_number_to_handle_from,
+        } in event_handler_subscriptions
+        {
+            let query = format!(
+                "INSERT INTO chaindexing_event_handler_subscriptions 
+                (chain_id, next_block_number_to_handle_from)
+                VALUES ('{chain_id}', {next_block_number_to_handle_from})"
+            );
+
+            Self::execute_raw_query(client, &query).await;
+        }
+    }
+
     async fn create_contract_address<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         contract_address: &UnsavedContractAddress,
@@ -50,22 +71,23 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
         let query = format!(
             "INSERT INTO chaindexing_contract_addresses 
-            (address, contract_name, chain_id, start_block_number, next_block_number_to_ingest_from, next_block_number_to_handle_from)
-            VALUES ('{address}', '{contract_name}', {chain_id}, {start_block_number}, {start_block_number}, {start_block_number})"
+            (address, contract_name, chain_id, start_block_number, next_block_number_to_ingest_from)
+            VALUES ('{address}', '{contract_name}', {chain_id}, {start_block_number}, {start_block_number})"
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn update_next_block_number_to_handle_from<'a>(
+    async fn update_event_handler_subscriptions_next_block<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        contract_address_id: i32,
-        block_number: i64,
+        chain_ids: &[u64],
+        next_block_number_to_handle_from: u64,
     ) {
         let query = format!(
-            "UPDATE chaindexing_contract_addresses 
-        SET next_block_number_to_handle_from = {block_number}
-        WHERE id = {contract_address_id}"
+            "UPDATE chaindexing_event_handler_subscriptions
+        SET next_block_number_to_handle_from = {next_block_number_to_handle_from}
+        WHERE chain_id IN ({chain_ids})",
+            chain_ids = join_numbers_with_comma(chain_ids),
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
@@ -93,7 +115,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
             "UPDATE chaindexing_reorged_blocks
         SET handled_at = '{handled_at}'
         WHERE id IN ({reorged_block_ids})",
-            reorged_block_ids = join_i32s_with_comma(reorged_block_ids),
+            reorged_block_ids = join_numbers_with_comma(reorged_block_ids),
             handled_at = chrono::Utc::now().naive_utc(),
         );
 
@@ -147,7 +169,37 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
 #[async_trait::async_trait]
 impl LoadsDataWithRawQuery for PostgresRepo {
-    async fn load_latest_events<'a>(
+    async fn load_event_handler_subscriptions(
+        client: &Self::RawQueryClient,
+        chain_ids: &[u64],
+    ) -> Vec<EventHandlerSubscription> {
+        let query = format!(
+            "SELECT * from chaindexing_event_handler_subscriptions
+            WHERE chain_id IN ({chain_ids})",
+            chain_ids = join_numbers_with_comma(chain_ids),
+        );
+
+        Self::load_data_list_from_raw_query(client, &query).await
+    }
+
+    async fn load_events(
+        client: &Self::RawQueryClient,
+        chain_ids: &[u64],
+        from_block_number: u64,
+        to_block_number: u64,
+    ) -> Vec<Event> {
+        let query = format!(
+            "SELECT * from chaindexing_events
+            WHERE chain_id IN ({chain_ids})
+            AND block_number BETWEEN {from_block_number} AND {to_block_number} 
+             ",
+            chain_ids = join_numbers_with_comma(chain_ids),
+        );
+
+        Self::load_data_list_from_raw_query(client, &query).await
+    }
+
+    async fn load_latest_events(
         client: &Self::RawQueryClient,
         addresses: &[String],
     ) -> Vec<PartialEvent> {
@@ -172,6 +224,14 @@ impl LoadsDataWithRawQuery for PostgresRepo {
 
         Self::load_data_list_from_raw_query(client, &query).await
     }
+    async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock> {
+        Self::load_data_list_from_raw_query(
+            client,
+            "SELECT * chaindexing_reorged_blocks WHERE handled_at is NULL",
+        )
+        .await
+    }
+
     async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,
         query: &str,
@@ -238,8 +298,8 @@ fn json_aggregate_query(query: &str) -> String {
     format!("WITH result AS ({query}) SELECT COALESCE(json_agg(result), '[]'::json) FROM result",)
 }
 
-fn join_i32s_with_comma(i32s: &[i32]) -> String {
-    i32s.iter().map(|id| id.to_string()).collect::<Vec<String>>().join(",")
+fn join_numbers_with_comma(numbers: &[impl ToString]) -> String {
+    numbers.iter().map(|n| n.to_string()).collect::<Vec<String>>().join(",")
 }
 
 fn join_strings_with_comma(strings: &[String]) -> String {

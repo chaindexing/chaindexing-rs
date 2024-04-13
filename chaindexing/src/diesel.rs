@@ -14,7 +14,6 @@ pub mod schema {
           id -> Int4,
           chain_id -> Int8,
           next_block_number_to_ingest_from -> Int8,
-          next_block_number_to_handle_from -> Int8,
           start_block_number -> Int8,
           address -> VarChar,
           contract_name -> VarChar,

@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 
 use crate::chain_reorg::{ReorgedBlock, UnsavedReorgedBlock};
+use crate::event_handler_subscriptions::EventHandlerSubscription;
 use crate::{
     contracts::UnsavedContractAddress,
     events::{Event, PartialEvent},
@@ -63,17 +64,11 @@ pub trait Repo:
         contract_address: &ContractAddress,
         block_number: i64,
     );
-    async fn update_next_block_number_to_handle_from<'a>(
-        conn: &mut Self::Conn<'a>,
-        contract_address_id: i32,
-        block_number: i64,
-    );
 
     async fn create_reorged_block<'a>(
         conn: &mut Self::Conn<'a>,
         reorged_block: &UnsavedReorgedBlock,
     );
-    async fn get_unhandled_reorged_blocks<'a>(conn: &mut Self::Conn<'a>) -> Vec<ReorgedBlock>;
 
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>);
     async fn get_last_reset_count<'a>(conn: &mut Self::Conn<'a>) -> Option<ResetCount>;
@@ -103,14 +98,20 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
     async fn execute_raw_query_in_txn<'a>(client: &Self::RawQueryTxnClient<'a>, query: &str);
     async fn commit_raw_query_txns<'a>(client: Self::RawQueryTxnClient<'a>);
 
+    async fn create_event_handler_subscriptions(
+        client: &Self::RawQueryClient,
+        event_handler_subscriptions: &[EventHandlerSubscription],
+    );
+
     async fn create_contract_address<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         contract_address: &UnsavedContractAddress,
     );
-    async fn update_next_block_number_to_handle_from<'a>(
+
+    async fn update_event_handler_subscriptions_next_block<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        contract_address_id: i32,
-        block_number: i64,
+        chain_ids: &[u64],
+        next_block_number_to_handle_from: u64,
     );
 
     async fn update_every_next_block_number_to_handle_from<'a>(
@@ -131,10 +132,22 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
 
 #[async_trait::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
-    async fn load_latest_events<'a>(
+    async fn load_latest_events(
         client: &Self::RawQueryClient,
         addresses: &[String],
     ) -> Vec<PartialEvent>;
+    async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock>;
+    async fn load_event_handler_subscriptions(
+        client: &Self::RawQueryClient,
+        chain_ids: &[u64],
+    ) -> Vec<EventHandlerSubscription>;
+    async fn load_events(
+        client: &Self::RawQueryClient,
+        chain_ids: &[u64],
+        from_block_number: u64,
+        to_block_number: u64,
+    ) -> Vec<Event>;
+
     async fn load_data_from_raw_query<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,
         query: &str,
@@ -155,19 +168,10 @@ pub trait LoadsDataWithRawQuery: HasRawQueryClient {
 
 pub trait Streamable {
     type StreamConn<'a>;
-    fn get_contract_addresses_stream<'a>(
-        conn: Arc<Mutex<Self::StreamConn<'a>>>,
-    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
     fn get_contract_addresses_stream_by_chain<'a>(
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
         chain_id_: i64,
     ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a>;
-    fn get_events_stream<'a>(
-        conn: Arc<Mutex<Self::StreamConn<'a>>>,
-        from: i64,
-        chain_id_: i64,
-        contract_address_: String,
-    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a>;
 }
 
 pub trait RepoMigrations: Migratable {
@@ -179,12 +183,15 @@ pub trait RepoMigrations: Migratable {
     fn create_reset_counts_migration() -> &'static [&'static str];
     fn create_reorged_blocks_migration() -> &'static [&'static str];
     fn drop_reorged_blocks_migration() -> &'static [&'static str];
+    fn create_event_handler_subscriptions_migration() -> &'static [&'static str];
+    fn drop_event_handler_subscriptions_migration() -> &'static [&'static str];
 
     fn get_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_contract_addresses_migration(),
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
+            Self::create_event_handler_subscriptions_migration(),
         ]
         .concat()
     }
@@ -194,6 +201,7 @@ pub trait RepoMigrations: Migratable {
             Self::drop_contract_addresses_migration(),
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
+            Self::drop_event_handler_subscriptions_migration(),
         ]
         .concat()
     }
@@ -230,8 +238,7 @@ impl SQLikeMigrations {
                 contract_name VARCHAR NOT NULL,
                 chain_id BIGINT NOT NULL,
                 start_block_number BIGINT NOT NULL,
-                next_block_number_to_ingest_from BIGINT NOT NULL,
-                next_block_number_to_handle_from BIGINT NOT NULL
+                next_block_number_to_ingest_from BIGINT NOT NULL
         )",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_contract_addresses_chain_address_index
         ON chaindexing_contract_addresses(chain_id, address)",
@@ -289,5 +296,19 @@ impl SQLikeMigrations {
                 id BIGSERIAL PRIMARY KEY,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
             )"]
+    }
+
+    pub fn create_event_handler_subscriptions() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_event_handler_subscriptions (
+                id SERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                next_block_number_to_handle_from BIGINT NOT NULL
+            )",
+        ]
+    }
+
+    pub fn drop_event_handler_subscriptions() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_event_handler_subscriptions"]
     }
 }

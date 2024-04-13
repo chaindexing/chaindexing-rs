@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::fmt::Debug;
 use std::{sync::Arc, time::Duration};
 
@@ -6,28 +7,37 @@ mod maybe_handle_chain_reorg;
 
 use tokio::{sync::Mutex, time::interval};
 
-use crate::contract_states::ContractStates;
+use crate::deferred_futures::DeferredFutures;
 use crate::node_task::NodeTask;
-use crate::{contracts::Contracts, events::Event, ChaindexingRepo, Config, Repo};
-use crate::{ChaindexingRepoRawQueryTxnClient, EventParam, HasRawQueryClient};
+use crate::{
+    contracts, states, ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient, EventParam,
+    HasRawQueryClient,
+};
+use crate::{events::Event, Config};
 
 #[derive(Clone)]
-pub struct EventHandlerContext<'a, SharedState: Sync + Send + Clone> {
+pub struct EventHandlerContext<'a, 'b, SharedState: Sync + Send + Clone> {
     pub event: Event,
     pub(super) raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+    pub(super) raw_query_client_for_mcs: Arc<Mutex<ChaindexingRepoRawQueryClient>>,
     shared_state: Option<Arc<Mutex<SharedState>>>,
+    pub(super) deferred_mutations_for_mcs: DeferredFutures<'b>,
 }
 
-impl<'a, SharedState: Sync + Send + Clone> EventHandlerContext<'a, SharedState> {
+impl<'a, 'b, SharedState: Sync + Send + Clone> EventHandlerContext<'a, 'b, SharedState> {
     pub fn new(
-        event: Event,
-        client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+        event: &Event,
+        raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+        raw_query_client_for_mcs: &Arc<Mutex<ChaindexingRepoRawQueryClient>>,
+        deferred_mutations_for_mcs: &DeferredFutures<'b>,
         shared_state: &Option<Arc<Mutex<SharedState>>>,
     ) -> Self {
         Self {
-            event,
-            raw_query_client: client,
+            event: event.clone(),
+            raw_query_client,
+            raw_query_client_for_mcs: raw_query_client_for_mcs.clone(),
             shared_state: shared_state.clone(),
+            deferred_mutations_for_mcs: deferred_mutations_for_mcs.clone(),
         }
     }
 
@@ -51,41 +61,92 @@ pub trait EventHandler: Send + Sync {
     /// PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
     /// The chain explorer's event section can also be used to easily infer this
     fn abi(&self) -> &'static str;
-    async fn handle_event<'a>(&self, event_context: EventHandlerContext<'a, Self::SharedState>);
+    async fn handle_event<'a, 'b>(
+        &self,
+        event_context: EventHandlerContext<'a, 'b, Self::SharedState>,
+    );
 }
 
 // TODO: Use just raw query client through for mutations
-pub fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>) -> NodeTask {
+pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>) -> NodeTask {
+    let node_task = NodeTask::new();
     let config = config.clone();
-    let task = tokio::spawn(async move {
-        let pool = config.repo.get_pool(1).await;
-        let conn = ChaindexingRepo::get_conn(&pool).await;
 
-        let mut raw_query_client = config.repo.get_raw_query_client().await;
+    node_task
+        .add_task(tokio::spawn({
+            let node_task = node_task.clone();
 
-        let conn = Arc::new(Mutex::new(conn));
-        let mut interval = interval(Duration::from_millis(config.handler_rate_ms));
-        let event_handlers_by_event_abi =
-            Contracts::get_all_event_handlers_by_event_abi(&config.contracts);
+            // MultiChainStates are indexed in an order-agnostic fashion, so no need for txn client
+            let raw_query_client_for_mcs = config.repo.get_raw_query_client().await;
+            let raw_query_client_for_mcs = Arc::new(Mutex::new(raw_query_client_for_mcs));
 
-        loop {
-            handle_events::run(
-                conn.clone(),
-                &event_handlers_by_event_abi,
-                &mut raw_query_client,
-                &config.shared_state,
-            )
-            .await;
+            let deferred_mutations_for_mcs = DeferredFutures::new();
 
-            let state_migrations = Contracts::get_state_migrations(&config.contracts);
-            let state_table_names = ContractStates::get_all_table_names(&state_migrations);
+            let chain_ids: Vec<_> = config.chains.iter().map(|c| c.id as u64).collect();
+            let chunk_size = max(chain_ids.len() / config.chain_concurrency as usize, 1);
+            let chunked_chain_ids: Vec<_> =
+                chain_ids.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
-            maybe_handle_chain_reorg::run(conn.clone(), &mut raw_query_client, &state_table_names)
-                .await;
+            async move {
+                for chain_ids in chunked_chain_ids {
+                    let config = config.clone();
+                    let node_task = node_task.clone();
 
-            interval.tick().await;
-        }
-    });
+                    let raw_query_client_for_mcs = raw_query_client_for_mcs.clone();
+                    let deferred_mutations_for_mcs = deferred_mutations_for_mcs.clone();
 
-    NodeTask::new(vec![task])
+                    node_task
+                        .clone()
+                        .add_task(tokio::spawn(async move {
+                            // ChainStates which include ContractState have to be handled orderly
+                            let mut raw_query_client_for_chain_states =
+                                config.repo.get_raw_query_client().await;
+
+                            let mut interval =
+                                interval(Duration::from_millis(config.handler_rate_ms));
+                            let event_handlers_by_event_abi =
+                                contracts::get_all_event_handlers_by_event_abi(&config.contracts);
+
+                            loop {
+                                handle_events::run(
+                                    &event_handlers_by_event_abi,
+                                    &chain_ids,
+                                    config.blocks_per_batch,
+                                    &mut raw_query_client_for_chain_states,
+                                    &raw_query_client_for_mcs,
+                                    deferred_mutations_for_mcs.clone(),
+                                    &config.shared_state,
+                                )
+                                .await;
+
+                                interval.tick().await;
+                            }
+                        }))
+                        .await;
+                }
+
+                let mut raw_query_client_for_chain_states =
+                    config.repo.get_raw_query_client().await;
+
+                let state_migrations = contracts::get_state_migrations(&config.contracts);
+                let state_table_names = states::get_all_table_names(&state_migrations);
+
+                let mut interval = interval(Duration::from_millis(config.handler_rate_ms));
+
+                loop {
+                    maybe_handle_chain_reorg::run(
+                        &mut raw_query_client_for_chain_states,
+                        &state_table_names,
+                    )
+                    .await;
+
+                    deferred_mutations_for_mcs.consume().await;
+
+                    interval.tick().await;
+                }
+            }
+        }))
+        .await;
+
+    node_task
 }

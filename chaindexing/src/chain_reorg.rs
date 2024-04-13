@@ -2,7 +2,8 @@ use std::cmp::max;
 use std::collections::HashMap;
 
 use crate::{diesel::schema::chaindexing_reorged_blocks, ChainId};
-use diesel::prelude::{Insertable, Queryable};
+use diesel::prelude::Insertable;
+use serde::Deserialize;
 
 /// Tolerance for chain re-organization
 #[derive(Clone, Debug)]
@@ -40,8 +41,7 @@ pub enum Execution<'a> {
     Confirmation(&'a MinConfirmationCount),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Queryable)]
-#[diesel(table_name = chaindexing_reorged_blocks)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 pub struct ReorgedBlock {
     pub id: i32,
     pub block_number: i64,

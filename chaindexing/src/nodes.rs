@@ -88,6 +88,11 @@ impl KeepNodeActiveRequest {
     }
 }
 
+#[async_trait::async_trait]
+pub trait NodeTasksRunner {
+    async fn run(&self) -> Vec<NodeTask>;
+}
+
 pub struct NodeTasks<'a> {
     current_node: &'a Node,
     state: NodeTasksState,
@@ -108,19 +113,19 @@ impl<'a> NodeTasks<'a> {
         }
     }
 
-    pub async fn orchestrate<StartTasks>(
+    pub async fn orchestrate(
         &mut self,
         optimization_config: &Option<OptimizationConfig>,
         active_nodes: &[Node],
-        start_tasks: &StartTasks,
-    ) where
-        StartTasks: Fn() -> Vec<NodeTask>,
-    {
+        start_tasks: &impl NodeTasksRunner,
+    ) {
         let leader_node = elect_leader(active_nodes);
 
         if self.current_node.is_leader(leader_node) {
             match self.state {
-                NodeTasksState::Idle | NodeTasksState::Aborted => self.make_active(start_tasks),
+                NodeTasksState::Idle | NodeTasksState::Aborted => {
+                    self.make_active(start_tasks).await;
+                }
 
                 NodeTasksState::Active => {
                     if let Some(OptimizationConfig {
@@ -131,7 +136,7 @@ impl<'a> NodeTasks<'a> {
                         if keep_node_active_request.is_stale().await
                             && self.started_n_seconds_ago(*optimize_after_in_secs)
                         {
-                            self.make_inactive()
+                            self.make_inactive().await;
                         }
                     }
                 }
@@ -143,34 +148,31 @@ impl<'a> NodeTasks<'a> {
                     }) = optimization_config
                     {
                         if keep_node_active_request.is_recent().await {
-                            self.make_active(start_tasks)
+                            self.make_active(start_tasks).await;
                         }
                     }
                 }
             }
         } else if self.state == NodeTasksState::Active {
-            self.abort();
+            self.abort().await;
         }
     }
 
-    fn make_active<StartTasks>(&mut self, start_tasks: &StartTasks)
-    where
-        StartTasks: Fn() -> Vec<NodeTask>,
-    {
-        self.tasks = start_tasks();
+    async fn make_active(&mut self, start_tasks: &impl NodeTasksRunner) {
+        self.tasks = start_tasks.run().await;
         self.state = NodeTasksState::Active;
     }
-    fn make_inactive(&mut self) {
-        self.stop();
+    async fn make_inactive(&mut self) {
+        self.stop().await;
         self.state = NodeTasksState::InActive;
     }
-    fn abort(&mut self) {
-        self.stop();
+    async fn abort(&mut self) {
+        self.stop().await;
         self.state = NodeTasksState::Aborted;
     }
-    fn stop(&mut self) {
+    async fn stop(&mut self) {
         for task in &self.tasks {
-            task.stop();
+            task.stop().await;
         }
     }
 

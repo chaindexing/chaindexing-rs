@@ -68,35 +68,6 @@ mod create_initial_contract_addresses {
     }
 
     #[tokio::test]
-    pub async fn sets_next_block_number_to_handle_from_with_provided_start_block_number() {
-        let pool = test_runner::get_pool().await;
-
-        test_runner::run_test(&pool, |mut conn| async move {
-            let contract_name = "Test-contract-address";
-            let contract_address_value = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e";
-            let chain_id = ChainId::Arbitrum;
-            let start_block_number = 0;
-
-            let contract_addresses = vec![UnsavedContractAddress::new(
-                contract_name,
-                contract_address_value,
-                &chain_id,
-                start_block_number,
-            )];
-            ChaindexingRepo::create_contract_addresses(&mut conn, &contract_addresses).await;
-
-            let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
-            let contract_address = contract_addresses.first().unwrap();
-
-            assert_eq!(
-                contract_address.next_block_number_to_handle_from,
-                start_block_number as i64
-            );
-        })
-        .await;
-    }
-
-    #[tokio::test]
     pub async fn overwrites_contract_name_of_contract_addresses() {
         let pool = test_runner::get_pool().await;
 
@@ -166,10 +137,6 @@ mod create_initial_contract_addresses {
             );
             assert_eq!(
                 contract_address.next_block_number_to_ingest_from,
-                initial_start_block_number
-            );
-            assert_eq!(
-                contract_address.next_block_number_to_handle_from,
                 initial_start_block_number
             );
         })

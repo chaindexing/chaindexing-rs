@@ -1,4 +1,5 @@
 pub type ChainId = ethers::types::Chain;
+
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub id: ChainId,

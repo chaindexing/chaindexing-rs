@@ -4,8 +4,9 @@ use ethers::types::{Address, Filter as EthersFilter};
 use std::cmp::min;
 
 use crate::chain_reorg::Execution;
+use crate::contracts;
 use crate::contracts::Contract;
-use crate::contracts::{ContractEventTopic, Contracts};
+use crate::contracts::ContractEventTopic;
 use crate::ContractAddress;
 
 pub fn get<S: Send + Sync + Clone>(
@@ -15,7 +16,7 @@ pub fn get<S: Send + Sync + Clone>(
     blocks_per_batch: u64,
     execution: &Execution,
 ) -> Vec<Filter> {
-    let topics_by_contract_name = Contracts::group_event_topics_by_names(contracts);
+    let topics_by_contract_name = contracts::group_event_topics_by_names(contracts);
 
     contract_addresses
         .iter()
