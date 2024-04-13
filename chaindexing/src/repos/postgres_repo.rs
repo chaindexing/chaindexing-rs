@@ -92,7 +92,7 @@ impl Repo for PostgresRepo {
         .await
     }
 
-    async fn create_contract_addresses<'a>(
+    async fn upsert_contract_addresses<'a>(
         conn: &mut Conn<'a>,
         contract_addresses: &[UnsavedContractAddress],
     ) {
@@ -102,7 +102,10 @@ impl Repo for PostgresRepo {
             .values(contract_addresses)
             .on_conflict((chain_id, address))
             .do_update()
-            .set(contract_name.eq(excluded(contract_name)))
+            .set((
+                contract_name.eq(excluded(contract_name)),
+                start_block_number.eq(excluded(start_block_number)),
+            ))
             .execute(conn)
             .await
             .unwrap();

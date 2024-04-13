@@ -53,7 +53,10 @@ impl ExecutesWithRawQuery for PostgresRepo {
             let query = format!(
                 "INSERT INTO chaindexing_event_handler_subscriptions 
                 (chain_id, next_block_number_to_handle_from)
-                VALUES ('{chain_id}', {next_block_number_to_handle_from})"
+                VALUES ('{chain_id}', {next_block_number_to_handle_from})
+                ON CONFLICT (chain_id)
+                DO NOTHING
+                "
             );
 
             Self::execute_raw_query(client, &query).await;
@@ -116,7 +119,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         SET handled_at = '{handled_at}'
         WHERE id IN ({reorged_block_ids})",
             reorged_block_ids = join_numbers_with_comma(reorged_block_ids),
-            handled_at = chrono::Utc::now().naive_utc(),
+            handled_at = chrono::Utc::now().timestamp(),
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
@@ -192,7 +195,7 @@ impl LoadsDataWithRawQuery for PostgresRepo {
             "SELECT * from chaindexing_events
             WHERE chain_id IN ({chain_ids})
             AND block_number BETWEEN {from_block_number} AND {to_block_number} 
-             ",
+            ORDER BY block_number ASC, log_index ASC",
             chain_ids = join_numbers_with_comma(chain_ids),
         );
 

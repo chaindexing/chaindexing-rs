@@ -43,7 +43,8 @@ pub trait Repo:
             + Sync
             + 'a;
 
-    async fn create_contract_addresses<'a>(
+    /// Upserts contract addresses and updates their contract names when there is a conflict
+    async fn upsert_contract_addresses<'a>(
         conn: &mut Self::Conn<'a>,
         contract_addresses: &[UnsavedContractAddress],
     );
@@ -256,7 +257,6 @@ impl SQLikeMigrations {
                 contract_address VARCHAR NOT NULL,
                 contract_name VARCHAR NOT NULL,
                 abi TEXT NOT NULL,
-                log_params JSON NOT NULL,
                 parameters JSON NOT NULL,
                 topics JSON NOT NULL,
                 block_hash VARCHAR NOT NULL,
@@ -283,7 +283,7 @@ impl SQLikeMigrations {
                 id SERIAL PRIMARY KEY,
                 chain_id BIGINT NOT NULL,
                 block_number BIGINT NOT NULL,
-                handled_at TIMESTAMPTZ,
+                handled_at BIGINT,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
             )"]
     }
@@ -305,6 +305,8 @@ impl SQLikeMigrations {
                 chain_id BIGINT NOT NULL,
                 next_block_number_to_handle_from BIGINT NOT NULL
             )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_event_handler_subscriptions_chain
+        ON chaindexing_event_handler_subscriptions(chain_id)",
         ]
     }
 
