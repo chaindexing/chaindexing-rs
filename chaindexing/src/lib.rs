@@ -140,10 +140,10 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
                     for ChaindexingNodeTasksRunner<'a, S>
                 {
                     async fn run(&self) -> Vec<NodeTask> {
-                        let event_ingester = events_ingester::start(self.config).await;
+                        let events_ingester = events_ingester::start(self.config).await;
                         let event_handlers = event_handlers::start(self.config).await;
 
-                        vec![event_ingester, event_handlers]
+                        vec![events_ingester, event_handlers]
                     }
                 }
                 ChaindexingNodeTasksRunner { config: &config }
@@ -181,7 +181,7 @@ pub async fn setup<'a, S: Sync + Send + Clone>(
 
     let contract_addresses: Vec<_> =
         contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
-    ChaindexingRepo::create_contract_addresses(conn, &contract_addresses).await;
+    ChaindexingRepo::upsert_contract_addresses(conn, &contract_addresses).await;
 
     let event_handler_subscriptions = contracts::get_all_event_handler_subscriptions(contracts);
     ChaindexingRepo::create_event_handler_subscriptions(client, &event_handler_subscriptions).await;
