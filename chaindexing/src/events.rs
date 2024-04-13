@@ -4,7 +4,7 @@ pub use event::{Event, EventParam, PartialEvent};
 
 use std::collections::HashMap;
 
-use crate::{contracts::Contracts, ChainId, Contract, ContractAddress};
+use crate::{contracts, ChainId, Contract, ContractAddress};
 use ethers::types::{Block, Log, TxHash, U64};
 
 pub fn get<S: Send + Sync + Clone>(
@@ -14,7 +14,7 @@ pub fn get<S: Send + Sync + Clone>(
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
 ) -> Vec<Event> {
-    let events_by_topics = Contracts::group_events_by_topics(contracts);
+    let events_by_topics = contracts::group_events_by_topics(contracts);
     let contract_addresses_by_address =
         ContractAddress::group_contract_addresses_by_address_and_chain_id(contract_addresses);
 

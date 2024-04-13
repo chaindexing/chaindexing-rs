@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::Event;
 use crate::{
     ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
 };
+use crate::{ChaindexingRepoRawQueryClient, Event};
 
 use super::{serde_map_to_string_map, to_columns_and_values};
 
@@ -131,6 +131,17 @@ impl StateVersion {
         state_version.extend(updates.clone());
         Self::append(&state_version, state_table_name, event, client).await
     }
+    pub async fn update_without_txn<'b>(
+        state: &HashMap<String, String>,
+        updates: &HashMap<String, String>,
+        state_table_name: &str,
+        event: &Event,
+        client: &'b mut ChaindexingRepoRawQueryClient,
+    ) -> HashMap<String, String> {
+        let mut state_version = state.clone();
+        state_version.extend(updates.clone());
+        Self::append_without_txn(&state_version, state_table_name, event, client).await
+    }
 
     pub async fn delete<'a>(
         state: &HashMap<String, String>,
@@ -142,6 +153,16 @@ impl StateVersion {
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
         Self::append(&state_version, state_table_name, event, client).await
     }
+    pub async fn delete_without_txn<'b>(
+        state: &HashMap<String, String>,
+        state_table_name: &str,
+        event: &Event,
+        client: &'b ChaindexingRepoRawQueryClient,
+    ) -> HashMap<String, String> {
+        let mut state_version = state.clone();
+        state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
+        Self::append_without_txn(&state_version, state_table_name, event, client).await
+    }
 
     async fn append<'a>(
         partial_state_version: &HashMap<String, String>,
@@ -149,17 +170,7 @@ impl StateVersion {
         event: &Event,
         client: &ChaindexingRepoRawQueryTxnClient<'a>,
     ) -> HashMap<String, String> {
-        let mut state_version = partial_state_version.clone();
-        state_version.extend(Self::extract_part_from_event(event));
-
-        let (columns, values) = to_columns_and_values(&state_version);
-        let query = format!(
-            "INSERT INTO {table_name} ({columns}) VALUES ({values})
-            RETURNING *",
-            table_name = Self::table_name(state_table_name),
-            columns = columns.join(","),
-            values = values.join(",")
-        );
+        let query = Self::append_query(partial_state_version, state_table_name, event);
 
         serde_map_to_string_map(
             &ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
@@ -167,6 +178,42 @@ impl StateVersion {
             >(client, &query)
             .await
             .unwrap(),
+        )
+    }
+
+    async fn append_without_txn(
+        partial_state_version: &HashMap<String, String>,
+        state_table_name: &str,
+        event: &Event,
+        client: &ChaindexingRepoRawQueryClient,
+    ) -> HashMap<String, String> {
+        let query = Self::append_query(partial_state_version, state_table_name, event);
+
+        serde_map_to_string_map(
+            &ChaindexingRepo::load_data_from_raw_query::<HashMap<String, serde_json::Value>>(
+                client, &query,
+            )
+            .await
+            .unwrap(),
+        )
+    }
+
+    fn append_query(
+        partial_state_version: &HashMap<String, String>,
+        state_table_name: &str,
+        event: &Event,
+    ) -> String {
+        let mut state_version = partial_state_version.clone();
+        state_version.extend(Self::extract_part_from_event(event));
+
+        let (columns, values) = to_columns_and_values(&state_version);
+
+        format!(
+            "INSERT INTO {table_name} ({columns}) VALUES ({values})
+            RETURNING *",
+            table_name = Self::table_name(state_table_name),
+            columns = columns.join(","),
+            values = values.join(",")
         )
     }
 

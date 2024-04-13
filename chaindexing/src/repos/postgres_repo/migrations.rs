@@ -29,6 +29,14 @@ impl RepoMigrations for PostgresRepo {
     fn create_reset_counts_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_reset_counts()
     }
+
+    fn create_event_handler_subscriptions_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_event_handler_subscriptions()
+    }
+
+    fn drop_event_handler_subscriptions_migration() -> &'static [&'static str] {
+        SQLikeMigrations::drop_event_handler_subscriptions()
+    }
 }
 
 impl Migratable for PostgresRepo {}

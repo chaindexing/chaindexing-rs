@@ -1,7 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use chaindexing::contract_states::{Filters, Updates};
+    use std::sync::Arc;
+
+    use chaindexing::deferred_futures::DeferredFutures;
+    use chaindexing::states::{Filters, Updates};
     use chaindexing::{ChaindexingRepo, EventContext, HasRawQueryClient};
+    use tokio::sync::Mutex;
 
     use super::*;
     use crate::factory::{bayc_contract, transfer_event_with_contract};
@@ -13,9 +17,13 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, ()> = EventContext::new(
-            transfer_event_with_contract(bayc_contract),
+        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+            &transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_raw_query_client().await,
+            )),
+            &DeferredFutures::new(),
             &None,
         );
 
@@ -35,9 +43,13 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, ()> = EventContext::new(
-            transfer_event_with_contract(bayc_contract),
+        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+            &transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_raw_query_client().await,
+            )),
+            &DeferredFutures::new(),
             &None,
         );
 
@@ -58,9 +70,13 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, ()> = EventContext::new(
-            transfer_event_with_contract(bayc_contract),
+        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+            &transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_raw_query_client().await,
+            )),
+            &DeferredFutures::new(),
             &None,
         );
 
@@ -74,7 +90,7 @@ mod tests {
 }
 
 use chaindexing::{
-    contract_states::{ContractState, ContractStateMigrations},
+    states::{ContractState, StateMigrations},
     HasRawQueryClient,
 };
 use serde::{Deserialize, Serialize};
@@ -91,7 +107,7 @@ impl ContractState for NftState {
     }
 }
 struct NftStateMigrations;
-impl ContractStateMigrations for NftStateMigrations {
+impl StateMigrations for NftStateMigrations {
     fn migrations(&self) -> Vec<&'static str> {
         vec![
             "CREATE TABLE IF NOT EXISTS nft_states (

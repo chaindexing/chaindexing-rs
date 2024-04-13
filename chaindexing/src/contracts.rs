@@ -1,15 +1,15 @@
 use std::fmt::Debug;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::contract_states::ContractStateMigrations;
 use crate::diesel::schema::chaindexing_contract_addresses;
+use crate::event_handler_subscriptions::EventHandlerSubscription;
+use crate::states::StateMigrations;
 use crate::{ChainId, EventHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::types::U64;
 use ethers::{
     abi::{Address, Event, HumanReadableParser},
-    prelude::Chain,
     types::H256,
 };
 
@@ -37,7 +37,8 @@ pub struct Contract<S: Send + Sync + Clone> {
     pub addresses: Vec<UnsavedContractAddress>,
     pub name: String,
     pub event_handlers: HashMap<EventAbi, Arc<dyn EventHandler<SharedState = S>>>,
-    pub state_migrations: Vec<Arc<dyn ContractStateMigrations>>,
+    pub state_migrations: Vec<Arc<dyn StateMigrations>>,
+    pub handler_subcriptions: Vec<EventHandlerSubscription>,
 }
 
 impl<S: Send + Sync + Clone> Contract<S> {
@@ -47,16 +48,25 @@ impl<S: Send + Sync + Clone> Contract<S> {
             state_migrations: vec![],
             name: name.to_string(),
             event_handlers: HashMap::new(),
+            handler_subcriptions: Vec::new(),
         }
     }
 
-    pub fn add_address(mut self, address: &str, chain: &Chain, start_block_number: u64) -> Self {
+    pub fn add_address(
+        mut self,
+        address: &str,
+        chain_id: &ChainId,
+        start_block_number: u64,
+    ) -> Self {
         self.addresses.push(UnsavedContractAddress::new(
             &self.name,
             address,
-            chain,
+            chain_id,
             start_block_number,
         ));
+
+        self.handler_subcriptions
+            .push(EventHandlerSubscription::new(chain_id, start_block_number));
 
         self
     }
@@ -70,10 +80,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
         self
     }
 
-    pub fn add_state_migrations(
-        mut self,
-        state_migration: impl ContractStateMigrations + 'static,
-    ) -> Self {
+    pub fn add_state_migrations(mut self, state_migration: impl StateMigrations + 'static) -> Self {
         self.state_migrations.push(Arc::new(state_migration));
 
         self
@@ -104,49 +111,74 @@ impl<S: Send + Sync + Clone> Debug for Contract<S> {
     }
 }
 
-pub struct Contracts;
+pub fn get_state_migrations<S: Send + Sync + Clone>(
+    contracts: &[Contract<S>],
+) -> Vec<Arc<dyn StateMigrations>> {
+    contracts.iter().flat_map(|c| c.state_migrations.clone()).collect()
+}
 
-impl Contracts {
-    pub fn get_state_migrations<S: Send + Sync + Clone>(
-        contracts: &[Contract<S>],
-    ) -> Vec<Arc<dyn ContractStateMigrations>> {
-        contracts.iter().flat_map(|c| c.state_migrations.clone()).collect()
+pub fn get_all_event_handler_subscriptions<S: Send + Sync + Clone>(
+    contracts: &[Contract<S>],
+) -> Vec<EventHandlerSubscription> {
+    let mut handler_subscriptions_by_chain_id: HashMap<u64, EventHandlerSubscription> =
+        HashMap::new();
+
+    for contract in contracts.iter() {
+        for handler_subscription @ EventHandlerSubscription {
+            chain_id,
+            next_block_number_to_handle_from,
+        } in contract.handler_subcriptions.iter()
+        {
+            if let Some(prev_handler_subscription) = handler_subscriptions_by_chain_id.get(chain_id)
+            {
+                if *next_block_number_to_handle_from
+                    < prev_handler_subscription.next_block_number_to_handle_from
+                {
+                    handler_subscriptions_by_chain_id
+                        .insert(*chain_id, handler_subscription.clone());
+                }
+            } else {
+                handler_subscriptions_by_chain_id.insert(*chain_id, handler_subscription.clone());
+            }
+        }
     }
 
-    pub fn get_all_event_handlers_by_event_abi<S: Send + Sync + Clone>(
-        contracts: &[Contract<S>],
-    ) -> HashMap<EventAbi, Arc<dyn EventHandler<SharedState = S>>> {
-        contracts.iter().fold(
-            HashMap::new(),
-            |mut event_handlers_by_event_abi, contract| {
-                contract.event_handlers.iter().for_each(|(event_abi, event_handler)| {
-                    event_handlers_by_event_abi.insert(event_abi, event_handler.clone());
-                });
+    handler_subscriptions_by_chain_id.into_values().collect()
+}
 
-                event_handlers_by_event_abi
-            },
-        )
-    }
+pub fn get_all_event_handlers_by_event_abi<S: Send + Sync + Clone>(
+    contracts: &[Contract<S>],
+) -> HashMap<EventAbi, Arc<dyn EventHandler<SharedState = S>>> {
+    contracts.iter().fold(
+        HashMap::new(),
+        |mut event_handlers_by_event_abi, contract| {
+            contract.event_handlers.iter().for_each(|(event_abi, event_handler)| {
+                event_handlers_by_event_abi.insert(event_abi, event_handler.clone());
+            });
 
-    pub fn group_event_topics_by_names<S: Send + Sync + Clone>(
-        contracts: &[Contract<S>],
-    ) -> HashMap<String, Vec<ContractEventTopic>> {
-        contracts.iter().fold(HashMap::new(), |mut topics_by_contract_name, contract| {
-            topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
+            event_handlers_by_event_abi
+        },
+    )
+}
 
-            topics_by_contract_name
-        })
-    }
+pub fn group_event_topics_by_names<S: Send + Sync + Clone>(
+    contracts: &[Contract<S>],
+) -> HashMap<String, Vec<ContractEventTopic>> {
+    contracts.iter().fold(HashMap::new(), |mut topics_by_contract_name, contract| {
+        topics_by_contract_name.insert(contract.name.clone(), contract.get_event_topics());
 
-    pub fn group_events_by_topics<S: Send + Sync + Clone>(
-        contracts: &[Contract<S>],
-    ) -> HashMap<ContractEventTopic, ContractEvent> {
-        contracts
-            .iter()
-            .flat_map(|c| c.build_events())
-            .map(|e| (e.value.signature(), e))
-            .collect()
-    }
+        topics_by_contract_name
+    })
+}
+
+pub fn group_events_by_topics<S: Send + Sync + Clone>(
+    contracts: &[Contract<S>],
+) -> HashMap<ContractEventTopic, ContractEvent> {
+    contracts
+        .iter()
+        .flat_map(|c| c.build_events())
+        .map(|e| (e.value.signature(), e))
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Insertable)]
@@ -157,7 +189,6 @@ pub struct UnsavedContractAddress {
     pub chain_id: i64,
     pub start_block_number: i64,
     next_block_number_to_ingest_from: i64,
-    next_block_number_to_handle_from: i64,
 }
 
 impl UnsavedContractAddress {
@@ -175,7 +206,6 @@ impl UnsavedContractAddress {
             chain_id: *chain_id as i64,
             start_block_number,
             next_block_number_to_ingest_from: start_block_number,
-            next_block_number_to_handle_from: start_block_number,
         }
     }
 }
@@ -188,7 +218,6 @@ pub struct ContractAddress {
     pub id: i32,
     pub chain_id: i64,
     pub next_block_number_to_ingest_from: i64,
-    pub next_block_number_to_handle_from: i64,
     pub start_block_number: i64,
     pub address: String,
     pub contract_name: String,

@@ -1,7 +1,7 @@
-mod contract_states;
 mod events_ingester;
 mod repos;
+mod states;
 
 pub async fn setup() {
-    contract_states::setup().await;
+    states::setup().await;
 }

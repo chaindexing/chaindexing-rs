@@ -1,9 +1,10 @@
 mod chain_reorg;
 mod chains;
 mod config;
-pub mod contract_states;
 mod contracts;
+pub mod deferred_futures;
 mod diesel;
+mod event_handler_subscriptions;
 mod event_handlers;
 pub mod events;
 pub mod events_ingester;
@@ -12,10 +13,11 @@ mod nodes;
 mod pruning;
 mod repos;
 mod reset_counts;
+pub mod states;
 
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
-pub use contracts::{Contract, ContractAddress, ContractEvent, Contracts, UnsavedContractAddress};
+pub use contracts::{Contract, ContractAddress, ContractEvent, UnsavedContractAddress};
 pub use event_handlers::{EventHandler, EventHandlerContext as EventContext};
 pub use events::{Event, EventParam};
 pub use events_ingester::Provider as EventsIngesterProvider;
@@ -50,6 +52,9 @@ pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
 use tokio::time;
 
 pub use ethers::types::{Address, U256, U256 as BigInt, U256 as Uint};
+
+use crate::node_task::NodeTask;
+use crate::nodes::NodeTasksRunner;
 pub type Bytes = Vec<u8>;
 
 pub enum ChaindexingError {
@@ -72,8 +77,8 @@ impl Debug for ChaindexingError {
     }
 }
 
-pub async fn include_contract_in_indexing<'a, S: Send + Sync + Clone>(
-    event_context: &EventContext<'a, S>,
+pub async fn include_contract_in_indexing<'a, 'b, S: Send + Sync + Clone>(
+    event_context: &EventContext<'a, 'b, S>,
     contract_name: &str,
     address: &str,
 ) {
@@ -126,11 +131,22 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
             let active_nodes =
                 ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
 
-            let start_tasks = || {
-                let event_ingester = events_ingester::start(&config);
-                let event_handlers = event_handlers::start(&config);
+            let start_tasks = {
+                struct ChaindexingNodeTasksRunner<'a, S: Send + Sync + Clone + Debug + 'static> {
+                    config: &'a Config<S>,
+                }
+                #[async_trait::async_trait]
+                impl<'a, S: Send + Sync + Clone + Debug + 'static> NodeTasksRunner
+                    for ChaindexingNodeTasksRunner<'a, S>
+                {
+                    async fn run(&self) -> Vec<NodeTask> {
+                        let event_ingester = events_ingester::start(self.config).await;
+                        let event_handlers = event_handlers::start(self.config).await;
 
-                vec![event_ingester, event_handlers]
+                        vec![event_ingester, event_handlers]
+                    }
+                }
+                ChaindexingNodeTasksRunner { config: &config }
             };
 
             node_tasks
@@ -166,6 +182,9 @@ pub async fn setup<'a, S: Sync + Send + Clone>(
     let contract_addresses: Vec<_> =
         contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
     ChaindexingRepo::create_contract_addresses(conn, &contract_addresses).await;
+
+    let event_handler_subscriptions = contracts::get_all_event_handler_subscriptions(contracts);
+    ChaindexingRepo::create_event_handler_subscriptions(client, &event_handler_subscriptions).await;
 
     Ok(())
 }
@@ -211,7 +230,7 @@ pub async fn run_migrations_for_contract_states<S: Send + Sync + Clone>(
     client: &ChaindexingRepoRawQueryClient,
     contracts: &[Contract<S>],
 ) {
-    for state_migration in Contracts::get_state_migrations(contracts) {
+    for state_migration in contracts::get_state_migrations(contracts) {
         ChaindexingRepo::migrate(client, state_migration.get_migrations()).await;
     }
 }
@@ -219,7 +238,7 @@ pub async fn reset_migrations_for_contract_states<S: Send + Sync + Clone>(
     client: &ChaindexingRepoRawQueryClient,
     contracts: &[Contract<S>],
 ) {
-    for state_migration in Contracts::get_state_migrations(contracts) {
+    for state_migration in contracts::get_state_migrations(contracts) {
         ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
     }
 }

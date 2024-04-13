@@ -5,7 +5,7 @@ use super::STATE_VERSIONS_TABLE_PREFIX;
 // Since contract states are rebuildable from ground up, we can
 // easen the type strictness for consumer applications.
 // Trait/Callback? this way, consumer apps can statically visualize their migrations
-pub trait ContractStateMigrations: Send + Sync {
+pub trait StateMigrations: Send + Sync {
     fn migrations(&self) -> Vec<&'static str>;
 
     fn get_table_names(&self) -> Vec<String> {
@@ -301,7 +301,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn returns_two_more_migrations_for_create_state_migrations() {
-        let contract_state = TestContractState;
+        let contract_state = TestState;
 
         assert_eq!(
             contract_state.get_migrations().len(),
@@ -311,7 +311,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn appends_default_migration_to_create_state_views_migrations() {
-        let contract_state = TestContractState;
+        let contract_state = TestState;
         let migrations = contract_state.get_migrations();
         let create_state_migration = migrations.first().unwrap();
 
@@ -325,7 +325,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn removes_repeating_default_migrations_in_create_state_views_migration() {
-        let contract_state = TestContractState;
+        let contract_state = TestState;
         let migrations = contract_state.get_migrations();
         let create_state_migration = migrations.first().unwrap();
 
@@ -341,7 +341,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn creates_an_extra_migration_for_creating_state_versions() {
-        let contract_state = TestContractState;
+        let contract_state = TestState;
         let mut migrations = contract_state.get_migrations();
         migrations.pop();
         let create_state_versions_migration = migrations.last().unwrap();
@@ -352,7 +352,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn normalizes_user_primary_key_column_before_creating_state_versions_migrations() {
-        let contract_state = TestContractStateWithPrimaryKey;
+        let contract_state = TestStateWithPrimaryKey;
         let mut migrations = contract_state.get_migrations();
         migrations.pop();
         let create_state_versions_migration = migrations.last().unwrap();
@@ -379,7 +379,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn returns_other_migrations_untouched() {
-        let contract_state = TestContractState;
+        let contract_state = TestState;
 
         assert_eq!(
             contract_state.migrations().last().unwrap(),
@@ -389,7 +389,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn returns_unique_index_migrations_for_state_versions() {
-        let contract_state = TestContractState;
+        let contract_state = TestState;
         let migrations = contract_state.get_migrations();
 
         let unique_index_migration = migrations.get(2);
@@ -400,7 +400,7 @@ mod contract_state_migrations_get_migration_test {
 
     #[test]
     fn ignores_json_field_in_unique_index_migration() {
-        let contract_state = TestContractStateWithJsonField;
+        let contract_state = TestStateWithJsonField;
         let migrations = contract_state.get_migrations();
 
         let unique_index_migration = migrations.get(2);
@@ -408,9 +408,9 @@ mod contract_state_migrations_get_migration_test {
         assert!(!unique_index_migration.unwrap().contains("json_field"));
     }
 
-    struct TestContractState;
+    struct TestState;
 
-    impl ContractStateMigrations for TestContractState {
+    impl StateMigrations for TestState {
         fn migrations(&self) -> Vec<&'static str> {
             vec![
                 "CREATE TABLE IF NOT EXISTS nft_states (
@@ -426,9 +426,9 @@ mod contract_state_migrations_get_migration_test {
         }
     }
 
-    struct TestContractStateWithPrimaryKey;
+    struct TestStateWithPrimaryKey;
 
-    impl ContractStateMigrations for TestContractStateWithPrimaryKey {
+    impl StateMigrations for TestStateWithPrimaryKey {
         fn migrations(&self) -> Vec<&'static str> {
             vec![
                 "CREATE TABLE IF NOT EXISTS nft_states (
@@ -441,9 +441,9 @@ mod contract_state_migrations_get_migration_test {
         }
     }
 
-    struct TestContractStateWithJsonField;
+    struct TestStateWithJsonField;
 
-    impl ContractStateMigrations for TestContractStateWithJsonField {
+    impl StateMigrations for TestStateWithJsonField {
         fn migrations(&self) -> Vec<&'static str> {
             vec![
                 "CREATE TABLE IF NOT EXISTS nft_states (

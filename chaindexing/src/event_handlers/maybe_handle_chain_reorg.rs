@@ -1,22 +1,9 @@
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-
 use crate::chain_reorg::{ReorgedBlock, ReorgedBlocks};
-use crate::contract_states::ContractStates;
-use crate::ChaindexingRepo;
-use crate::{
-    ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ExecutesWithRawQuery, HasRawQueryClient,
-    Repo,
-};
+use crate::{states, ChaindexingRepo, LoadsDataWithRawQuery};
+use crate::{ChaindexingRepoRawQueryClient, ExecutesWithRawQuery, HasRawQueryClient};
 
-pub async fn run<'a>(
-    conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-    raw_query_client: &mut ChaindexingRepoRawQueryClient,
-    table_names: &Vec<String>,
-) {
-    let mut conn = conn.lock().await;
-    let reorged_blocks = ChaindexingRepo::get_unhandled_reorged_blocks(&mut conn).await;
+pub async fn run(raw_query_client: &mut ChaindexingRepoRawQueryClient, table_names: &Vec<String>) {
+    let reorged_blocks = ChaindexingRepo::load_unhandled_reorged_blocks(raw_query_client).await;
 
     if !reorged_blocks.is_empty() {
         let raw_query_txn_client =
@@ -30,13 +17,8 @@ pub async fn run<'a>(
             ..
         } in &reorged_blocks
         {
-            ContractStates::backtrack_states(
-                table_names,
-                *chain_id,
-                *block_number,
-                &raw_query_txn_client,
-            )
-            .await;
+            states::backtrack_states(table_names, *chain_id, *block_number, &raw_query_txn_client)
+                .await;
             ChaindexingRepo::update_every_next_block_number_to_handle_from(
                 &raw_query_txn_client,
                 *chain_id,

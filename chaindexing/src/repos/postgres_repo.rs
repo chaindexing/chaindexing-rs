@@ -3,9 +3,9 @@ use std::sync::Arc;
 mod migrations;
 mod raw_queries;
 
-use crate::chain_reorg::{ReorgedBlock, UnsavedReorgedBlock};
+use crate::chain_reorg::UnsavedReorgedBlock;
+use crate::get_contract_addresses_stream_by_chain;
 use crate::reset_counts::ResetCount;
-use crate::{get_contract_addresses_stream_by_chain, get_events_stream};
 
 use crate::{
     contracts::{ContractAddress, UnsavedContractAddress},
@@ -22,7 +22,6 @@ use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl,
 };
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use diesel_streamer::get_serial_table_async_stream;
 use futures_core::{future::BoxFuture, Stream};
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -165,21 +164,6 @@ impl Repo for PostgresRepo {
             .unwrap();
     }
 
-    async fn update_next_block_number_to_handle_from<'a>(
-        conn: &mut Conn<'a>,
-        contract_address_id: i32,
-        block_number: i64,
-    ) {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        diesel::update(chaindexing_contract_addresses)
-            .filter(id.eq(contract_address_id))
-            .set(next_block_number_to_handle_from.eq(block_number))
-            .execute(conn)
-            .await
-            .unwrap();
-    }
-
     async fn create_reorged_block<'a>(
         conn: &mut Self::Conn<'a>,
         reorged_block: &UnsavedReorgedBlock,
@@ -191,16 +175,6 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
-    }
-
-    async fn get_unhandled_reorged_blocks<'a>(conn: &mut Self::Conn<'a>) -> Vec<ReorgedBlock> {
-        use crate::diesel::schema::chaindexing_reorged_blocks::dsl::*;
-
-        chaindexing_reorged_blocks
-            .filter(handled_at.is_null())
-            .load(conn)
-            .await
-            .unwrap()
     }
 
     async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>) {
@@ -262,21 +236,6 @@ impl Repo for PostgresRepo {
 impl Streamable for PostgresRepo {
     type StreamConn<'a> = PgPooledConn<'a>;
 
-    fn get_contract_addresses_stream<'a>(
-        conn: Arc<Mutex<Self::StreamConn<'a>>>,
-    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        get_serial_table_async_stream!(
-            chaindexing_contract_addresses,
-            id,
-            conn,
-            Arc<Mutex<PgPooledConn<'a>>>,
-            ContractAddress,
-            i32
-        )
-    }
-
     fn get_contract_addresses_stream_by_chain<'a>(
         conn: Arc<Mutex<Self::StreamConn<'a>>>,
         chain_id_: i64,
@@ -290,29 +249,6 @@ impl Streamable for PostgresRepo {
             ContractAddress,
             chain_id_,
             i32
-        )
-    }
-
-    fn get_events_stream<'a>(
-        conn: Arc<Mutex<Self::StreamConn<'a>>>,
-        from: i64,
-        chain_id_: i64,
-        contract_address_: String,
-    ) -> Box<dyn Stream<Item = Vec<Event>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_events::dsl::*;
-
-        const CHUNK_SIZE: i32 = 500;
-
-        get_events_stream!(
-            block_number,
-            conn,
-            Arc<Mutex<PgPooledConn<'a>>>,
-            Event,
-            chain_id_,
-            contract_address_,
-            i64,
-            CHUNK_SIZE,
-            Some(from)
         )
     }
 }
