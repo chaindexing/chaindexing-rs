@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::event_handlers::EventHandlerContext;
+use crate::handlers::{HandlerContext, PureHandlerContext};
 use crate::{ChaindexingRepoRawQueryTxnClient, Event};
 
 use super::filters::Filters;
@@ -18,29 +18,19 @@ pub trait ContractState:
 {
     fn table_name() -> &'static str;
 
-    async fn create<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
+    async fn create<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         state::create(Self::table_name(), &state::to_view(self), context).await;
     }
 
-    async fn read_one<'a, S: Send + Sync + Clone>(
-        filters: &Filters,
-        context: &EventHandlerContext<S>,
-    ) -> Option<Self> {
+    async fn read_one<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Option<Self> {
         Self::read_many(filters, context).await.first().cloned()
     }
 
-    async fn read_many<'a, S: Send + Sync + Clone>(
-        filters: &Filters,
-        context: &EventHandlerContext<S>,
-    ) -> Vec<Self> {
+    async fn read_many<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Vec<Self> {
         read_many(filters, context, Self::table_name()).await
     }
 
-    async fn update<'a, S: Send + Sync + Clone>(
-        &self,
-        updates: &Filters,
-        context: &EventHandlerContext<S>,
-    ) {
+    async fn update<'a, 'b>(&self, updates: &Filters, context: &PureHandlerContext<'a, 'b>) {
         let event = &context.event;
         let client = context.raw_query_client;
 
@@ -54,7 +44,7 @@ pub trait ContractState:
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
-    async fn delete<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
+    async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         let event = &context.event;
         let client = context.raw_query_client;
 

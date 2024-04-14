@@ -19,10 +19,10 @@ pub async fn run(raw_query_client: &mut ChaindexingRepoRawQueryClient, table_nam
         {
             states::backtrack_states(table_names, *chain_id, *block_number, &raw_query_txn_client)
                 .await;
-            ChaindexingRepo::update_every_next_block_number_to_handle_from(
+            ChaindexingRepo::update_handler_subscription_next_block_number_to_handle_from(
                 &raw_query_txn_client,
-                *chain_id,
-                *block_number,
+                *chain_id as u64,
+                *block_number as u64,
             )
             .await
         }

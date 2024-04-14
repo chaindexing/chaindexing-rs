@@ -10,15 +10,15 @@ pub use node_task::NodeTask;
 pub use node_tasks::NodeTasks;
 pub use node_tasks_runner::NodeTasksRunner;
 
-use crate::{event_handlers, events_ingester, Config};
+use crate::{handlers, ingester, Config};
 
 use std::fmt::Debug;
 
 pub const DEFAULT_MAX_CONCURRENT_NODE_COUNT: u16 = 50;
 
-pub fn get_tasks_runner<'a, S: Sync + Send + Debug + Clone + 'static>(
-    config: &'a Config<S>,
-) -> impl NodeTasksRunner + 'a {
+pub fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
+    config: &Config<S>,
+) -> impl NodeTasksRunner + '_ {
     struct ChaindexingNodeTasksRunner<'a, S: Send + Sync + Clone + Debug + 'static> {
         config: &'a Config<S>,
     }
@@ -27,11 +27,11 @@ pub fn get_tasks_runner<'a, S: Sync + Send + Debug + Clone + 'static>(
         for ChaindexingNodeTasksRunner<'a, S>
     {
         async fn run(&self) -> Vec<NodeTask> {
-            let events_ingester = events_ingester::start(self.config).await;
-            let event_handlers = event_handlers::start(self.config).await;
+            let ingester = ingester::start(self.config).await;
+            let handlers = handlers::start(self.config).await;
 
-            vec![events_ingester, event_handlers]
+            vec![ingester, handlers]
         }
     }
-    ChaindexingNodeTasksRunner { config: &config }
+    ChaindexingNodeTasksRunner { config }
 }

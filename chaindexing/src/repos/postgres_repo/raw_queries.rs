@@ -1,9 +1,9 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::chain_reorg::ReorgedBlock;
-use crate::event_handler_subscriptions::EventHandlerSubscription;
 use crate::events::PartialEvent;
-use crate::{Event, UnsavedContractAddress};
+use crate::handler_subscriptions::HandlerSubscription;
+use crate::{root, Event, UnsavedContractAddress};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
 use serde::de::DeserializeOwned;
 
@@ -41,21 +41,22 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client.commit().await.unwrap();
     }
 
-    async fn create_event_handler_subscriptions(
+    async fn create_handler_subscriptions(
         client: &Self::RawQueryClient,
-        event_handler_subscriptions: &[EventHandlerSubscription],
+        handler_subscriptions: &[HandlerSubscription],
     ) {
-        for EventHandlerSubscription {
+        for HandlerSubscription {
             chain_id,
             next_block_number_to_handle_from,
-        } in event_handler_subscriptions
+            ..
+        } in handler_subscriptions
         {
             let query = format!(
-                "INSERT INTO chaindexing_event_handler_subscriptions 
+                "INSERT INTO chaindexing_handler_subscriptions 
                 (chain_id, next_block_number_to_handle_from)
                 VALUES ('{chain_id}', {next_block_number_to_handle_from})
                 ON CONFLICT (chain_id)
-                DO NOTHING
+                DO UPDATE SET next_block_number_to_handle_from = excluded.next_block_number_to_handle_from
                 "
             );
 
@@ -81,29 +82,28 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn update_event_handler_subscriptions_next_block<'a>(
+    async fn update_handler_subscription_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        chain_ids: &[u64],
-        next_block_number_to_handle_from: u64,
+        chain_id: u64,
+        block_number: u64,
     ) {
         let query = format!(
-            "UPDATE chaindexing_event_handler_subscriptions
-        SET next_block_number_to_handle_from = {next_block_number_to_handle_from}
-        WHERE chain_id IN ({chain_ids})",
-            chain_ids = join_numbers_with_comma(chain_ids),
+            "UPDATE chaindexing_handler_subscriptions
+        SET next_block_number_to_handle_from = {block_number}
+        WHERE chain_id = {chain_id}"
         );
 
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn update_every_next_block_number_to_handle_from<'a>(
+    async fn update_handler_subscription_next_block_number_for_side_effect<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        chain_id: i64,
-        block_number: i64,
+        chain_id: u64,
+        block_number: u64,
     ) {
         let query = format!(
-            "UPDATE chaindexing_contract_addresses 
-        SET next_block_number_to_handle_from = {block_number}
+            "UPDATE chaindexing_handler_subscriptions
+        SET next_block_number_for_side_effect = {block_number}
         WHERE chain_id = {chain_id}"
         );
 
@@ -116,8 +116,8 @@ impl ExecutesWithRawQuery for PostgresRepo {
     ) {
         let query = format!(
             "UPDATE chaindexing_reorged_blocks
-        SET handled_at = '{handled_at}'
-        WHERE id IN ({reorged_block_ids})",
+            SET handled_at = '{handled_at}'
+            WHERE id IN ({reorged_block_ids})",
             reorged_block_ids = join_numbers_with_comma(reorged_block_ids),
             handled_at = chrono::Utc::now().timestamp(),
         );
@@ -125,10 +125,22 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
+    async fn append_root_state(client: &Self::RawQueryClient, new_root_state: &root::State) {
+        let reset_count = new_root_state.reset_count;
+        let reset_including_side_effects_count = new_root_state.reset_including_side_effects_count;
+
+        let query = format!(
+            "INSERT INTO chaindexing_root_states
+            (reset_count, reset_including_side_effects_count)
+            VALUES ('{reset_count}', '{reset_including_side_effects_count}')"
+        );
+
+        Self::execute_raw_query(client, &query).await;
+    }
+
     async fn prune_events(client: &Self::RawQueryClient, min_block_number: u64, chain_id: u64) {
         let query = format!(
-            "
-            DELETE FROM chaindexing_events
+            "DELETE FROM chaindexing_events
             WHERE block_number < {min_block_number}
             AND chain_id = {chain_id}
             "
@@ -139,8 +151,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
     async fn prune_nodes(client: &Self::RawQueryClient, retain_size: u16) {
         let query = format!(
-            "
-            DELETE FROM chaindexing_nodes
+            "DELETE FROM chaindexing_nodes
             WHERE id NOT IN (
                 SELECT id
                 FROM chaindexing_nodes
@@ -153,13 +164,12 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query(client, &query).await;
     }
 
-    async fn prune_reset_counts(client: &Self::RawQueryClient, retain_size: u64) {
+    async fn prune_root_states(client: &Self::RawQueryClient, retain_size: u64) {
         let query = format!(
-            "
-            DELETE FROM chaindexing_reset_counts
+            "DELETE FROM chaindexing_root_states
             WHERE id NOT IN (
                 SELECT id
-                FROM chaindexing_reset_counts
+                FROM chaindexing_root_states
                 ORDER BY id DESC
                 LIMIT {retain_size}
             )
@@ -172,12 +182,22 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
 #[async_trait::async_trait]
 impl LoadsDataWithRawQuery for PostgresRepo {
-    async fn load_event_handler_subscriptions(
+    async fn load_last_root_state(client: &Self::RawQueryClient) -> Option<root::State> {
+        Self::load_data_from_raw_query(
+            client,
+            "SELECT * FROM chaindexing_root_states
+            ORDER BY id DESC
+            LIMIT 1",
+        )
+        .await
+    }
+
+    async fn load_handler_subscriptions(
         client: &Self::RawQueryClient,
         chain_ids: &[u64],
-    ) -> Vec<EventHandlerSubscription> {
+    ) -> Vec<HandlerSubscription> {
         let query = format!(
-            "SELECT * from chaindexing_event_handler_subscriptions
+            "SELECT * from chaindexing_handler_subscriptions
             WHERE chain_id IN ({chain_ids})",
             chain_ids = join_numbers_with_comma(chain_ids),
         );

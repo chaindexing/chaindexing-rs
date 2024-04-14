@@ -22,7 +22,7 @@ where
         db::setup();
 
         let raw_query_client = new_repo().get_raw_query_client().await;
-        chaindexing::run_internal_migrations(&raw_query_client).await;
+        chaindexing::booting::run_internal_migrations(&raw_query_client).await;
     }
 
     conn.begin_test_transaction().await.unwrap();

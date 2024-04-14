@@ -8,12 +8,12 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 
 use crate::chain_reorg::{ReorgedBlock, UnsavedReorgedBlock};
-use crate::event_handler_subscriptions::EventHandlerSubscription;
+use crate::handler_subscriptions::HandlerSubscription;
+use crate::root;
 use crate::{
     contracts::UnsavedContractAddress,
     events::{Event, PartialEvent},
     nodes::Node,
-    reset_counts::ResetCount,
     ContractAddress,
 };
 
@@ -71,9 +71,6 @@ pub trait Repo:
         reorged_block: &UnsavedReorgedBlock,
     );
 
-    async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>);
-    async fn get_last_reset_count<'a>(conn: &mut Self::Conn<'a>) -> Option<ResetCount>;
-
     async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node;
     async fn get_active_nodes<'a>(
         conn: &mut Self::Conn<'a>,
@@ -99,9 +96,9 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
     async fn execute_raw_query_in_txn<'a>(client: &Self::RawQueryTxnClient<'a>, query: &str);
     async fn commit_raw_query_txns<'a>(client: Self::RawQueryTxnClient<'a>);
 
-    async fn create_event_handler_subscriptions(
+    async fn create_handler_subscriptions(
         client: &Self::RawQueryClient,
-        event_handler_subscriptions: &[EventHandlerSubscription],
+        handler_subscriptions: &[HandlerSubscription],
     );
 
     async fn create_contract_address<'a>(
@@ -109,16 +106,16 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         contract_address: &UnsavedContractAddress,
     );
 
-    async fn update_event_handler_subscriptions_next_block<'a>(
+    async fn update_handler_subscription_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        chain_ids: &[u64],
-        next_block_number_to_handle_from: u64,
+        chain_id: u64,
+        block_number: u64,
     );
 
-    async fn update_every_next_block_number_to_handle_from<'a>(
+    async fn update_handler_subscription_next_block_number_for_side_effect<'a>(
         client: &Self::RawQueryTxnClient<'a>,
-        chain_id: i64,
-        block_number: i64,
+        chain_id: u64,
+        block_number: u64,
     );
 
     async fn update_reorged_blocks_as_handled<'a>(
@@ -126,22 +123,24 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         reorged_block_ids: &[i32],
     );
 
+    async fn append_root_state(client: &Self::RawQueryClient, new_root_state: &root::State);
     async fn prune_events(client: &Self::RawQueryClient, min_block_number: u64, chain_id: u64);
     async fn prune_nodes(client: &Self::RawQueryClient, retain_size: u16);
-    async fn prune_reset_counts(client: &Self::RawQueryClient, retain_size: u64);
+    async fn prune_root_states(client: &Self::RawQueryClient, retain_size: u64);
 }
 
 #[async_trait::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
+    async fn load_last_root_state(client: &Self::RawQueryClient) -> Option<root::State>;
     async fn load_latest_events(
         client: &Self::RawQueryClient,
         addresses: &[String],
     ) -> Vec<PartialEvent>;
     async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock>;
-    async fn load_event_handler_subscriptions(
+    async fn load_handler_subscriptions(
         client: &Self::RawQueryClient,
         chain_ids: &[u64],
-    ) -> Vec<EventHandlerSubscription>;
+    ) -> Vec<HandlerSubscription>;
     async fn load_events(
         client: &Self::RawQueryClient,
         chain_ids: &[u64],
@@ -176,23 +175,26 @@ pub trait Streamable {
 }
 
 pub trait RepoMigrations: Migratable {
+    fn create_root_states_migration() -> &'static [&'static str];
+
     fn create_nodes_migration() -> &'static [&'static str];
     fn create_contract_addresses_migration() -> &'static [&'static str];
     fn drop_contract_addresses_migration() -> &'static [&'static str];
     fn create_events_migration() -> &'static [&'static str];
     fn drop_events_migration() -> &'static [&'static str];
-    fn create_reset_counts_migration() -> &'static [&'static str];
     fn create_reorged_blocks_migration() -> &'static [&'static str];
     fn drop_reorged_blocks_migration() -> &'static [&'static str];
-    fn create_event_handler_subscriptions_migration() -> &'static [&'static str];
-    fn drop_event_handler_subscriptions_migration() -> &'static [&'static str];
+    fn create_handler_subscriptions_migration() -> &'static [&'static str];
+    fn nullify_handler_subscriptions_next_block_number_to_handle_from_migration(
+    ) -> &'static [&'static str];
+    fn drop_handler_subscriptions_migration() -> &'static [&'static str];
 
     fn get_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_contract_addresses_migration(),
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
-            Self::create_event_handler_subscriptions_migration(),
+            Self::create_handler_subscriptions_migration(),
         ]
         .concat()
     }
@@ -202,7 +204,7 @@ pub trait RepoMigrations: Migratable {
             Self::drop_contract_addresses_migration(),
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
-            Self::drop_event_handler_subscriptions_migration(),
+            Self::nullify_handler_subscriptions_next_block_number_to_handle_from_migration(),
         ]
         .concat()
     }
@@ -223,6 +225,14 @@ pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
 pub struct SQLikeMigrations;
 
 impl SQLikeMigrations {
+    pub fn create_root_states() -> &'static [&'static str] {
+        &["CREATE TABLE IF NOT EXISTS chaindexing_root_states (
+                id BIGSERIAL PRIMARY KEY,
+                reset_count BIGINT NOT NULL,
+                reset_including_side_effects_count BIGINT NOT NULL
+            )"]
+    }
+
     pub fn create_nodes() -> &'static [&'static str] {
         &["CREATE TABLE IF NOT EXISTS chaindexing_nodes (
                 id SERIAL PRIMARY KEY,
@@ -291,26 +301,25 @@ impl SQLikeMigrations {
         &["DROP TABLE IF EXISTS chaindexing_reorged_blocks"]
     }
 
-    pub fn create_reset_counts() -> &'static [&'static str] {
-        &["CREATE TABLE IF NOT EXISTS chaindexing_reset_counts (
-                id BIGSERIAL PRIMARY KEY,
-                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
-            )"]
-    }
-
-    pub fn create_event_handler_subscriptions() -> &'static [&'static str] {
+    pub fn create_handler_subscriptions() -> &'static [&'static str] {
         &[
-            "CREATE TABLE IF NOT EXISTS chaindexing_event_handler_subscriptions (
+            "CREATE TABLE IF NOT EXISTS chaindexing_handler_subscriptions (
                 id SERIAL PRIMARY KEY,
                 chain_id BIGINT NOT NULL,
-                next_block_number_to_handle_from BIGINT NOT NULL
+                next_block_number_to_handle_from BIGINT NOT NULL,
+                next_block_number_for_side_effects BIGINT DEFAULT 0
             )",
-            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_event_handler_subscriptions_chain
-        ON chaindexing_event_handler_subscriptions(chain_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_handler_subscriptions_chain
+        ON chaindexing_handler_subscriptions(chain_id)",
         ]
     }
 
-    pub fn drop_event_handler_subscriptions() -> &'static [&'static str] {
-        &["DROP TABLE IF EXISTS chaindexing_event_handler_subscriptions"]
+    pub fn nullify_handler_subscriptions_next_block_number_to_handle_from(
+    ) -> &'static [&'static str] {
+        &["UPDATE TABLE chaindexing_handler_subscriptions SET next_block_number_to_handle_from = 0"]
+    }
+
+    pub fn drop_handler_subscriptions() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_handler_subscriptions"]
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::event_handlers::EventHandlerContext;
+use crate::handlers::{HandlerContext, PureHandlerContext};
 use crate::{ChaindexingRepoRawQueryTxnClient, Event};
 
 use super::filters::Filters;
@@ -18,28 +18,22 @@ pub trait MultiChainState:
 {
     fn table_name() -> &'static str;
 
-    async fn create<'a, S: Send + Sync + Clone>(&self, context: &EventHandlerContext<S>) {
+    async fn create<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         state::create(Self::table_name(), &state::to_view(self), context).await;
     }
 
-    async fn read_one<'a, S: Send + Sync + Clone>(
-        filters: &Filters,
-        context: &EventHandlerContext<S>,
-    ) -> Option<Self> {
+    async fn read_one<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Option<Self> {
         Self::read_many(filters, context).await.first().cloned()
     }
 
-    async fn read_many<'a, S: Send + Sync + Clone>(
-        filters: &Filters,
-        context: &EventHandlerContext<S>,
-    ) -> Vec<Self> {
+    async fn read_many<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Vec<Self> {
         read_many(filters, context, Self::table_name()).await
     }
 
-    async fn update<'a, 'b, 'life1: 'b, S: Send + Sync + Clone>(
+    async fn update<'a, 'b, 'life1: 'b>(
         &self,
         updates: &'life1 Filters,
-        context: &'life1 EventHandlerContext<'a, 'b, S>,
+        context: &'life1 PureHandlerContext<'a, 'b>,
     ) {
         let event = context.event.clone();
         let client = context.raw_query_client;
@@ -65,10 +59,7 @@ pub trait MultiChainState:
             .await;
     }
 
-    async fn delete<'a, 'b, 'life1: 'b, S: Send + Sync + Clone>(
-        &self,
-        context: &'life1 EventHandlerContext<S>,
-    ) {
+    async fn delete<'a, 'b, 'life1>(&self, context: &'life1 PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
         let client = context.raw_query_client;
         let table_name = Self::table_name();

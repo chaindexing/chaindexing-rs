@@ -50,18 +50,19 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub chains: Vec<Chain>,
     pub repo: ChaindexingRepo,
     pub contracts: Vec<Contract<SharedState>>,
-    pub min_confirmation_count: MinConfirmationCount,
+    pub(crate) min_confirmation_count: MinConfirmationCount,
     pub blocks_per_batch: u64,
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
     pub chain_concurrency: u32,
     node_election_rate_ms: Option<u64>,
     pub reset_count: u64,
+    pub(crate) reset_including_side_effects_count: u64,
     pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
     pub max_concurrent_node_count: u16,
     pub optimization_config: Option<OptimizationConfig>,
-    pub pruning_config: Option<PruningConfig>,
+    pub(crate) pruning_config: Option<PruningConfig>,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -77,6 +78,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             chain_concurrency: 4,
             node_election_rate_ms: None,
             reset_count: 0,
+            reset_including_side_effects_count: 0,
             reset_queries: vec![],
             shared_state: None,
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
@@ -105,6 +107,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn reset(mut self, count: u64) -> Self {
         self.reset_count = count;
+
+        self
+    }
+
+    pub fn reset_including_side_effects_dangerously(mut self, count: u64) -> Self {
+        self.reset_including_side_effects_count = count;
 
         self
     }

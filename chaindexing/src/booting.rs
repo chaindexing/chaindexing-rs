@@ -4,7 +4,15 @@ use crate::{
     Migratable, Repo, RepoMigrations,
 };
 
-pub async fn run<'a, S: Sync + Send + Clone>(
+pub async fn setup_nodes<S: Sync + Send + Clone>(
+    config: &Config<S>,
+    client: &ChaindexingRepoRawQueryClient,
+) {
+    ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
+    ChaindexingRepo::prune_nodes(client, config.max_concurrent_node_count).await;
+}
+
+pub async fn setup<'a, S: Sync + Send + Clone>(
     config: &Config<S>,
     conn: &mut ChaindexingRepoConn<'a>,
     client: &ChaindexingRepoRawQueryClient,
@@ -12,12 +20,20 @@ pub async fn run<'a, S: Sync + Send + Clone>(
     let Config {
         contracts,
         reset_count,
+        reset_including_side_effects_count,
         reset_queries,
         ..
     } = config;
 
     run_root_migrations(client).await;
-    maybe_reset(reset_count, reset_queries, contracts, client).await;
+    maybe_reset(
+        *reset_count,
+        *reset_including_side_effects_count,
+        reset_queries,
+        contracts,
+        client,
+    )
+    .await;
     run_internal_migrations(client).await;
     run_migrations_for_contract_states(client, contracts).await;
 
@@ -25,8 +41,8 @@ pub async fn run<'a, S: Sync + Send + Clone>(
         contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
     ChaindexingRepo::upsert_contract_addresses(conn, &contract_addresses).await;
 
-    let event_handler_subscriptions = contracts::get_all_event_handler_subscriptions(contracts);
-    ChaindexingRepo::create_event_handler_subscriptions(client, &event_handler_subscriptions).await;
+    let handler_subscriptions = contracts::get_handler_subscriptions(contracts);
+    ChaindexingRepo::create_handler_subscriptions(client, &handler_subscriptions).await;
 
     Ok(())
 }
@@ -41,23 +57,33 @@ pub async fn run_root_migrations(client: &ChaindexingRepoRawQueryClient) {
 }
 
 pub async fn maybe_reset<S: Send + Sync + Clone>(
-    reset_count: &u64,
+    reset_count: u64,
+    reset_including_side_effects_count: u64,
     reset_queries: &Vec<String>,
     contracts: &[Contract<S>],
     client: &ChaindexingRepoRawQueryClient,
 ) {
-    let reset_count = *reset_count;
-    let root_state = ChaindexingRepo::load_last_root_state(client).await;
-    let last_reset_count = root_state.clone().map(|rs| rs.reset_count).unwrap_or(0);
+    let mut root_state = ChaindexingRepo::load_last_root_state(client).await.unwrap_or_default();
 
-    if reset_count > last_reset_count {
+    if reset_count > root_state.reset_count {
         reset_internal_migrations(client).await;
         reset_migrations_for_contract_states(client, contracts).await;
         run_user_reset_queries(client, reset_queries).await;
 
-        let new_root_state = root_state.unwrap().with_new_reset_count(reset_count);
-        ChaindexingRepo::create_root_state(client, &new_root_state).await;
+        root_state.update_reset_count(reset_count);
     }
+
+    if reset_including_side_effects_count > root_state.reset_including_side_effects_count {
+        ChaindexingRepo::migrate(
+            client,
+            ChaindexingRepo::drop_handler_subscriptions_migration().to_vec(),
+        )
+        .await;
+
+        root_state.update_reset_including_side_effects_count(reset_including_side_effects_count);
+    }
+
+    ChaindexingRepo::append_root_state(client, &root_state).await;
 }
 
 pub async fn run_internal_migrations(client: &ChaindexingRepoRawQueryClient) {

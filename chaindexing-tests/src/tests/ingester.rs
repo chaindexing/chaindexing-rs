@@ -12,7 +12,7 @@ mod tests {
         provider_with_empty_logs, provider_with_filter_stubber, provider_with_logs, test_runner,
     };
     use chaindexing::{
-        events_ingester, ChainId, ChaindexingRepo, Config, HasRawQueryClient, PostgresRepo, Repo,
+        ingester, ChainId, ChaindexingRepo, Config, HasRawQueryClient, PostgresRepo, Repo,
     };
 
     #[tokio::test]
@@ -35,7 +35,7 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            events_ingester::ingest(
+            ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 provider,
@@ -85,7 +85,7 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            events_ingester::ingest(
+            ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 provider,
@@ -121,7 +121,7 @@ mod tests {
 
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
             let config = config.with_blocks_per_batch(blocks_per_batch);
-            events_ingester::ingest(
+            ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 provider,
@@ -160,7 +160,7 @@ mod tests {
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
 
-            events_ingester::ingest(
+            ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 provider,
@@ -192,7 +192,7 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-            events_ingester::ingest(
+            ingester::ingest(
                 conn.clone(),
                 &raw_query_client,
                 provider,

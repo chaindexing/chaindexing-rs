@@ -5,7 +5,6 @@ mod raw_queries;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
 use crate::get_contract_addresses_stream_by_chain;
-use crate::reset_counts::ResetCount;
 
 use crate::{
     contracts::{ContractAddress, UnsavedContractAddress},
@@ -19,7 +18,7 @@ use diesel::{
     delete,
     result::{DatabaseErrorKind, Error as DieselError},
     upsert::excluded,
-    ExpressionMethods, OptionalExtension, QueryDsl,
+    ExpressionMethods, QueryDsl,
 };
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
 use futures_core::{future::BoxFuture, Stream};
@@ -178,27 +177,6 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
-    }
-
-    async fn create_reset_count<'a>(conn: &mut Self::Conn<'a>) {
-        use crate::diesel::schema::chaindexing_reset_counts::dsl::*;
-
-        diesel::insert_into(chaindexing_reset_counts)
-            .default_values()
-            .execute(conn)
-            .await
-            .unwrap();
-    }
-
-    async fn get_last_reset_count<'a>(conn: &mut Self::Conn<'a>) -> Option<ResetCount> {
-        use crate::diesel::schema::chaindexing_reset_counts::dsl::*;
-
-        chaindexing_reset_counts
-            .order_by(id.desc())
-            .first(conn)
-            .await
-            .optional()
-            .unwrap()
     }
 
     async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node {
