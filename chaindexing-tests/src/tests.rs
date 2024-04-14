@@ -1,4 +1,4 @@
-mod events_ingester;
+mod ingester;
 mod repos;
 mod states;
 

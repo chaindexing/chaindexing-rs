@@ -4,7 +4,7 @@ mod ingest_events;
 mod maybe_handle_chain_reorg;
 mod provider;
 
-pub use error::EventsIngesterError;
+pub use error::IngesterError;
 pub use provider::{Provider, ProviderError};
 
 use std::cmp::max;
@@ -19,7 +19,7 @@ use tokio::time::interval;
 
 use crate::chains::ChainId;
 use crate::contracts;
-use crate::node_task::NodeTask;
+use crate::nodes::NodeTask;
 use crate::pruning::PruningConfig;
 use crate::states;
 use crate::Chain;
@@ -83,7 +83,7 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
         ..
     }: &Config<S>,
     last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
-) -> Result<(), EventsIngesterError> {
+) -> Result<(), IngesterError> {
     let current_block_number = provider::fetch_current_block_number(&provider).await;
     let mut contract_addresses_stream =
         ChaindexingRepo::get_contract_addresses_stream_by_chain(conn.clone(), *chain_id as i64);

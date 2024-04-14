@@ -1,14 +1,14 @@
-use chaindexing::EventsIngesterProvider;
+use chaindexing::IngesterProvider;
 use ethers::providers::ProviderError;
 use ethers::types::{Block, Filter, Log, TxHash, U64};
 
 use rand::seq::SliceRandom;
 
-pub fn empty_provider() -> impl EventsIngesterProvider {
+pub fn empty_provider() -> impl IngesterProvider {
     #[derive(Clone)]
     struct Provider;
     #[async_trait::async_trait]
-    impl EventsIngesterProvider for Provider {
+    impl IngesterProvider for Provider {
         async fn get_block_number(&self) -> Result<U64, ProviderError> {
             Ok(U64::from(0))
         }
@@ -70,7 +70,7 @@ macro_rules! provider_with_logs {
         provider_with_logs!($contract_address, 17774490)
     }};
     ($contract_address:expr, $current_block_number:expr) => {{
-        use chaindexing::EventsIngesterProvider;
+        use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
         use $crate::factory::transfer_log;
@@ -78,7 +78,7 @@ macro_rules! provider_with_logs {
         #[derive(Clone)]
         struct Provider;
         #[async_trait::async_trait]
-        impl EventsIngesterProvider for Provider {
+        impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from($current_block_number))
             }
@@ -102,14 +102,14 @@ macro_rules! provider_with_logs {
 #[macro_export]
 macro_rules! provider_with_filter_stubber {
     ($contract_address:expr, $filter_stubber: expr) => {{
-        use chaindexing::EventsIngesterProvider;
+        use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
 
         #[derive(Clone)]
         struct Provider;
         #[async_trait::async_trait]
-        impl EventsIngesterProvider for Provider {
+        impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from(3))
             }
@@ -137,14 +137,14 @@ macro_rules! provider_with_filter_stubber {
 #[macro_export]
 macro_rules! provider_with_empty_logs {
     ($contract_address:expr) => {{
-        use chaindexing::EventsIngesterProvider;
+        use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
 
         #[derive(Clone)]
         struct Provider;
         #[async_trait::async_trait]
-        impl EventsIngesterProvider for Provider {
+        impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from(3))
             }

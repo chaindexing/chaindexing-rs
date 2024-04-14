@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::chain_reorg::MinConfirmationCount;
 use crate::chains::Chain;
-use crate::nodes::{self, KeepNodeActiveRequest};
+use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
 use crate::{ChaindexingRepo, Contract};
 
@@ -28,22 +28,19 @@ impl std::fmt::Debug for ConfigError {
 
 #[derive(Clone, Debug)]
 pub struct OptimizationConfig {
-    pub(crate) keep_node_active_request: KeepNodeActiveRequest,
+    pub(crate) node_heartbeat: NodeHeartbeat,
     /// Optimization starts after the seconds specified here.
     /// This is the typically the estimated time to complete initial indexing
     /// i.e. the estimated time in seconds for chaindexing to reach
     /// the current block for all chains being indexed.
-    pub(crate) optimize_after_in_secs: u64,
+    pub(crate) start_after_in_secs: u64,
 }
 
 impl OptimizationConfig {
-    pub fn new(
-        keep_node_active_request: &KeepNodeActiveRequest,
-        optimize_after_in_secs: u64,
-    ) -> Self {
+    pub fn new(node_heartbeat: &NodeHeartbeat, start_after_in_secs: u64) -> Self {
         Self {
-            keep_node_active_request: keep_node_active_request.clone(),
-            optimize_after_in_secs,
+            node_heartbeat: node_heartbeat.clone(),
+            start_after_in_secs,
         }
     }
 }
@@ -53,18 +50,19 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub chains: Vec<Chain>,
     pub repo: ChaindexingRepo,
     pub contracts: Vec<Contract<SharedState>>,
-    pub min_confirmation_count: MinConfirmationCount,
+    pub(crate) min_confirmation_count: MinConfirmationCount,
     pub blocks_per_batch: u64,
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
     pub chain_concurrency: u32,
     node_election_rate_ms: Option<u64>,
     pub reset_count: u64,
+    pub(crate) reset_including_side_effects_count: u64,
     pub reset_queries: Vec<String>,
     pub shared_state: Option<Arc<Mutex<SharedState>>>,
     pub max_concurrent_node_count: u16,
     pub optimization_config: Option<OptimizationConfig>,
-    pub pruning_config: Option<PruningConfig>,
+    pub(crate) pruning_config: Option<PruningConfig>,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -80,6 +78,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             chain_concurrency: 4,
             node_election_rate_ms: None,
             reset_count: 0,
+            reset_including_side_effects_count: 0,
             reset_queries: vec![],
             shared_state: None,
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
@@ -108,6 +107,12 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn reset(mut self, count: u64) -> Self {
         self.reset_count = count;
+
+        self
+    }
+
+    pub fn reset_including_side_effects_dangerously(mut self, count: u64) -> Self {
+        self.reset_including_side_effects_count = count;
 
         self
     }

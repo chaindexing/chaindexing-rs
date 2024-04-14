@@ -2,9 +2,10 @@ use std::fmt::Debug;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::diesel::schema::chaindexing_contract_addresses;
-use crate::event_handler_subscriptions::EventHandlerSubscription;
+use crate::handler_subscriptions::HandlerSubscription;
+use crate::handlers::{PureHandler, SideEffectHandler};
 use crate::states::StateMigrations;
-use crate::{ChainId, EventHandler};
+use crate::ChainId;
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::types::U64;
@@ -36,9 +37,10 @@ type EventAbi = &'static str;
 pub struct Contract<S: Send + Sync + Clone> {
     pub addresses: Vec<UnsavedContractAddress>,
     pub name: String,
-    pub event_handlers: HashMap<EventAbi, Arc<dyn EventHandler<SharedState = S>>>,
+    pub pure_handlers: HashMap<EventAbi, Arc<dyn PureHandler>>,
+    pub side_effect_handlers: HashMap<EventAbi, Arc<dyn SideEffectHandler<SharedState = S>>>,
     pub state_migrations: Vec<Arc<dyn StateMigrations>>,
-    pub handler_subcriptions: Vec<EventHandlerSubscription>,
+    pub handler_subcriptions: Vec<HandlerSubscription>,
 }
 
 impl<S: Send + Sync + Clone> Contract<S> {
@@ -47,7 +49,8 @@ impl<S: Send + Sync + Clone> Contract<S> {
             addresses: vec![],
             state_migrations: vec![],
             name: name.to_string(),
-            event_handlers: HashMap::new(),
+            pure_handlers: HashMap::new(),
+            side_effect_handlers: HashMap::new(),
             handler_subcriptions: Vec::new(),
         }
     }
@@ -66,16 +69,22 @@ impl<S: Send + Sync + Clone> Contract<S> {
         ));
 
         self.handler_subcriptions
-            .push(EventHandlerSubscription::new(chain_id, start_block_number));
+            .push(HandlerSubscription::new(chain_id, start_block_number));
 
         self
     }
 
-    pub fn add_event_handler(
+    pub fn add_handler(mut self, handler: impl PureHandler + 'static) -> Self {
+        self.pure_handlers.insert(handler.abi(), Arc::new(handler));
+
+        self
+    }
+
+    pub fn add_side_effect_handler(
         mut self,
-        event_handler: impl EventHandler<SharedState = S> + 'static,
+        handler: impl SideEffectHandler<SharedState = S> + 'static,
     ) -> Self {
-        self.event_handlers.insert(event_handler.abi(), Arc::new(event_handler));
+        self.side_effect_handlers.insert(handler.abi(), Arc::new(handler));
 
         self
     }
@@ -87,7 +96,13 @@ impl<S: Send + Sync + Clone> Contract<S> {
     }
 
     pub fn get_event_abis(&self) -> Vec<EventAbi> {
-        self.event_handlers.clone().into_keys().collect()
+        let mut event_abis: Vec<_> = self.pure_handlers.clone().into_keys().collect();
+        let side_effect_abis: Vec<_> = self.pure_handlers.clone().into_keys().collect();
+
+        event_abis.extend(side_effect_abis);
+        event_abis.dedup();
+
+        event_abis
     }
 
     pub fn get_event_topics(&self) -> Vec<ContractEventTopic> {
@@ -117,16 +132,16 @@ pub fn get_state_migrations<S: Send + Sync + Clone>(
     contracts.iter().flat_map(|c| c.state_migrations.clone()).collect()
 }
 
-pub fn get_all_event_handler_subscriptions<S: Send + Sync + Clone>(
+pub fn get_handler_subscriptions<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
-) -> Vec<EventHandlerSubscription> {
-    let mut handler_subscriptions_by_chain_id: HashMap<u64, EventHandlerSubscription> =
-        HashMap::new();
+) -> Vec<HandlerSubscription> {
+    let mut handler_subscriptions_by_chain_id: HashMap<u64, HandlerSubscription> = HashMap::new();
 
     for contract in contracts.iter() {
-        for handler_subscription @ EventHandlerSubscription {
+        for handler_subscription @ HandlerSubscription {
             chain_id,
             next_block_number_to_handle_from,
+            ..
         } in contract.handler_subcriptions.iter()
         {
             if let Some(prev_handler_subscription) = handler_subscriptions_by_chain_id.get(chain_id)
@@ -146,19 +161,26 @@ pub fn get_all_event_handler_subscriptions<S: Send + Sync + Clone>(
     handler_subscriptions_by_chain_id.into_values().collect()
 }
 
-pub fn get_all_event_handlers_by_event_abi<S: Send + Sync + Clone>(
+pub fn get_pure_handlers_by_event_abi<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
-) -> HashMap<EventAbi, Arc<dyn EventHandler<SharedState = S>>> {
-    contracts.iter().fold(
-        HashMap::new(),
-        |mut event_handlers_by_event_abi, contract| {
-            contract.event_handlers.iter().for_each(|(event_abi, event_handler)| {
-                event_handlers_by_event_abi.insert(event_abi, event_handler.clone());
-            });
+) -> HashMap<EventAbi, Arc<dyn PureHandler>> {
+    contracts.iter().fold(HashMap::new(), |mut handlers_by_event_abi, contract| {
+        contract.pure_handlers.iter().for_each(|(event_abi, handler)| {
+            handlers_by_event_abi.insert(event_abi, handler.clone());
+        });
+        handlers_by_event_abi
+    })
+}
 
-            event_handlers_by_event_abi
-        },
-    )
+pub fn get_side_effect_handlers_by_event_abi<S: Send + Sync + Clone>(
+    contracts: &[Contract<S>],
+) -> HashMap<EventAbi, Arc<dyn SideEffectHandler<SharedState = S>>> {
+    contracts.iter().fold(HashMap::new(), |mut handlers_by_event_abi, contract| {
+        contract.side_effect_handlers.iter().for_each(|(event_abi, handler)| {
+            handlers_by_event_abi.insert(event_abi, handler.clone());
+        });
+        handlers_by_event_abi
+    })
 }
 
 pub fn group_event_topics_by_names<S: Send + Sync + Clone>(

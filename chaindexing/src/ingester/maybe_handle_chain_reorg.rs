@@ -11,7 +11,7 @@ use crate::{ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, Repo
 
 use super::filters::{self, Filter};
 use super::Provider;
-use super::{provider, EventsIngesterError};
+use super::{provider, IngesterError};
 
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
@@ -25,7 +25,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         blocks_per_batch,
         ..
     }: &Config<S>,
-) -> Result<(), EventsIngesterError> {
+) -> Result<(), IngesterError> {
     let filters = filters::get(
         &contract_addresses,
         contracts,
@@ -79,7 +79,7 @@ async fn handle_chain_reorg<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     chain_id: &ChainId,
     (added_events, removed_events): (Vec<Event>, Vec<Event>),
-) -> Result<(), EventsIngesterError> {
+) -> Result<(), IngesterError> {
     let earliest_block_number = get_earliest_block_number((&added_events, &removed_events));
     let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, chain_id);
 

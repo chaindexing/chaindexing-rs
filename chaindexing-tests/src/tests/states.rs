@@ -17,14 +17,13 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+        let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
             &Arc::new(Mutex::new(
                 test_runner::new_repo().get_raw_query_client().await,
             )),
             &DeferredFutures::new(),
-            &None,
         );
 
         let new_state = NftState { token_id: 2 };
@@ -43,14 +42,13 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+        let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
             &Arc::new(Mutex::new(
                 test_runner::new_repo().get_raw_query_client().await,
             )),
             &DeferredFutures::new(),
-            &None,
         );
 
         let new_state = NftState { token_id: 1 };
@@ -70,14 +68,13 @@ mod tests {
         let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
         let raw_query_txn_client =
             ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
-        let event_context: EventContext<'_, '_, ()> = EventContext::new(
+        let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
             &raw_query_txn_client,
             &Arc::new(Mutex::new(
                 test_runner::new_repo().get_raw_query_client().await,
             )),
             &DeferredFutures::new(),
-            &None,
         );
 
         let new_state = NftState { token_id: 9 };
@@ -120,5 +117,6 @@ impl StateMigrations for NftStateMigrations {
 pub async fn setup() {
     let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
     let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-    chaindexing::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract]).await;
+    chaindexing::booting::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract])
+        .await;
 }

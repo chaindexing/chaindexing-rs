@@ -40,12 +40,6 @@ pub mod schema {
     }
 
     diesel::table! {
-      chaindexing_reset_counts (id) {
-          id -> Int8,
-      }
-    }
-
-    diesel::table! {
       chaindexing_reorged_blocks (id) {
           id -> Int4,
           block_number -> Int8,

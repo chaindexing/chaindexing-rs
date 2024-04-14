@@ -5,7 +5,7 @@ use futures_util::FutureExt;
 
 use super::filters::{self, Filter};
 use super::provider::{self, Provider};
-use super::EventsIngesterError;
+use super::IngesterError;
 
 use crate::chain_reorg::Execution;
 use crate::Config;
@@ -27,7 +27,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         blocks_per_batch,
         ..
     }: &Config<S>,
-) -> Result<(), EventsIngesterError> {
+) -> Result<(), IngesterError> {
     let filters = filters::get(
         &contract_addresses,
         contracts,

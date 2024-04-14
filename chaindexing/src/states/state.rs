@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::event_handlers::EventHandlerContext;
+use crate::handlers::{HandlerContext, PureHandlerContext};
 use crate::{ChaindexingRepo, LoadsDataWithRawQuery};
 
 use super::filters::Filters;
@@ -21,27 +21,27 @@ where
     serde_map_to_string_map(&map)
 }
 
-pub async fn read_many<'a, 'b, S: Send + Sync + Clone, T: Send + DeserializeOwned>(
+pub async fn read_many<'a, C: HandlerContext<'a>, T: Send + DeserializeOwned>(
     filters: &Filters,
-    context: &EventHandlerContext<'a, 'b, S>,
+    context: &C,
     table_name: &str,
 ) -> Vec<T> {
-    let client = context.raw_query_client;
+    let client = context.get_raw_query_client();
 
     let raw_query = format!(
         "SELECT * FROM {table_name} 
         WHERE {filters}",
         table_name = table_name,
-        filters = to_and_filters(&filters.get(&context.event)),
+        filters = to_and_filters(&filters.get(context.get_event())),
     );
 
     ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query).await
 }
 
-pub async fn create<'a, 'b, S: Send + Sync + Clone>(
+pub async fn create<'a, 'b>(
     table_name: &str,
     state_view: &HashMap<String, String>,
-    context: &EventHandlerContext<'a, 'b, S>,
+    context: &PureHandlerContext<'a, 'b>,
 ) {
     let event = &context.event;
     let client = context.raw_query_client;
