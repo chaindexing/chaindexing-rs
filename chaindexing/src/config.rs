@@ -99,6 +99,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
+    /// Allows managing derived app states (derived from indexed states)
     pub fn add_reset_query(mut self, reset_query: &str) -> Self {
         self.reset_queries.push(reset_query.to_string());
 
