@@ -19,7 +19,7 @@ impl Filters {
     pub fn new(field: impl ToString, value: impl ToString) -> Self {
         Self {
             values: HashMap::from([(field.to_string(), value.to_string())]),
-            context: FiltersContext::MultiChain,
+            context: FiltersContext::Contract,
         }
     }
     pub fn add(mut self, field: impl ToString, value: impl ToString) -> Self {
