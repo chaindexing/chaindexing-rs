@@ -8,7 +8,7 @@ use crate::ChainId;
 pub struct HandlerSubscription {
     pub chain_id: u64,
     pub next_block_number_to_handle_from: u64,
-    pub next_block_number_for_side_effect: u64,
+    pub next_block_number_for_side_effects: u64,
 }
 
 impl HandlerSubscription {
@@ -16,7 +16,7 @@ impl HandlerSubscription {
         Self {
             chain_id: *chain_id as u64,
             next_block_number_to_handle_from,
-            next_block_number_for_side_effect: next_block_number_to_handle_from,
+            next_block_number_for_side_effects: next_block_number_to_handle_from,
         }
     }
 }

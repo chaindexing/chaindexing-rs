@@ -101,6 +101,11 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         handler_subscriptions: &[HandlerSubscription],
     );
 
+    async fn upsert_handler_subscriptions(
+        client: &Self::RawQueryClient,
+        handler_subscriptions: &[HandlerSubscription],
+    );
+
     async fn create_contract_address<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         contract_address: &UnsavedContractAddress,
@@ -112,7 +117,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         block_number: u64,
     );
 
-    async fn update_handler_subscription_next_block_number_for_side_effect<'a>(
+    async fn update_handler_subscription_next_block_number_for_side_effects<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         chain_id: u64,
         block_number: u64,
@@ -178,23 +183,27 @@ pub trait RepoMigrations: Migratable {
     fn create_root_states_migration() -> &'static [&'static str];
 
     fn create_nodes_migration() -> &'static [&'static str];
+
     fn create_contract_addresses_migration() -> &'static [&'static str];
     fn drop_contract_addresses_migration() -> &'static [&'static str];
+
     fn create_events_migration() -> &'static [&'static str];
     fn drop_events_migration() -> &'static [&'static str];
+
     fn create_reorged_blocks_migration() -> &'static [&'static str];
     fn drop_reorged_blocks_migration() -> &'static [&'static str];
+
     fn create_handler_subscriptions_migration() -> &'static [&'static str];
     fn nullify_handler_subscriptions_next_block_number_to_handle_from_migration(
     ) -> &'static [&'static str];
-    fn drop_handler_subscriptions_migration() -> &'static [&'static str];
+    fn nullify_handler_subscriptions_next_block_number_for_side_effects_migration(
+    ) -> &'static [&'static str];
 
     fn get_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_contract_addresses_migration(),
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
-            Self::create_handler_subscriptions_migration(),
         ]
         .concat()
     }
@@ -316,10 +325,11 @@ impl SQLikeMigrations {
 
     pub fn nullify_handler_subscriptions_next_block_number_to_handle_from(
     ) -> &'static [&'static str] {
-        &["UPDATE TABLE chaindexing_handler_subscriptions SET next_block_number_to_handle_from = 0"]
+        &["UPDATE chaindexing_handler_subscriptions SET next_block_number_to_handle_from = 0"]
     }
 
-    pub fn drop_handler_subscriptions() -> &'static [&'static str] {
-        &["DROP TABLE IF EXISTS chaindexing_handler_subscriptions"]
+    pub fn nullify_handler_subscriptions_next_block_number_for_side_effects(
+    ) -> &'static [&'static str] {
+        &["UPDATE chaindexing_handler_subscriptions SET next_block_number_for_side_effects = 0"]
     }
 }

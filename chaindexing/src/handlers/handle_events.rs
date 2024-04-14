@@ -53,7 +53,10 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
 
         let subscription = subscriptions_by_chain_id.get(&chain_id).unwrap();
 
-        for event in events {
+        for event in events
+            .iter()
+            .filter(|e| e.block_number as u64 >= subscription.next_block_number_to_handle_from)
+        {
             {
                 let handler = pure_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
                 let handler_context = PureHandlerContext::new(
@@ -67,7 +70,7 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
             }
 
             {
-                if event.block_number as u64 >= subscription.next_block_number_for_side_effect {
+                if event.block_number as u64 >= subscription.next_block_number_for_side_effects {
                     let handler =
                         side_effect_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
                     let handler_context = SideEffectHandlerContext::new(
@@ -90,8 +93,8 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
         )
         .await;
 
-        if next_block_number_to_handle_from > subscription.next_block_number_for_side_effect {
-            ChaindexingRepo::update_handler_subscription_next_block_number_for_side_effect(
+        if next_block_number_to_handle_from > subscription.next_block_number_for_side_effects {
+            ChaindexingRepo::update_handler_subscription_next_block_number_for_side_effects(
                 &raw_query_txn_client_for_cs,
                 chain_id,
                 next_block_number_to_handle_from,
