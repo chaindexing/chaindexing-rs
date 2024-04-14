@@ -30,15 +30,12 @@ pub trait MultiChainState:
         read_many(filters, context, Self::table_name()).await
     }
 
-    async fn update<'a, 'b, 'life1: 'b>(
-        &self,
-        updates: &'life1 Filters,
-        context: &'life1 PureHandlerContext<'a, 'b>,
-    ) {
+    async fn update<'a, 'b>(&self, updates: &Filters, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
         let client = context.raw_query_client;
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, &event).await;
+        let updates = updates.clone();
         let client = context.raw_query_client_for_mcs.clone();
 
         context
@@ -59,7 +56,7 @@ pub trait MultiChainState:
             .await;
     }
 
-    async fn delete<'a, 'b, 'life1>(&self, context: &'life1 PureHandlerContext<'a, 'b>) {
+    async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
         let client = context.raw_query_client;
         let table_name = Self::table_name();
