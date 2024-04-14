@@ -39,8 +39,9 @@ impl RepoMigrations for PostgresRepo {
         SQLikeMigrations::nullify_handler_subscriptions_next_block_number_to_handle_from()
     }
 
-    fn drop_handler_subscriptions_migration() -> &'static [&'static str] {
-        SQLikeMigrations::drop_handler_subscriptions()
+    fn nullify_handler_subscriptions_next_block_number_for_side_effects_migration(
+    ) -> &'static [&'static str] {
+        SQLikeMigrations::nullify_handler_subscriptions_next_block_number_for_side_effects()
     }
 }
 

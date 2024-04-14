@@ -56,6 +56,29 @@ impl ExecutesWithRawQuery for PostgresRepo {
                 (chain_id, next_block_number_to_handle_from)
                 VALUES ('{chain_id}', {next_block_number_to_handle_from})
                 ON CONFLICT (chain_id)
+                DO NOTHING
+                "
+            );
+
+            Self::execute_raw_query(client, &query).await;
+        }
+    }
+
+    async fn upsert_handler_subscriptions(
+        client: &Self::RawQueryClient,
+        handler_subscriptions: &[HandlerSubscription],
+    ) {
+        for HandlerSubscription {
+            chain_id,
+            next_block_number_to_handle_from,
+            ..
+        } in handler_subscriptions
+        {
+            let query = format!(
+                "INSERT INTO chaindexing_handler_subscriptions 
+                (chain_id, next_block_number_to_handle_from)
+                VALUES ('{chain_id}', {next_block_number_to_handle_from})
+                ON CONFLICT (chain_id)
                 DO UPDATE SET next_block_number_to_handle_from = excluded.next_block_number_to_handle_from
                 "
             );
@@ -96,14 +119,14 @@ impl ExecutesWithRawQuery for PostgresRepo {
         Self::execute_raw_query_in_txn(client, &query).await;
     }
 
-    async fn update_handler_subscription_next_block_number_for_side_effect<'a>(
+    async fn update_handler_subscription_next_block_number_for_side_effects<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         chain_id: u64,
         block_number: u64,
     ) {
         let query = format!(
             "UPDATE chaindexing_handler_subscriptions
-        SET next_block_number_for_side_effect = {block_number}
+        SET next_block_number_for_side_effects = {block_number}
         WHERE chain_id = {chain_id}"
         );
 
