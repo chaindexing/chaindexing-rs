@@ -6,7 +6,7 @@ macro_rules! get_contract_addresses_stream_by_chain {
     ( $cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty) => {{
         use get_contract_addresses_stream_by_chain;
 
-        let default_chunk_size = 500;
+        let default_chunk_size = 5;
         let default_from = None;
         let default_to = None;
 
