@@ -71,15 +71,16 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
 
             {
                 if event.block_number as u64 >= subscription.next_block_number_for_side_effects {
-                    let handler =
-                        side_effect_handlers_by_event_abi.get(event.abi.as_str()).unwrap();
-                    let handler_context = SideEffectHandlerContext::new(
-                        event,
-                        &raw_query_txn_client_for_cs,
-                        shared_state,
-                    );
+                    if let Some(handler) = side_effect_handlers_by_event_abi.get(event.abi.as_str())
+                    {
+                        let handler_context = SideEffectHandlerContext::new(
+                            event,
+                            &raw_query_txn_client_for_cs,
+                            shared_state,
+                        );
 
-                    handler.handle_event(handler_context).await;
+                        handler.handle_event(handler_context).await;
+                    }
                 }
             }
         }
