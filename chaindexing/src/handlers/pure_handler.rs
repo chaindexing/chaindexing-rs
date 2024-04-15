@@ -4,7 +4,7 @@ use tokio::sync::Mutex;
 
 use crate::deferred_futures::DeferredFutures;
 use crate::events::Event;
-use crate::{ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient, EventParam};
+use crate::{ChaindexingRepoClient, ChaindexingRepoTxnClient, EventParam};
 
 use super::handler_context::HandlerContext;
 
@@ -21,22 +21,22 @@ pub trait PureHandler: Send + Sync {
 #[derive(Clone)]
 pub struct PureHandlerContext<'a, 'b> {
     pub event: Event,
-    pub(crate) raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
-    pub(crate) raw_query_client_for_mcs: Arc<Mutex<ChaindexingRepoRawQueryClient>>,
+    pub(crate) repo_client: &'a ChaindexingRepoTxnClient<'a>,
+    pub(crate) repo_client_for_mcs: Arc<Mutex<ChaindexingRepoClient>>,
     pub(crate) deferred_mutations_for_mcs: DeferredFutures<'b>,
 }
 
 impl<'a, 'b> PureHandlerContext<'a, 'b> {
     pub fn new(
         event: &Event,
-        raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
-        raw_query_client_for_mcs: &Arc<Mutex<ChaindexingRepoRawQueryClient>>,
+        repo_client: &'a ChaindexingRepoTxnClient<'a>,
+        repo_client_for_mcs: &Arc<Mutex<ChaindexingRepoClient>>,
         deferred_mutations_for_mcs: &DeferredFutures<'b>,
     ) -> Self {
         Self {
             event: event.clone(),
-            raw_query_client,
-            raw_query_client_for_mcs: raw_query_client_for_mcs.clone(),
+            repo_client,
+            repo_client_for_mcs: repo_client_for_mcs.clone(),
             deferred_mutations_for_mcs: deferred_mutations_for_mcs.clone(),
         }
     }
@@ -51,7 +51,7 @@ impl<'a, 'b> HandlerContext<'a> for PureHandlerContext<'a, 'b> {
         &self.event
     }
 
-    fn get_raw_query_client(&self) -> &ChaindexingRepoRawQueryTxnClient<'a> {
-        self.raw_query_client
+    fn get_client(&self) -> &ChaindexingRepoTxnClient<'a> {
+        self.repo_client
     }
 }

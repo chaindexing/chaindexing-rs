@@ -21,8 +21,8 @@ where
     if should_setup_test_db() {
         db::setup();
 
-        let raw_query_client = new_repo().get_raw_query_client().await;
-        chaindexing::booting::run_internal_migrations(&raw_query_client).await;
+        let repo_client = new_repo().get_client().await;
+        chaindexing::booting::run_internal_migrations(&repo_client).await;
     }
 
     conn.begin_test_transaction().await.unwrap();

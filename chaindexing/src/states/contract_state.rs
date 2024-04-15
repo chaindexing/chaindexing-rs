@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::handlers::{HandlerContext, PureHandlerContext};
-use crate::{ChaindexingRepoRawQueryTxnClient, Event};
+use crate::{ChaindexingRepoTxnClient, Event};
 
 use super::filters::Filters;
 use super::state;
@@ -32,7 +32,7 @@ pub trait ContractState:
 
     async fn update<'a, 'b>(&self, updates: &Filters, context: &PureHandlerContext<'a, 'b>) {
         let event = &context.event;
-        let client = context.raw_query_client;
+        let client = context.repo_client;
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, event).await;
@@ -46,7 +46,7 @@ pub trait ContractState:
 
     async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         let event = &context.event;
-        let client = context.raw_query_client;
+        let client = context.repo_client;
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, event).await;
@@ -65,7 +65,7 @@ pub trait ContractState:
     async fn to_complete_view<'a>(
         &self,
         table_name: &str,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
         event: &Event,
     ) -> HashMap<String, String> {
         StateView::get_complete(&self.to_view(), table_name, client, event).await

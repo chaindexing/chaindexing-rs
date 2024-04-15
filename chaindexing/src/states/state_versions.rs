@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    ChaindexingRepo, ChaindexingRepoRawQueryTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
+    ChaindexingRepo, ChaindexingRepoTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
 };
-use crate::{ChaindexingRepoRawQueryClient, Event};
+use crate::{ChaindexingRepoClient, Event};
 
 use super::{serde_map_to_string_map, to_columns_and_values};
 
@@ -18,7 +18,7 @@ impl StateVersions {
         from_block_number: i64,
         chain_id: i64,
         state_table_name: &str,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) -> Vec<HashMap<String, String>> {
         let query = format!(
             "SELECT * FROM {table_name} 
@@ -27,13 +27,11 @@ impl StateVersions {
             table_name = StateVersion::table_name(state_table_name),
         );
 
-        ChaindexingRepo::load_data_list_from_raw_query_with_txn_client::<
-            HashMap<String, serde_json::Value>,
-        >(client, &query)
-        .await
-        .iter()
-        .map(serde_map_to_string_map)
-        .collect()
+        ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(client, &query)
+            .await
+            .iter()
+            .map(serde_map_to_string_map)
+            .collect()
     }
 
     pub fn get_ids(state_versions: &[HashMap<String, String>]) -> Vec<String> {
@@ -55,7 +53,7 @@ impl StateVersions {
     pub async fn delete_by_ids<'a>(
         ids: &[String],
         state_table_name: &str,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) {
         let query = format!(
             "DELETE FROM {table_name}
@@ -64,13 +62,13 @@ impl StateVersions {
             ids = ids.join(",")
         );
 
-        ChaindexingRepo::execute_raw_query_in_txn(client, &query).await;
+        ChaindexingRepo::execute_in_txn(client, &query).await;
     }
 
     pub async fn get_latest<'a>(
         group_ids: &[String],
         state_table_name: &str,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) -> Vec<HashMap<String, String>> {
         let query = format!(
             "SELECT DISTINCT ON (state_version_group_id) * FROM {table_name} 
@@ -80,13 +78,11 @@ impl StateVersions {
             group_ids = group_ids.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",")
         );
 
-        ChaindexingRepo::load_data_list_from_raw_query_with_txn_client::<
-            HashMap<String, serde_json::Value>,
-        >(client, &query)
-        .await
-        .iter()
-        .map(serde_map_to_string_map)
-        .collect()
+        ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(client, &query)
+            .await
+            .iter()
+            .map(serde_map_to_string_map)
+            .collect()
     }
 }
 
@@ -109,7 +105,7 @@ impl StateVersion {
         state: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.insert(
@@ -125,7 +121,7 @@ impl StateVersion {
         updates: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.extend(updates.clone());
@@ -136,7 +132,7 @@ impl StateVersion {
         updates: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &'b mut ChaindexingRepoRawQueryClient,
+        client: &'b mut ChaindexingRepoClient,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.extend(updates.clone());
@@ -147,7 +143,7 @@ impl StateVersion {
         state: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
@@ -157,7 +153,7 @@ impl StateVersion {
         state: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &'b ChaindexingRepoRawQueryClient,
+        client: &'b ChaindexingRepoClient,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
@@ -168,14 +164,14 @@ impl StateVersion {
         partial_state_version: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
     ) -> HashMap<String, String> {
         let query = Self::append_query(partial_state_version, state_table_name, event);
 
         serde_map_to_string_map(
-            &ChaindexingRepo::load_data_from_raw_query_with_txn_client::<
-                HashMap<String, serde_json::Value>,
-            >(client, &query)
+            &ChaindexingRepo::load_data_in_txn::<HashMap<String, serde_json::Value>>(
+                client, &query,
+            )
             .await
             .unwrap(),
         )
@@ -185,16 +181,14 @@ impl StateVersion {
         partial_state_version: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &ChaindexingRepoRawQueryClient,
+        client: &ChaindexingRepoClient,
     ) -> HashMap<String, String> {
         let query = Self::append_query(partial_state_version, state_table_name, event);
 
         serde_map_to_string_map(
-            &ChaindexingRepo::load_data_from_raw_query::<HashMap<String, serde_json::Value>>(
-                client, &query,
-            )
-            .await
-            .unwrap(),
+            &ChaindexingRepo::load_data::<HashMap<String, serde_json::Value>>(client, &query)
+                .await
+                .unwrap(),
         )
     }
 

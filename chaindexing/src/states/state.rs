@@ -26,16 +26,16 @@ pub async fn read_many<'a, C: HandlerContext<'a>, T: Send + DeserializeOwned>(
     context: &C,
     table_name: &str,
 ) -> Vec<T> {
-    let client = context.get_raw_query_client();
+    let client = context.get_client();
 
-    let raw_query = format!(
+    let query = format!(
         "SELECT * FROM {table_name} 
         WHERE {filters}",
         table_name = table_name,
         filters = to_and_filters(&filters.get(context.get_event())),
     );
 
-    ChaindexingRepo::load_data_list_from_raw_query_with_txn_client(client, &raw_query).await
+    ChaindexingRepo::load_data_list_in_txn(client, &query).await
 }
 
 pub async fn create<'a, 'b>(
@@ -44,7 +44,7 @@ pub async fn create<'a, 'b>(
     context: &PureHandlerContext<'a, 'b>,
 ) {
     let event = &context.event;
-    let client = context.raw_query_client;
+    let client = context.repo_client;
 
     let latest_state_version = StateVersion::create(state_view, table_name, event, client).await;
     StateView::refresh(&latest_state_version, table_name, client).await;
