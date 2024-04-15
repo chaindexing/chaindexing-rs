@@ -20,7 +20,7 @@ pub fn get<S: Send + Sync + Clone>(
 
     contract_addresses
         .iter()
-        .map_while(|contract_address| {
+        .filter_map(|contract_address| {
             topics_by_contract_name.get(contract_address.contract_name.as_str()).and_then(
                 |topics| {
                     Filter::maybe_new(
