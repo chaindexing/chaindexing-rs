@@ -13,9 +13,7 @@ use pin_project_lite::pin_project;
 use futures_util::FutureExt;
 use tokio::sync::Mutex;
 
-use crate::{
-    ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery,
-};
+use crate::{ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery};
 
 type DataStream = Vec<ContractAddress>;
 
@@ -70,19 +68,27 @@ impl Stream for ContractAddressesStream {
                         let from = match from {
                             Some(from) => from,
                             None => {
-                                let query = format!("SELECT MIN(id) FROM chaindexing_contract_addresses WHERE chain_id = {chain_id_}");
-                                
-                              ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
-                            },
+                                let query = format!(
+                                    "
+                                SELECT MIN(id) FROM chaindexing_contract_addresses 
+                                WHERE chain_id = {chain_id_}"
+                                );
+
+                                ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
+                            }
                         };
 
                         let to = match to {
                             Some(to) => to,
                             None => {
-                                let query = format!("SELECT MAX(id) FROM chaindexing_contract_addresses WHERE chain_id = {chain_id_}");
+                                let query = format!(
+                                    "
+                                SELECT MAX(id) FROM chaindexing_contract_addresses 
+                                WHERE chain_id = {chain_id_}"
+                                );
 
                                 ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
-                            },
+                            }
                         };
 
                         (from, to)
