@@ -35,7 +35,8 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                 // return ordered by block_number and log_index
                 let events = ChaindexingRepo::load_events(
                     &client,
-                    chain_ids,
+                    *chain_id,
+                    &contract_address.address,
                     from_block_number,
                     to_block_number,
                 )

@@ -101,7 +101,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         let query = format!(
             "UPDATE chaindexing_contract_addresses
         SET next_block_number_to_handle_from = {block_number}
-        WHERE chain_id = {chain_id} AND address = {address}"
+        WHERE chain_id = {chain_id} AND address = '{address}'"
         );
 
         Self::execute_in_txn(client, &query).await;
@@ -130,7 +130,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         let query = format!(
             "UPDATE chaindexing_contract_addresses
         SET next_block_number_for_side_effects = {block_number}
-        WHERE chain_id = {chain_id} AND address = {address}"
+        WHERE chain_id = {chain_id} AND address = '{address}'"
         );
 
         Self::execute_in_txn(client, &query).await;
@@ -229,16 +229,16 @@ impl LoadsDataWithRawQuery for PostgresRepo {
 
     async fn load_events(
         client: &Self::RawQueryClient,
-        chain_ids: &[u64],
+        chain_id: u64,
+        contract_address: &str,
         from_block_number: u64,
         to_block_number: u64,
     ) -> Vec<Event> {
         let query = format!(
             "SELECT * from chaindexing_events
-            WHERE chain_id IN ({chain_ids})
+            WHERE chain_id = {chain_id} AND contract_address= '{contract_address}'
             AND block_number BETWEEN {from_block_number} AND {to_block_number} 
             ORDER BY block_number ASC, log_index ASC",
-            chain_ids = join_numbers_with_comma(chain_ids),
         );
 
         Self::load_data_list(client, &query).await

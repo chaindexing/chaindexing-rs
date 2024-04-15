@@ -135,9 +135,11 @@ pub trait LoadsDataWithRawQuery: HasRawQueryClient {
         addresses: &[String],
     ) -> Vec<PartialEvent>;
     async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock>;
+
     async fn load_events(
         client: &Self::RawQueryClient,
-        chain_ids: &[u64],
+        chain_id: u64,
+        contract_address: &str,
         from_block_number: u64,
         to_block_number: u64,
     ) -> Vec<Event>;
