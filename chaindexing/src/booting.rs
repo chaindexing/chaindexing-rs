@@ -37,7 +37,7 @@ pub async fn setup<'a, S: Sync + Send + Clone>(
 
     let contract_addresses: Vec<_> =
         contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
-    ChaindexingRepo::upsert_contract_addresses(client, &contract_addresses).await;
+    ChaindexingRepo::create_contract_addresses(client, &contract_addresses).await;
 
     Ok(())
 }

@@ -91,6 +91,7 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     booting::setup_nodes(config, &client).await;
     let current_node = ChaindexingRepo::create_and_load_new_node(&client).await;
     wait_for_non_leader_nodes_to_abort(config.get_node_election_rate_ms()).await;
+
     booting::setup(config, &client).await?;
 
     let config = config.clone();

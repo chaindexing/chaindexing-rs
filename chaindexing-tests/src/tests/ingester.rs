@@ -33,7 +33,7 @@ mod tests {
             ));
 
             assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
-            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
                 .await;
 
             let conn = Arc::new(Mutex::new(conn));
@@ -70,7 +70,7 @@ mod tests {
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
-            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
                 .await;
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
@@ -120,7 +120,7 @@ mod tests {
                 CURRENT_BLOCK_NUMBER
             ));
 
-            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
                 .await;
 
             let conn = Arc::new(Mutex::new(conn));
@@ -197,7 +197,7 @@ mod tests {
             let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
 
             assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
-            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
                 .await;
 
             let conn = Arc::new(Mutex::new(conn));

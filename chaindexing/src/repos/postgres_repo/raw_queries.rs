@@ -41,7 +41,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client.commit().await.unwrap();
     }
 
-    async fn upsert_contract_addresses(
+    async fn create_contract_addresses(
         client: &Self::RawQueryClient,
         contract_addresses: &[UnsavedContractAddress],
     ) {
@@ -55,19 +55,18 @@ impl ExecutesWithRawQuery for PostgresRepo {
                      start_block_number,
                      ..
                  }| {
-                    format!("('{address}', {chain_id}, '{contract_name}', {start_block_number})")
+                    format!("('{address}', {chain_id}, '{contract_name}', {start_block_number}, {start_block_number}, {start_block_number})")
                 },
             )
             .collect::<Vec<_>>()
             .join(",");
 
         let query = format!("
-            INSERT INTO chaindexing_contract_addresses (chain_id, address, contract_name, start_block_number)
+            INSERT INTO chaindexing_contract_addresses 
+            (address, chain_id, contract_name, next_block_number_to_handle_from, next_block_number_to_ingest_from, start_block_number)
             VALUES {contract_addresses_values}
             ON CONFLICT (chain_id, address)
-            DO UPDATE SET
-            contract_name = excluded.contract_name,
-            start_block_number = excluded.start_block_number
+            DO NOTHING
         ");
 
         Self::execute(client, &query).await;
@@ -84,8 +83,10 @@ impl ExecutesWithRawQuery for PostgresRepo {
 
         let query = format!(
             "INSERT INTO chaindexing_contract_addresses 
-            (address, contract_name, chain_id, start_block_number, next_block_number_to_ingest_from)
-            VALUES ('{address}', '{contract_name}', {chain_id}, {start_block_number}, {start_block_number})"
+            (address, chain_id, contract_name, next_block_number_to_handle_from, next_block_number_to_ingest_from, start_block_number)
+            VALUES ('{address}', {chain_id}, '{contract_name}', {start_block_number}, {start_block_number}, {start_block_number})
+            ON CONFLICT (chain_id, address)
+            DO NOTHING"
         );
 
         Self::execute_in_txn(client, &query).await;

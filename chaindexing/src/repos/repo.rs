@@ -92,8 +92,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
         contract_address: &UnsavedContractAddress,
     );
 
-    /// Upserts contract addresses and updates their contract names when there is a conflict
-    async fn upsert_contract_addresses(
+    async fn create_contract_addresses(
         client: &Self::RawQueryClient,
         contract_addresses: &[UnsavedContractAddress],
     );
