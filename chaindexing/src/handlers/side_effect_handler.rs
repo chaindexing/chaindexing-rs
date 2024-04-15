@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::events::Event;
-use crate::{ChaindexingRepoRawQueryTxnClient, EventParam};
+use crate::{ChaindexingRepoTxnClient, EventParam};
 
 use super::handler_context::HandlerContext;
 
@@ -33,19 +33,19 @@ pub trait SideEffectHandler: Send + Sync {
 #[derive(Clone)]
 pub struct SideEffectHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub event: Event,
-    pub(crate) raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+    pub(crate) repo_client: &'a ChaindexingRepoTxnClient<'a>,
     shared_state: Option<Arc<Mutex<SharedState>>>,
 }
 
 impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedState> {
     pub fn new(
         event: &Event,
-        raw_query_client: &'a ChaindexingRepoRawQueryTxnClient<'a>,
+        repo_client: &'a ChaindexingRepoTxnClient<'a>,
         shared_state: &Option<Arc<Mutex<SharedState>>>,
     ) -> Self {
         Self {
             event: event.clone(),
-            raw_query_client,
+            repo_client,
             shared_state: shared_state.clone(),
         }
     }
@@ -68,7 +68,7 @@ impl<'a, SharedState: Sync + Send + Clone> HandlerContext<'a>
         &self.event
     }
 
-    fn get_raw_query_client(&self) -> &ChaindexingRepoRawQueryTxnClient<'a> {
-        self.raw_query_client
+    fn get_client(&self) -> &ChaindexingRepoTxnClient<'a> {
+        self.repo_client
     }
 }

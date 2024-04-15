@@ -16,8 +16,7 @@ mod state;
 pub use filters::Filters;
 
 use crate::{
-    ChaindexingRepo, ChaindexingRepoRawQueryClient, ChaindexingRepoRawQueryTxnClient,
-    ExecutesWithRawQuery,
+    ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoTxnClient, ExecutesWithRawQuery,
 };
 
 pub use chain_state::ChainState;
@@ -31,7 +30,7 @@ pub async fn backtrack_states<'a>(
     table_names: &Vec<String>,
     chain_id: i64,
     block_number: i64,
-    client: &ChaindexingRepoRawQueryTxnClient<'a>,
+    client: &ChaindexingRepoTxnClient<'a>,
 ) {
     for table_name in table_names {
         let state_versions = StateVersions::get(block_number, chain_id, table_name, client).await;
@@ -46,14 +45,14 @@ pub async fn backtrack_states<'a>(
 
 pub async fn prune_state_versions(
     table_names: &Vec<String>,
-    client: &ChaindexingRepoRawQueryClient,
+    client: &ChaindexingRepoClient,
     min_block_number: u64,
     chain_id: u64,
 ) {
     for table_name in table_names {
         let state_version_table_name = StateVersion::table_name(table_name);
 
-        ChaindexingRepo::execute_raw_query(
+        ChaindexingRepo::execute(
             client,
             &format!(
                 "

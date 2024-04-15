@@ -21,21 +21,22 @@ pub fn get<S: Send + Sync + Clone>(
     contract_addresses
         .iter()
         .map_while(|contract_address| {
-            let topics_by_contract_name =
-                topics_by_contract_name.get(contract_address.contract_name.as_str()).unwrap();
-
-            Filter::maybe_new(
-                contract_address,
-                topics_by_contract_name,
-                current_block_number,
-                blocks_per_batch,
-                execution,
+            topics_by_contract_name.get(contract_address.contract_name.as_str()).and_then(
+                |topics| {
+                    Filter::maybe_new(
+                        contract_address,
+                        topics,
+                        current_block_number,
+                        blocks_per_batch,
+                        execution,
+                    )
+                },
             )
         })
         .collect()
 }
 
-pub fn group_by_contract_address_id(filters: &[Filter]) -> HashMap<i32, Vec<Filter>> {
+pub fn group_by_contract_address_id(filters: &[Filter]) -> HashMap<i64, Vec<Filter>> {
     let empty_filter_group = vec![];
 
     filters.iter().fold(
@@ -64,7 +65,7 @@ pub fn get_latest(filters: &Vec<Filter>) -> Option<Filter> {
 
 #[derive(Clone, Debug)]
 pub struct Filter {
-    pub contract_address_id: i32,
+    pub contract_address_id: i64,
     pub address: String,
     pub value: EthersFilter,
 }

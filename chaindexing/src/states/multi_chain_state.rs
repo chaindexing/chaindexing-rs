@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::handlers::{HandlerContext, PureHandlerContext};
-use crate::{ChaindexingRepoRawQueryTxnClient, Event};
+use crate::{ChaindexingRepoTxnClient, Event};
 
 use super::filters::Filters;
 use super::state::{self, read_many};
@@ -32,11 +32,11 @@ pub trait MultiChainState:
 
     async fn update<'a, 'b>(&self, updates: &Filters, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
-        let client = context.raw_query_client;
+        let client = context.repo_client;
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, &event).await;
         let updates = updates.clone();
-        let client = context.raw_query_client_for_mcs.clone();
+        let client = context.repo_client_for_mcs.clone();
 
         context
             .deferred_mutations_for_mcs
@@ -58,10 +58,10 @@ pub trait MultiChainState:
 
     async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
-        let client = context.raw_query_client;
+        let client = context.repo_client;
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, &event).await;
-        let client = context.raw_query_client_for_mcs.clone();
+        let client = context.repo_client_for_mcs.clone();
 
         context
             .deferred_mutations_for_mcs
@@ -83,7 +83,7 @@ pub trait MultiChainState:
     async fn to_complete_view<'a>(
         &self,
         table_name: &str,
-        client: &ChaindexingRepoRawQueryTxnClient<'a>,
+        client: &ChaindexingRepoTxnClient<'a>,
         event: &Event,
     ) -> HashMap<String, String> {
         StateView::get_complete(&self.to_view(), table_name, client, event).await

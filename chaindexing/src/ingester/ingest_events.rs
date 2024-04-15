@@ -11,13 +11,13 @@ use crate::chain_reorg::Execution;
 use crate::Config;
 use crate::{events, ChainId};
 use crate::{
-    ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient, ContractAddress,
+    ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoConn, ContractAddress,
     LoadsDataWithRawQuery, Repo,
 };
 
 pub async fn run<'a, S: Send + Sync + Clone>(
     conn: &mut ChaindexingRepoConn<'a>,
-    raw_query_client: &ChaindexingRepoRawQueryClient,
+    repo_client: &ChaindexingRepoClient,
     contract_addresses: Vec<ContractAddress>,
     provider: &Arc<impl Provider>,
     chain_id: &ChainId,
@@ -36,8 +36,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         &Execution::Main,
     );
 
-    let filters =
-        remove_already_ingested_filters(&filters, &contract_addresses, raw_query_client).await;
+    let filters = remove_already_ingested_filters(&filters, &contract_addresses, repo_client).await;
 
     if !filters.is_empty() {
         let logs = provider::fetch_logs(provider, &filters).await;
@@ -70,7 +69,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 async fn remove_already_ingested_filters(
     filters: &Vec<Filter>,
     contract_addresses: &[ContractAddress],
-    raw_query_client: &ChaindexingRepoRawQueryClient,
+    repo_client: &ChaindexingRepoClient,
 ) -> Vec<Filter> {
     let current_block_filters: Vec<_> = filters
         .iter()
@@ -83,7 +82,7 @@ async fn remove_already_ingested_filters(
         let addresses: Vec<_> = contract_addresses.iter().map(|c| c.address.clone()).collect();
 
         let latest_ingested_events =
-            ChaindexingRepo::load_latest_events(raw_query_client, &addresses).await;
+            ChaindexingRepo::load_latest_events(repo_client, &addresses).await;
         let latest_ingested_events =
             latest_ingested_events
                 .iter()
@@ -123,9 +122,10 @@ async fn update_next_block_numbers_to_ingest_from<'a>(
 ) {
     let filters_by_contract_address_id = filters::group_by_contract_address_id(filters);
 
-    for contract_address in contract_addresses {
-        let filters = filters_by_contract_address_id.get(&contract_address.id).unwrap();
-
+    for (contract_address, filters) in contract_addresses
+        .iter()
+        .filter_map(|ca| filters_by_contract_address_id.get(&ca.id).map(|f| (ca, f)))
+    {
         if let Some(latest_filter) = filters::get_latest(filters) {
             let next_block_number_to_ingest_from = latest_filter.value.get_to_block().unwrap() + 1;
 

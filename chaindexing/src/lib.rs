@@ -6,7 +6,6 @@ mod contracts;
 pub mod deferred_futures;
 mod diesel;
 pub mod events;
-mod handler_subscriptions;
 mod handlers;
 pub mod ingester;
 mod nodes;
@@ -17,7 +16,7 @@ pub mod states;
 
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
-pub use contracts::{Contract, ContractAddress, ContractEvent, UnsavedContractAddress};
+pub use contracts::{Contract, ContractAddress, ContractEvent, EventAbi, UnsavedContractAddress};
 pub use events::{Event, EventParam};
 pub use handlers::{
     PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
@@ -40,24 +39,28 @@ pub type ChaindexingRepoPool = PostgresRepoPool;
 pub type ChaindexingRepoConn<'a> = PostgresRepoConn<'a>;
 
 #[cfg(feature = "postgres")]
-pub type ChaindexingRepoRawQueryClient = PostgresRepoRawQueryClient;
+pub type ChaindexingRepoClient = PostgresRepoClient;
 
 #[cfg(feature = "postgres")]
-pub type ChaindexingRepoRawQueryTxnClient<'a> = PostgresRepoRawQueryTxnClient<'a>;
+pub type ChaindexingRepoTxnClient<'a> = PostgresRepoTxnClient<'a>;
 
 #[cfg(feature = "postgres")]
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
 
 pub use ethers::types::{Address, U256, U256 as BigInt, U256 as Uint};
+use tokio::sync::Mutex;
 
 pub type Bytes = Vec<u8>;
 
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 
 use config::ConfigError;
 use nodes::NodeTasks;
+
+pub type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 
 pub enum ChaindexingError {
     Config(ConfigError),
@@ -84,18 +87,12 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
 ) -> Result<(), ChaindexingError> {
     config.validate()?;
 
-    let Config { repo, .. } = config;
-    let client = repo.get_raw_query_client().await;
-    let pool = repo.get_pool(1).await;
-    let mut conn = ChaindexingRepo::get_conn(&pool).await;
-
+    let client = config.repo.get_client().await;
     booting::setup_nodes(config, &client).await;
-
-    let current_node = ChaindexingRepo::create_node(&mut conn).await;
-
+    let current_node = ChaindexingRepo::create_and_load_new_node(&client).await;
     wait_for_non_leader_nodes_to_abort(config.get_node_election_rate_ms()).await;
 
-    booting::setup(config, &mut conn, &client).await?;
+    booting::setup(config, &client).await?;
 
     let config = config.clone();
     tokio::spawn(async move {
@@ -141,11 +138,7 @@ pub async fn include_contract_in_indexing<'a, C: handlers::HandlerContext<'a>>(
     let contract_address =
         UnsavedContractAddress::new(contract_name, address, &chain_id, start_block_number);
 
-    ChaindexingRepo::create_contract_address(
-        event_context.get_raw_query_client(),
-        &contract_address,
-    )
-    .await;
+    ChaindexingRepo::create_contract_address(event_context.get_client(), &contract_address).await;
 }
 
 async fn wait_for_non_leader_nodes_to_abort(node_election_rate_ms: u64) {

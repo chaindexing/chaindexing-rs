@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::diesel::schema::chaindexing_contract_addresses;
-use crate::handler_subscriptions::HandlerSubscription;
 use crate::handlers::{PureHandler, SideEffectHandler};
 use crate::states::StateMigrations;
 use crate::ChainId;
@@ -13,6 +12,7 @@ use ethers::{
     abi::{Address, Event, HumanReadableParser},
     types::H256,
 };
+use serde::Deserialize;
 
 pub type ContractEventTopic = H256;
 
@@ -31,7 +31,7 @@ impl ContractEvent {
     }
 }
 
-type EventAbi = &'static str;
+pub type EventAbi = &'static str;
 
 #[derive(Clone)]
 pub struct Contract<S: Send + Sync + Clone> {
@@ -40,7 +40,6 @@ pub struct Contract<S: Send + Sync + Clone> {
     pub pure_handlers: HashMap<EventAbi, Arc<dyn PureHandler>>,
     pub side_effect_handlers: HashMap<EventAbi, Arc<dyn SideEffectHandler<SharedState = S>>>,
     pub state_migrations: Vec<Arc<dyn StateMigrations>>,
-    pub handler_subcriptions: Vec<HandlerSubscription>,
 }
 
 impl<S: Send + Sync + Clone> Contract<S> {
@@ -51,7 +50,6 @@ impl<S: Send + Sync + Clone> Contract<S> {
             name: name.to_string(),
             pure_handlers: HashMap::new(),
             side_effect_handlers: HashMap::new(),
-            handler_subcriptions: Vec::new(),
         }
     }
 
@@ -67,9 +65,6 @@ impl<S: Send + Sync + Clone> Contract<S> {
             chain_id,
             start_block_number,
         ));
-
-        self.handler_subcriptions
-            .push(HandlerSubscription::new(chain_id, start_block_number));
 
         self
     }
@@ -132,36 +127,7 @@ pub fn get_state_migrations<S: Send + Sync + Clone>(
     contracts.iter().flat_map(|c| c.state_migrations.clone()).collect()
 }
 
-pub fn get_handler_subscriptions<S: Send + Sync + Clone>(
-    contracts: &[Contract<S>],
-) -> Vec<HandlerSubscription> {
-    let mut handler_subscriptions_by_chain_id: HashMap<u64, HandlerSubscription> = HashMap::new();
-
-    for contract in contracts.iter() {
-        for handler_subscription @ HandlerSubscription {
-            chain_id,
-            next_block_number_to_handle_from,
-            ..
-        } in contract.handler_subcriptions.iter()
-        {
-            if let Some(prev_handler_subscription) = handler_subscriptions_by_chain_id.get(chain_id)
-            {
-                if *next_block_number_to_handle_from
-                    < prev_handler_subscription.next_block_number_to_handle_from
-                {
-                    handler_subscriptions_by_chain_id
-                        .insert(*chain_id, handler_subscription.clone());
-                }
-            } else {
-                handler_subscriptions_by_chain_id.insert(*chain_id, handler_subscription.clone());
-            }
-        }
-    }
-
-    handler_subscriptions_by_chain_id.into_values().collect()
-}
-
-pub fn get_pure_handlers_by_event_abi<S: Send + Sync + Clone>(
+pub fn get_pure_handlers<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
 ) -> HashMap<EventAbi, Arc<dyn PureHandler>> {
     contracts.iter().fold(HashMap::new(), |mut handlers_by_event_abi, contract| {
@@ -172,7 +138,7 @@ pub fn get_pure_handlers_by_event_abi<S: Send + Sync + Clone>(
     })
 }
 
-pub fn get_side_effect_handlers_by_event_abi<S: Send + Sync + Clone>(
+pub fn get_side_effect_handlers<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
 ) -> HashMap<EventAbi, Arc<dyn SideEffectHandler<SharedState = S>>> {
     contracts.iter().fold(HashMap::new(), |mut handlers_by_event_abi, contract| {
@@ -232,14 +198,17 @@ impl UnsavedContractAddress {
     }
 }
 
-/// N/B: The order has to match ./schema.rs to stop diesel from mixing up fields
-#[derive(Debug, Clone, PartialEq, Queryable, Identifiable)]
+// N/B: The order has to match ./schema.rs to stop diesel from mixing up fields
+/// Helps manage subscription of ingesting and handling events per contract address
+#[derive(Debug, Clone, PartialEq, Queryable, Identifiable, Deserialize)]
 #[diesel(table_name = chaindexing_contract_addresses)]
 #[diesel(primary_key(id))]
 pub struct ContractAddress {
-    pub id: i32,
+    pub id: i64,
     pub chain_id: i64,
     pub next_block_number_to_ingest_from: i64,
+    pub next_block_number_to_handle_from: i64,
+    pub next_block_number_for_side_effects: i64,
     pub start_block_number: i64,
     pub address: String,
     pub contract_name: String,

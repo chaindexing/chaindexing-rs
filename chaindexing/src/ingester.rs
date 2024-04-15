@@ -22,11 +22,12 @@ use crate::contracts;
 use crate::nodes::NodeTask;
 use crate::pruning::PruningConfig;
 use crate::states;
+use crate::streams::ContractAddressesStream;
 use crate::Chain;
 use crate::Config;
 use crate::ContractAddress;
-use crate::{ChaindexingRepo, ChaindexingRepoConn, ChaindexingRepoRawQueryClient};
-use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo, Streamable};
+use crate::{ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoConn};
+use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo};
 
 pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> NodeTask {
     let chains: Vec<_> = config.chains.clone();
@@ -46,14 +47,14 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                     for Chain { id, json_rpc_url } in chains.iter() {
                         let provider = provider::get(json_rpc_url);
 
-                        let raw_query_client = config.repo.get_raw_query_client().await;
+                        let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
                         let pool = config.repo.get_pool(1).await;
                         let conn = ChaindexingRepo::get_conn(&pool).await;
                         let conn = Arc::new(Mutex::new(conn));
 
                         ingest(
                             conn.clone(),
-                            &raw_query_client,
+                            &repo_client,
                             provider,
                             id,
                             &config,
@@ -74,7 +75,7 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
 
 pub async fn ingest<'a, S: Send + Sync + Clone>(
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
-    raw_query_client: &ChaindexingRepoRawQueryClient,
+    repo_client: &Arc<Mutex<ChaindexingRepoClient>>,
     provider: Arc<impl Provider + 'static>,
     chain_id: &ChainId,
     config @ Config {
@@ -86,17 +87,18 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
 ) -> Result<(), IngesterError> {
     let current_block_number = provider::fetch_current_block_number(&provider).await;
     let mut contract_addresses_stream =
-        ChaindexingRepo::get_contract_addresses_stream_by_chain(conn.clone(), *chain_id as i64);
+        ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(5);
 
     while let Some(contract_addresses) = contract_addresses_stream.next().await {
         let contract_addresses =
             filter_uningested_contract_addresses(&contract_addresses, current_block_number);
 
         let mut conn = conn.lock().await;
+        let repo_client = &*repo_client.lock().await;
 
         ingest_events::run(
             &mut conn,
-            raw_query_client,
+            repo_client,
             contract_addresses.clone(),
             &provider,
             chain_id,
@@ -122,18 +124,14 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
             if now - *last_pruned_at >= *prune_interval {
                 let min_pruning_block_number =
                     pruning_config.get_min_block_number(current_block_number);
-                ChaindexingRepo::prune_events(
-                    raw_query_client,
-                    min_pruning_block_number,
-                    chain_id_u64,
-                )
-                .await;
+                ChaindexingRepo::prune_events(repo_client, min_pruning_block_number, chain_id_u64)
+                    .await;
 
                 let state_migrations = contracts::get_state_migrations(contracts);
                 let state_table_names = states::get_all_table_names(&state_migrations);
                 states::prune_state_versions(
                     &state_table_names,
-                    raw_query_client,
+                    repo_client,
                     min_pruning_block_number,
                     chain_id_u64,
                 )

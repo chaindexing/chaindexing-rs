@@ -13,75 +13,69 @@ mod tests {
 
     #[tokio::test]
     pub async fn creates_state() {
-        let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-        let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-        let raw_query_txn_client =
-            ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
+        let bayc_contract =
+            bayc_contract("BoredApeYachtClub-1", "09").add_state_migrations(NftMigrations);
+        let mut repo_client = test_runner::new_repo().get_client().await;
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
-            &raw_query_txn_client,
-            &Arc::new(Mutex::new(
-                test_runner::new_repo().get_raw_query_client().await,
-            )),
+            &repo_txn_client,
+            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
-        let new_state = NftState { token_id: 2 };
+        let new_state = Nft { token_id: 2 };
 
         new_state.create(&event_context).await;
 
         let returned_state =
-            NftState::read_one(&Filters::new("token_id", 2), &event_context).await.unwrap();
+            Nft::read_one(&Filters::new("token_id", 2), &event_context).await.unwrap();
 
         assert_eq!(new_state, returned_state);
     }
 
     #[tokio::test]
     pub async fn updates_state() {
-        let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-        let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-        let raw_query_txn_client =
-            ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
+        let bayc_contract =
+            bayc_contract("BoredApeYachtClub-2", "07").add_state_migrations(NftMigrations);
+        let mut repo_client = test_runner::new_repo().get_client().await;
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
-            &raw_query_txn_client,
-            &Arc::new(Mutex::new(
-                test_runner::new_repo().get_raw_query_client().await,
-            )),
+            &repo_txn_client,
+            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
-        let new_state = NftState { token_id: 1 };
+        let new_state = Nft { token_id: 1 };
         new_state.create(&event_context).await;
         new_state.update(&Filters::new("token_id", 4), &event_context).await;
 
-        let initial_state = NftState::read_one(&Filters::new("token_id", 1), &event_context).await;
+        let initial_state = Nft::read_one(&Filters::new("token_id", 1), &event_context).await;
         assert_eq!(initial_state, None);
 
-        let updated_state = NftState::read_one(&Filters::new("token_id", 4), &event_context).await;
+        let updated_state = Nft::read_one(&Filters::new("token_id", 4), &event_context).await;
         assert!(updated_state.is_some());
     }
 
     #[tokio::test]
     pub async fn deletes_state() {
-        let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-        let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-        let raw_query_txn_client =
-            ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
+        let bayc_contract =
+            bayc_contract("BoredApeYachtClub-3", "05").add_state_migrations(NftMigrations);
+        let mut repo_client = test_runner::new_repo().get_client().await;
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
-            &raw_query_txn_client,
-            &Arc::new(Mutex::new(
-                test_runner::new_repo().get_raw_query_client().await,
-            )),
+            &repo_txn_client,
+            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
-        let new_state = NftState { token_id: 9 };
+        let new_state = Nft { token_id: 9 };
         new_state.create(&event_context).await;
         new_state.delete(&event_context).await;
 
-        let state = NftState::read_one(&Filters::new("token_id", 9), &event_context).await;
+        let state = Nft::read_one(&Filters::new("token_id", 9), &event_context).await;
         assert_eq!(state, None);
     }
 }
@@ -95,19 +89,19 @@ use serde::{Deserialize, Serialize};
 use crate::{factory::bayc_contract, test_runner};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct NftState {
+struct Nft {
     token_id: i32,
 }
-impl ContractState for NftState {
+impl ContractState for Nft {
     fn table_name() -> &'static str {
-        "nft_states"
+        "nfts"
     }
 }
-struct NftStateMigrations;
-impl StateMigrations for NftStateMigrations {
+struct NftMigrations;
+impl StateMigrations for NftMigrations {
     fn migrations(&self) -> Vec<&'static str> {
         vec![
-            "CREATE TABLE IF NOT EXISTS nft_states (
+            "CREATE TABLE IF NOT EXISTS nfts (
         token_id INTEGER NOT NULL,
     )",
         ]
@@ -115,8 +109,8 @@ impl StateMigrations for NftStateMigrations {
 }
 
 pub async fn setup() {
-    let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-    let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-    chaindexing::booting::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract])
-        .await;
+    let bayc_contract =
+        bayc_contract("BoredApeYachtClub", "06").add_state_migrations(NftMigrations);
+    let repo_client = test_runner::new_repo().get_client().await;
+    chaindexing::booting::run_user_migrations(&repo_client, &[bayc_contract]).await;
 }

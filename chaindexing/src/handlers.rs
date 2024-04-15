@@ -29,9 +29,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
             let node_task = node_task.clone();
 
             // MultiChainStates are indexed in an order-agnostic fashion, so no need for txn client
-            let raw_query_client_for_mcs = config.repo.get_raw_query_client().await;
-            let raw_query_client_for_mcs = Arc::new(Mutex::new(raw_query_client_for_mcs));
-
+            let repo_client_for_mcs = Arc::new(Mutex::new(config.repo.get_client().await));
             let deferred_mutations_for_mcs = DeferredFutures::new();
 
             let chain_ids: Vec<_> = config.chains.iter().map(|c| c.id as u64).collect();
@@ -45,31 +43,28 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                     let config = config.clone();
                     let node_task = node_task.clone();
 
-                    let raw_query_client_for_mcs = raw_query_client_for_mcs.clone();
+                    let repo_client_for_mcs = repo_client_for_mcs.clone();
                     let deferred_mutations_for_mcs = deferred_mutations_for_mcs.clone();
 
                     node_task
                         .clone()
                         .add_task(tokio::spawn(async move {
                             // ChainStates which include ContractState have to be handled orderly
-                            let mut raw_query_client_for_chain_states =
-                                config.repo.get_raw_query_client().await;
+                            let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
 
                             let mut interval =
                                 interval(Duration::from_millis(config.handler_rate_ms));
-                            let pure_handlers_by_event_abi =
-                                contracts::get_pure_handlers_by_event_abi(&config.contracts);
-                            let side_effect_handlers_by_event_abi =
-                                contracts::get_side_effect_handlers_by_event_abi(&config.contracts);
+                            let pure_handlers = contracts::get_pure_handlers(&config.contracts);
+                            let side_effect_handlers =
+                                contracts::get_side_effect_handlers(&config.contracts);
 
                             loop {
                                 handle_events::run(
-                                    &pure_handlers_by_event_abi,
-                                    &side_effect_handlers_by_event_abi,
+                                    &pure_handlers,
+                                    &side_effect_handlers,
                                     (&chain_ids, config.blocks_per_batch),
-                                    &mut raw_query_client_for_chain_states,
-                                    &raw_query_client_for_mcs,
-                                    deferred_mutations_for_mcs.clone(),
+                                    (&repo_client, &repo_client_for_mcs),
+                                    &deferred_mutations_for_mcs,
                                     &config.shared_state,
                                 )
                                 .await;
@@ -80,8 +75,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                         .await;
                 }
 
-                let mut raw_query_client_for_chain_states =
-                    config.repo.get_raw_query_client().await;
+                let mut repo_client = config.repo.get_client().await;
 
                 let state_migrations = contracts::get_state_migrations(&config.contracts);
                 let state_table_names = states::get_all_table_names(&state_migrations);
@@ -91,11 +85,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                 ));
 
                 loop {
-                    maybe_handle_chain_reorg::run(
-                        &mut raw_query_client_for_chain_states,
-                        &state_table_names,
-                    )
-                    .await;
+                    maybe_handle_chain_reorg::run(&mut repo_client, &state_table_names).await;
 
                     deferred_mutations_for_mcs.consume().await;
 

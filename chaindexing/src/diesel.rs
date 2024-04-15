@@ -11,9 +11,11 @@ pub mod schema {
 
     diesel::table! {
       chaindexing_contract_addresses (id) {
-          id -> Int4,
+          id -> Int8,
           chain_id -> Int8,
           next_block_number_to_ingest_from -> Int8,
+          next_block_number_to_handle_from -> Int8,
+          next_block_number_for_side_effects -> Int8,
           start_block_number -> Int8,
           address -> VarChar,
           contract_name -> VarChar,

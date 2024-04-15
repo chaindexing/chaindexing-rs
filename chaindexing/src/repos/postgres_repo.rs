@@ -1,28 +1,18 @@
-use std::sync::Arc;
-
 mod migrations;
 mod raw_queries;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
-use crate::get_contract_addresses_stream_by_chain;
 
-use crate::{
-    contracts::{ContractAddress, UnsavedContractAddress},
-    events::Event,
-    nodes::Node,
-    Streamable,
-};
+use crate::{contracts::ContractAddress, events::Event, nodes::Node};
 use diesel_async::RunQueryDsl;
 
 use diesel::{
     delete,
     result::{DatabaseErrorKind, Error as DieselError},
-    upsert::excluded,
     ExpressionMethods, QueryDsl,
 };
 use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
-use futures_core::{future::BoxFuture, Stream};
-use tokio::sync::Mutex;
+use futures_core::future::BoxFuture;
 use uuid::Uuid;
 
 use super::repo::{Repo, RepoError};
@@ -35,7 +25,7 @@ pub use diesel_async::{
     AsyncConnection as PostgresRepoAsyncConnection,
 };
 
-pub use raw_queries::{PostgresRepoRawQueryClient, PostgresRepoRawQueryTxnClient};
+pub use raw_queries::{PostgresRepoClient, PostgresRepoTxnClient};
 
 impl From<DieselError> for RepoError {
     fn from(value: DieselError) -> Self {
@@ -89,31 +79,6 @@ impl Repo for PostgresRepo {
             async move { (repo_ops)(transaction_conn).await }.scope_boxed()
         })
         .await
-    }
-
-    async fn upsert_contract_addresses<'a>(
-        conn: &mut Conn<'a>,
-        contract_addresses: &[UnsavedContractAddress],
-    ) {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        diesel::insert_into(chaindexing_contract_addresses)
-            .values(contract_addresses)
-            .on_conflict((chain_id, address))
-            .do_update()
-            .set((
-                contract_name.eq(excluded(contract_name)),
-                start_block_number.eq(excluded(start_block_number)),
-            ))
-            .execute(conn)
-            .await
-            .unwrap();
-    }
-
-    async fn get_all_contract_addresses<'a>(conn: &mut Conn<'a>) -> Vec<ContractAddress> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        chaindexing_contract_addresses.load(conn).await.unwrap()
     }
 
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) {
@@ -179,15 +144,6 @@ impl Repo for PostgresRepo {
             .unwrap();
     }
 
-    async fn create_node<'a>(conn: &mut Self::Conn<'a>) -> Node {
-        use crate::diesel::schema::chaindexing_nodes::dsl::*;
-
-        diesel::insert_into(chaindexing_nodes)
-            .default_values()
-            .get_result(conn)
-            .await
-            .unwrap()
-    }
     async fn get_active_nodes<'a>(
         conn: &mut Self::Conn<'a>,
         node_election_rate_ms: u64,
@@ -211,25 +167,5 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
-    }
-}
-
-impl Streamable for PostgresRepo {
-    type StreamConn<'a> = PgPooledConn<'a>;
-
-    fn get_contract_addresses_stream_by_chain<'a>(
-        conn: Arc<Mutex<Self::StreamConn<'a>>>,
-        chain_id_: i64,
-    ) -> Box<dyn Stream<Item = Vec<ContractAddress>> + Send + Unpin + 'a> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        get_contract_addresses_stream_by_chain!(
-            id,
-            conn,
-            Arc<Mutex<PgPooledConn<'a>>>,
-            ContractAddress,
-            chain_id_,
-            i32
-        )
     }
 }
