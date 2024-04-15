@@ -14,15 +14,12 @@ mod tests {
     #[tokio::test]
     pub async fn creates_state() {
         let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-        let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-        let raw_query_txn_client =
-            ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
+        let mut repo_client = test_runner::new_repo().get_client().await;
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
-            &raw_query_txn_client,
-            &Arc::new(Mutex::new(
-                test_runner::new_repo().get_raw_query_client().await,
-            )),
+            &repo_txn_client,
+            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
@@ -39,15 +36,12 @@ mod tests {
     #[tokio::test]
     pub async fn updates_state() {
         let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-        let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-        let raw_query_txn_client =
-            ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
+        let mut repo_client = test_runner::new_repo().get_client().await;
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
-            &raw_query_txn_client,
-            &Arc::new(Mutex::new(
-                test_runner::new_repo().get_raw_query_client().await,
-            )),
+            &repo_txn_client,
+            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
@@ -65,15 +59,12 @@ mod tests {
     #[tokio::test]
     pub async fn deletes_state() {
         let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-        let mut raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-        let raw_query_txn_client =
-            ChaindexingRepo::get_raw_query_txn_client(&mut raw_query_client).await;
+        let mut repo_client = test_runner::new_repo().get_client().await;
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
             &transfer_event_with_contract(bayc_contract),
-            &raw_query_txn_client,
-            &Arc::new(Mutex::new(
-                test_runner::new_repo().get_raw_query_client().await,
-            )),
+            &repo_txn_client,
+            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
@@ -116,7 +107,6 @@ impl StateMigrations for NftStateMigrations {
 
 pub async fn setup() {
     let bayc_contract = bayc_contract().add_state_migrations(NftStateMigrations);
-    let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
-    chaindexing::booting::run_migrations_for_contract_states(&raw_query_client, &[bayc_contract])
-        .await;
+    let repo_client = test_runner::new_repo().get_client().await;
+    chaindexing::booting::run_user_migrations(&repo_client, &[bayc_contract]).await;
 }

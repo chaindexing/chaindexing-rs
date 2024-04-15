@@ -35,7 +35,7 @@ pub fn get<S: Send + Sync + Clone>(
         .collect()
 }
 
-pub fn group_by_contract_address_id(filters: &[Filter]) -> HashMap<i32, Vec<Filter>> {
+pub fn group_by_contract_address_id(filters: &[Filter]) -> HashMap<i64, Vec<Filter>> {
     let empty_filter_group = vec![];
 
     filters.iter().fold(
@@ -64,7 +64,7 @@ pub fn get_latest(filters: &Vec<Filter>) -> Option<Filter> {
 
 #[derive(Clone, Debug)]
 pub struct Filter {
-    pub contract_address_id: i32,
+    pub contract_address_id: i64,
     pub address: String,
     pub value: EthersFilter,
 }

@@ -12,7 +12,8 @@ mod tests {
         provider_with_empty_logs, provider_with_filter_stubber, provider_with_logs, test_runner,
     };
     use chaindexing::{
-        ingester, ChainId, ChaindexingRepo, Config, HasRawQueryClient, PostgresRepo, Repo,
+        ingester, ChainId, ChaindexingRepo, Config, ExecutesWithRawQuery, HasRawQueryClient,
+        PostgresRepo, Repo,
     };
 
     #[tokio::test]
@@ -20,6 +21,7 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let repo_client = test_runner::new_repo().get_client().await;
             let bayc_contract = bayc_contract();
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
@@ -31,13 +33,14 @@ mod tests {
             ));
 
             assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &bayc_contract.addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
 
             let conn = Arc::new(Mutex::new(conn));
-            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+            let repo_client = Arc::new(Mutex::new(repo_client));
             ingester::ingest(
                 conn.clone(),
-                &raw_query_client,
+                &repo_client,
                 provider,
                 &ChainId::Mainnet,
                 &config,
@@ -62,11 +65,13 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let repo_client = test_runner::new_repo().get_client().await;
             let bayc_contract = bayc_contract();
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &bayc_contract.addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let bayc_contract_address = contract_addresses.first().unwrap();
             assert_eq!(
@@ -84,10 +89,10 @@ mod tests {
             ));
 
             let conn = Arc::new(Mutex::new(conn));
-            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+            let repo_client = Arc::new(Mutex::new(repo_client));
             ingester::ingest(
                 conn.clone(),
-                &raw_query_client,
+                &repo_client,
                 provider,
                 &ChainId::Mainnet,
                 &config,
@@ -103,7 +108,8 @@ mod tests {
     pub async fn updates_next_block_number_to_ingest_from_for_a_given_batch() {
         let pool = test_runner::get_pool().await;
 
-        test_runner::run_test(&pool, |mut conn| async move {
+        test_runner::run_test(&pool, |conn| async move {
+            let repo_client = test_runner::new_repo().get_client().await;
             let bayc_contract = bayc_contract();
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
@@ -114,16 +120,17 @@ mod tests {
                 CURRENT_BLOCK_NUMBER
             ));
 
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &bayc_contract.addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
 
             let conn = Arc::new(Mutex::new(conn));
             let blocks_per_batch = 10;
 
-            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+            let repo_client = Arc::new(Mutex::new(repo_client));
             let config = config.with_blocks_per_batch(blocks_per_batch);
             ingester::ingest(
                 conn.clone(),
-                &raw_query_client,
+                &repo_client,
                 provider,
                 &ChainId::Mainnet,
                 &config,
@@ -154,15 +161,16 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
+            let repo_client = test_runner::new_repo().get_client().await;
             let config: Config<()> = Config::new(PostgresRepo::new(&database_url()));
 
             let provider = Arc::new(empty_provider());
             let conn = Arc::new(Mutex::new(conn));
-            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+            let repo_client = Arc::new(Mutex::new(repo_client));
 
             ingester::ingest(
                 conn.clone(),
-                &raw_query_client,
+                &repo_client,
                 provider,
                 &ChainId::Mainnet,
                 &config,
@@ -181,6 +189,7 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let repo_client = test_runner::new_repo().get_client().await;
             let bayc_contract = bayc_contract();
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
@@ -188,13 +197,14 @@ mod tests {
             let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
 
             assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &bayc_contract.addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
 
             let conn = Arc::new(Mutex::new(conn));
-            let raw_query_client = test_runner::new_repo().get_raw_query_client().await;
+            let repo_client = Arc::new(Mutex::new(repo_client));
             ingester::ingest(
                 conn.clone(),
-                &raw_query_client,
+                &repo_client,
                 provider,
                 &ChainId::Mainnet,
                 &config,

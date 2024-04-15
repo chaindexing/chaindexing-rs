@@ -1,14 +1,20 @@
 #[cfg(test)]
 mod create_initial_contract_addresses {
-    use chaindexing::{ChainId, ChaindexingRepo, Repo, UnsavedContractAddress};
+    use chaindexing::{
+        ChainId, ChaindexingRepo, Config, ExecutesWithRawQuery, HasRawQueryClient, PostgresRepo,
+        Repo, UnsavedContractAddress,
+    };
 
-    use crate::test_runner;
+    use crate::{db::database_url, test_runner};
 
     #[tokio::test]
     pub async fn creates_contract_addresses() {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let config = Config::<()>::new(PostgresRepo::new(&database_url()));
+            let repo_client = config.repo.get_client().await;
+
             let contract_name = "Test-contract-address";
             let contract_address_value = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e";
             let chain_id = ChainId::Arbitrum;
@@ -20,7 +26,7 @@ mod create_initial_contract_addresses {
                 &chain_id,
                 start_block_number,
             )];
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -43,6 +49,9 @@ mod create_initial_contract_addresses {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let config = Config::<()>::new(PostgresRepo::new(&database_url()));
+            let repo_client = config.repo.get_client().await;
+
             let contract_name = "Test-contract-address";
             let contract_address_value = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e";
             let chain_id = ChainId::Arbitrum;
@@ -54,7 +63,7 @@ mod create_initial_contract_addresses {
                 &chain_id,
                 start_block_number,
             )];
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -72,6 +81,9 @@ mod create_initial_contract_addresses {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let config = Config::<()>::new(PostgresRepo::new(&database_url()));
+            let repo_client = config.repo.get_client().await;
+
             let initial_contract_address = UnsavedContractAddress::new(
                 "initial-contract-address",
                 "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e",
@@ -80,7 +92,7 @@ mod create_initial_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-address",
@@ -90,7 +102,7 @@ mod create_initial_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -105,6 +117,9 @@ mod create_initial_contract_addresses {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let config = Config::<()>::new(PostgresRepo::new(&database_url()));
+            let repo_client = config.repo.get_client().await;
+
             let initial_start_block_number = 400;
 
             let initial_contract_address = UnsavedContractAddress::new(
@@ -115,7 +130,7 @@ mod create_initial_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let updated_contract_address_start_block_number = 2000;
             let updated_contract_address = UnsavedContractAddress::new(
@@ -126,7 +141,7 @@ mod create_initial_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();
@@ -144,6 +159,9 @@ mod create_initial_contract_addresses {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
+            let config = Config::<()>::new(PostgresRepo::new(&database_url()));
+            let repo_client = config.repo.get_client().await;
+
             let initial_start_block_number = 400;
 
             let initial_contract_address = UnsavedContractAddress::new(
@@ -154,7 +172,7 @@ mod create_initial_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-address",
@@ -164,7 +182,7 @@ mod create_initial_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::upsert_contract_addresses(&mut conn, &contract_addresses).await;
+            ChaindexingRepo::upsert_contract_addresses(&repo_client, &contract_addresses).await;
 
             let contract_addresses = ChaindexingRepo::get_all_contract_addresses(&mut conn).await;
             let contract_address = contract_addresses.first().unwrap();

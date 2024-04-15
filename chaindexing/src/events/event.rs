@@ -92,6 +92,10 @@ impl Event {
         }
     }
 
+    pub(crate) fn get_abi(&self) -> &str {
+        self.abi.as_str()
+    }
+
     pub fn get_block_number(&self) -> u64 {
         self.block_number as u64
     }

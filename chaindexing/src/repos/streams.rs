@@ -1,229 +1,159 @@
 // TODO: Rewrite after migrating to tokio-postgres
 
-#[allow(clippy::module_name_repetitions)]
-#[macro_export]
-macro_rules! get_contract_addresses_stream_by_chain {
-    ( $cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty) => {{
-        use get_contract_addresses_stream_by_chain;
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
-        let default_chunk_size = 5;
-        let default_from = None;
-        let default_to = None;
+use futures_util::Stream;
+use pin_project_lite::pin_project;
 
-        get_contract_addresses_stream_by_chain!(
-            $cursor_field,
-            $conn,
-            $conn_type,
-            $table_struct,
-            $chain_id,
-            $fromToType,
-            default_chunk_size,
-            default_from,
-            default_to
-        )
-    }};
+use futures_util::FutureExt;
+use tokio::sync::Mutex;
 
-    ($cursor_field:expr, $conn:expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty, $chunk_size:expr) => {{
-        use get_contract_addresses_stream_by_chain;
+use crate::{
+    ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery,
+};
 
-        let mut default_from = None;
-        let default_to = None;
+type DataStream = Vec<ContractAddress>;
 
-        get_contract_addresses_stream_by_chain!(
-            $cursor_field,
-            $conn,
-            $conn_type,
-            $table_struct,
-            $chain_id,
-            $fromToType,
-            $chunk_size,
-            default_from,
-            default_to
-        )
-    }};
+enum ContractAddressesStreamState {
+    GetFromAndTo,
+    PollFromAndToFuture(Pin<Box<dyn Future<Output = (i64, i64)> + Send>>),
+    GetDataStreamFuture((i64, i64)),
+    PollDataStreamFuture((Pin<Box<dyn Future<Output = DataStream> + Send>>, i64, i64)),
+}
 
-    ($cursor_field:expr, $conn: expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty, $chunk_size:expr, $from: expr) => {{
-        use get_contract_addresses_stream_by_chain;
+pin_project!(
+    pub struct ContractAddressesStream {
+        chain_id_: i64,
+        from: Option<i64>,
+        to: Option<i64>,
+        chunk_size: i64,
+        client: Arc<Mutex<ChaindexingRepoClient>>,
+        state: ContractAddressesStreamState,
+    }
+);
 
-        let default_to = None;
-
-        get_contract_addresses_stream_by_chain!(
-            $cursor_field,
-            $conn,
-            $conn_type,
-            $table_struct,
-            $chain_id,
-            $fromToType,
-            $chunk_size,
-            $from,
-            default_to
-        )
-    }};
-
-    ($cursor_field:expr, $conn: expr, $conn_type:ty, $table_struct:ty, $chain_id:expr, $fromToType:ty, $chunk_size:expr, $from: expr, $to: expr) => {{
-        use std::{
-            future::Future,
-            pin::Pin,
-            task::{Context, Poll},
-        };
-
-        use futures_util::Stream;
-        use pin_project_lite::pin_project;
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
-
-        type DataStream = Vec<$table_struct>;
-
-        enum SerialTableStreamState<'a> {
-            GetFromAndTo,
-            PollFromAndToFuture(
-                Pin<Box<dyn Future<Output = ($fromToType, $fromToType)> + Send + 'a>>,
-            ),
-            GetDataStreamFuture(($fromToType, $fromToType)),
-            PollDataStreamFuture(
-                (
-                    Pin<Box<dyn Future<Output = DataStream> + Send + 'a>>,
-                    $fromToType,
-                    $fromToType,
-                ),
-            ),
+impl ContractAddressesStream {
+    pub fn new(client: &Arc<Mutex<ChaindexingRepoClient>>, chain_id_: i64) -> Self {
+        Self {
+            chain_id_,
+            from: None,
+            to: None,
+            chunk_size: 5,
+            client: client.clone(),
+            state: ContractAddressesStreamState::GetFromAndTo,
         }
+    }
+}
 
-        pin_project!(
-            pub struct SerialTableStream<'a> {
-                chain_id_: i64,
-                from: Option<$fromToType>,
-                to: Option<$fromToType>,
-                chunk_size: i32,
-                conn: $conn_type,
-                state: SerialTableStreamState<'a>,
+impl Stream for ContractAddressesStream {
+    type Item = DataStream;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+        let chain_id_ = *this.chain_id_;
+        let from = *this.from;
+        let to = *this.to;
+
+        match this.state {
+            ContractAddressesStreamState::GetFromAndTo => {
+                let client = this.client.clone();
+
+                *this.state = ContractAddressesStreamState::PollFromAndToFuture(
+                    async move {
+                        let client = client.lock().await;
+
+                        let from = match from {
+                            Some(from) => from,
+                            None => {
+                                let query = format!("SELECT MIN(id) FROM chaindexing_contract_addresses WHERE chain_id = {chain_id_}");
+                                
+                              ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
+                            },
+                        };
+
+                        let to = match to {
+                            Some(to) => to,
+                            None => {
+                                let query = format!("SELECT MAX(id) FROM chaindexing_contract_addresses WHERE chain_id = {chain_id_}");
+
+                                ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
+                            },
+                        };
+
+                        (from, to)
+                    }
+                    .boxed(),
+                );
+
+                cx.waker().wake_by_ref();
+                Poll::Pending
             }
-        );
+            ContractAddressesStreamState::PollFromAndToFuture(from_and_to_future) => {
+                let (from, to): (i64, i64) =
+                    futures_util::ready!(from_and_to_future.as_mut().poll(cx));
 
-        impl<'a> Stream for SerialTableStream<'a> {
-            type Item = DataStream;
+                *this.state = ContractAddressesStreamState::GetDataStreamFuture((from, to));
 
-            fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-                use diesel::dsl::{max, min};
-                use diesel::prelude::*;
-                use diesel_async::RunQueryDsl;
+                cx.waker().wake_by_ref();
 
-                use std::task::Poll;
+                Poll::Pending
+            }
+            ContractAddressesStreamState::GetDataStreamFuture((from, to)) => {
+                let client = this.client.clone();
+                let from = *from;
+                let to = *to;
 
-                use futures_util::FutureExt;
+                if from > to {
+                    Poll::Ready(None)
+                } else {
+                    let chunk_limit = from + *this.chunk_size;
 
-                let this = self.project();
-                let chain_id_ = *this.chain_id_;
-                let from = *this.from;
-                let to = *this.to;
+                    let data_stream_future = async move {
+                        let client = client.lock().await;
 
-                match this.state {
-                    SerialTableStreamState::GetFromAndTo => {
-                        let conn = this.conn.clone();
-
-                        *this.state = SerialTableStreamState::PollFromAndToFuture(
-                            async move {
-                                let mut conn = conn.lock().await;
-
-                                let from = match from {
-                                    Some(from) => from,
-                                    None => chaindexing_contract_addresses
-                                        .filter(chain_id.eq(chain_id_))
-                                        .select(min($cursor_field))
-                                        .get_result::<Option<$fromToType>>(&mut conn)
-                                        .await
-                                        .unwrap()
-                                        .unwrap_or(0),
-                                };
-
-                                let to = match to {
-                                    Some(to) => to,
-                                    None => chaindexing_contract_addresses
-                                        .filter(chain_id.eq(chain_id_))
-                                        .select(max($cursor_field))
-                                        .get_result::<Option<$fromToType>>(&mut conn)
-                                        .await
-                                        .unwrap()
-                                        .unwrap_or(0),
-                                };
-
-                                (from, to)
-                            }
-                            .boxed(),
+                        let query = format!(
+                            "
+                        SELECT * FROM chaindexing_contract_addresses 
+                        WHERE chain_id = {chain_id_} AND id BETWEEN {from} AND {chunk_limit}
+                        "
                         );
 
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
+                        let addresses: Vec<ContractAddress> =
+                            ChaindexingRepo::load_data_list(&client, &query).await;
+
+                        addresses
                     }
-                    SerialTableStreamState::PollFromAndToFuture(from_and_to_future) => {
-                        let (from, to): ($fromToType, $fromToType) =
-                            futures_util::ready!(from_and_to_future.as_mut().poll(cx));
+                    .boxed();
 
-                        *this.state = SerialTableStreamState::GetDataStreamFuture((from, to));
-
-                        cx.waker().wake_by_ref();
-
-                        Poll::Pending
-                    }
-                    SerialTableStreamState::GetDataStreamFuture((from, to)) => {
-                        let from = *from;
-                        let to = *to;
-
-                        if from > to {
-                            Poll::Ready(None)
-                        } else {
-                            let conn = this.conn.clone();
-                            let chunk_limit = from + (*this.chunk_size as $fromToType);
-
-                            let data_stream_future = async move {
-                                let mut conn = conn.lock().await;
-
-                                chaindexing_contract_addresses
-                                    .filter(chain_id.eq(chain_id_))
-                                    .filter($cursor_field.eq_any(from..chunk_limit))
-                                    .load(&mut conn)
-                                    .await
-                                    .unwrap()
-                            }
-                            .boxed();
-
-                            *this.state = SerialTableStreamState::PollDataStreamFuture((
-                                data_stream_future,
-                                chunk_limit,
-                                to,
-                            ));
-
-                            cx.waker().wake_by_ref();
-
-                            Poll::Pending
-                        }
-                    }
-                    SerialTableStreamState::PollDataStreamFuture((
+                    *this.state = ContractAddressesStreamState::PollDataStreamFuture((
                         data_stream_future,
-                        next_from,
+                        chunk_limit,
                         to,
-                    )) => {
-                        let streamed_data =
-                            futures_util::ready!(data_stream_future.as_mut().poll(cx));
+                    ));
 
-                        *this.state =
-                            SerialTableStreamState::GetDataStreamFuture((*next_from, *to));
+                    cx.waker().wake_by_ref();
 
-                        cx.waker().wake_by_ref();
-
-                        Poll::Ready(Some(streamed_data))
-                    }
+                    Poll::Pending
                 }
             }
-        }
+            ContractAddressesStreamState::PollDataStreamFuture((
+                data_stream_future,
+                next_from,
+                to,
+            )) => {
+                let streamed_data = futures_util::ready!(data_stream_future.as_mut().poll(cx));
 
-        Box::new(SerialTableStream {
-            chain_id_: $chain_id,
-            from: $from,
-            to: $to,
-            chunk_size: $chunk_size,
-            state: SerialTableStreamState::GetFromAndTo,
-            conn: $conn,
-        })
-    }};
+                *this.state = ContractAddressesStreamState::GetDataStreamFuture((*next_from, *to));
+
+                cx.waker().wake_by_ref();
+
+                Poll::Ready(Some(streamed_data))
+            }
+        }
+    }
 }

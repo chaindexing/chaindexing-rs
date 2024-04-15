@@ -8,8 +8,11 @@ impl RepoMigrations for PostgresRepo {
     fn create_contract_addresses_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_contract_addresses()
     }
-    fn drop_contract_addresses_migration() -> &'static [&'static str] {
-        SQLikeMigrations::drop_contract_addresses()
+    fn zero_ingest_and_handlers_next_block_numbers_migration() -> &'static [&'static str] {
+        SQLikeMigrations::zero_ingest_and_handlers_next_block_numbers()
+    }
+    fn zero_next_block_number_for_side_effects_migration() -> &'static [&'static str] {
+        SQLikeMigrations::zero_next_block_number_for_side_effects()
     }
 
     fn create_events_migration() -> &'static [&'static str] {
@@ -28,20 +31,6 @@ impl RepoMigrations for PostgresRepo {
 
     fn create_root_states_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_root_states()
-    }
-
-    fn create_handler_subscriptions_migration() -> &'static [&'static str] {
-        SQLikeMigrations::create_handler_subscriptions()
-    }
-
-    fn nullify_handler_subscriptions_next_block_number_to_handle_from_migration(
-    ) -> &'static [&'static str] {
-        SQLikeMigrations::nullify_handler_subscriptions_next_block_number_to_handle_from()
-    }
-
-    fn nullify_handler_subscriptions_next_block_number_for_side_effects_migration(
-    ) -> &'static [&'static str] {
-        SQLikeMigrations::nullify_handler_subscriptions_next_block_number_for_side_effects()
     }
 }
 
