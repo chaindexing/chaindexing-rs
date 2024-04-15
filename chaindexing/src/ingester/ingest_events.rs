@@ -122,9 +122,10 @@ async fn update_next_block_numbers_to_ingest_from<'a>(
 ) {
     let filters_by_contract_address_id = filters::group_by_contract_address_id(filters);
 
-    for contract_address in contract_addresses {
-        let filters = filters_by_contract_address_id.get(&contract_address.id).unwrap();
-
+    for (contract_address, filters) in contract_addresses
+        .iter()
+        .filter_map(|ca| filters_by_contract_address_id.get(&ca.id).map(|f| (ca, f)))
+    {
         if let Some(latest_filter) = filters::get_latest(filters) {
             let next_block_number_to_ingest_from = latest_filter.value.get_to_block().unwrap() + 1;
 

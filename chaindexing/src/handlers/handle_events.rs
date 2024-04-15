@@ -22,7 +22,7 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
 ) {
     for chain_id in chain_ids {
         let mut contract_addresses_stream =
-            ContractAddressesStream::new(repo_client, *chain_id as i64);
+            ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(200);
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             for contract_address in contract_addresses {

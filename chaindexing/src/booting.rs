@@ -43,7 +43,7 @@ pub async fn setup<'a, S: Sync + Send + Clone>(
 }
 
 /// Root migrations are immutable and should never really be dropped
-async fn setup_root(client: &ChaindexingRepoClient) {
+pub async fn setup_root(client: &ChaindexingRepoClient) {
     ChaindexingRepo::migrate(
         client,
         ChaindexingRepo::create_root_states_migration().to_vec(),

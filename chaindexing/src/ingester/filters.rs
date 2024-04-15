@@ -21,15 +21,16 @@ pub fn get<S: Send + Sync + Clone>(
     contract_addresses
         .iter()
         .map_while(|contract_address| {
-            let topics_by_contract_name =
-                topics_by_contract_name.get(contract_address.contract_name.as_str()).unwrap();
-
-            Filter::maybe_new(
-                contract_address,
-                topics_by_contract_name,
-                current_block_number,
-                blocks_per_batch,
-                execution,
+            topics_by_contract_name.get(contract_address.contract_name.as_str()).and_then(
+                |topics| {
+                    Filter::maybe_new(
+                        contract_address,
+                        topics,
+                        current_block_number,
+                        blocks_per_batch,
+                        execution,
+                    )
+                },
             )
         })
         .collect()

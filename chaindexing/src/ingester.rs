@@ -86,7 +86,8 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
     last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
 ) -> Result<(), IngesterError> {
     let current_block_number = provider::fetch_current_block_number(&provider).await;
-    let mut contract_addresses_stream = ContractAddressesStream::new(repo_client, *chain_id as i64);
+    let mut contract_addresses_stream =
+        ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(5);
 
     while let Some(contract_addresses) = contract_addresses_stream.next().await {
         let contract_addresses =

@@ -11,6 +11,7 @@ use futures_util::Stream;
 use pin_project_lite::pin_project;
 
 use futures_util::FutureExt;
+use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use crate::{ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery};
@@ -41,10 +42,14 @@ impl ContractAddressesStream {
             chain_id_,
             from: None,
             to: None,
-            chunk_size: 5,
+            chunk_size: 500,
             client: client.clone(),
             state: ContractAddressesStreamState::GetFromAndTo,
         }
+    }
+    pub fn with_chunk_size(mut self, chunk_size: i64) -> Self {
+        self.chunk_size = chunk_size;
+        self
     }
 }
 
@@ -65,6 +70,12 @@ impl Stream for ContractAddressesStream {
                     async move {
                         let client = client.lock().await;
 
+                        #[derive(Deserialize)]
+                        struct MinOrMax {
+                            min: Option<i64>,
+                            max: Option<i64>,
+                        }
+
                         let from = match from {
                             Some(from) => from,
                             None => {
@@ -74,7 +85,10 @@ impl Stream for ContractAddressesStream {
                                 WHERE chain_id = {chain_id_}"
                                 );
 
-                                ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
+                                let min_or_max: Option<MinOrMax> =
+                                    ChaindexingRepo::load_data(&client, &query).await;
+
+                                min_or_max.and_then(|mm| mm.min).unwrap_or(0)
                             }
                         };
 
@@ -87,7 +101,10 @@ impl Stream for ContractAddressesStream {
                                 WHERE chain_id = {chain_id_}"
                                 );
 
-                                ChaindexingRepo::load_data(&client, &query).await.unwrap_or(0)
+                                let min_or_max: Option<MinOrMax> =
+                                    ChaindexingRepo::load_data(&client, &query).await;
+
+                                min_or_max.and_then(|mm| mm.max).unwrap_or(0)
                             }
                         };
 

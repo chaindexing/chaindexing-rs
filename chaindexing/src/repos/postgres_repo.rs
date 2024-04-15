@@ -81,12 +81,6 @@ impl Repo for PostgresRepo {
         .await
     }
 
-    async fn get_all_contract_addresses<'a>(conn: &mut Conn<'a>) -> Vec<ContractAddress> {
-        use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
-
-        chaindexing_contract_addresses.load(conn).await.unwrap()
-    }
-
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 

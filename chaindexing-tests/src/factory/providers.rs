@@ -76,7 +76,9 @@ macro_rules! provider_with_logs {
         use $crate::factory::transfer_log;
 
         #[derive(Clone)]
-        struct Provider;
+        struct Provider {
+            contract_address: String,
+        }
         #[async_trait::async_trait]
         impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
@@ -84,7 +86,7 @@ macro_rules! provider_with_logs {
             }
 
             async fn get_logs(&self, _filter: &Filter) -> Result<Vec<Log>, ProviderError> {
-                Ok(vec![transfer_log($contract_address)])
+                Ok(vec![transfer_log(&self.contract_address)])
             }
 
             async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
@@ -95,7 +97,9 @@ macro_rules! provider_with_logs {
             }
         }
 
-        Provider
+        Provider {
+            contract_address: $contract_address.to_string(),
+        }
     }};
 }
 
