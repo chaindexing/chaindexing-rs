@@ -35,8 +35,6 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, event).await;
 
-        Self::must_be_within_chain(&state_view, event);
-
         let latest_state_version =
             StateVersion::update(&state_view, &updates.get(event), table_name, event, client).await;
         StateView::refresh(&latest_state_version, table_name, client).await;
@@ -48,8 +46,6 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
 
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client, event).await;
-
-        Self::must_be_within_chain(&state_view, event);
 
         let latest_state_version =
             StateVersion::delete(&state_view, table_name, event, client).await;
@@ -66,12 +62,8 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
         client: &ChaindexingRepoTxnClient<'a>,
         event: &Event,
     ) -> HashMap<String, String> {
-        StateView::get_complete(&self.to_view(), table_name, client, event).await
-    }
-
-    fn must_be_within_chain(state_view: &HashMap<String, String>, event: &Event) {
-        if state_view["chain_id"].parse::<i64>().unwrap() != event.chain_id {
-            panic!("ChainStateError: Can't mutate state outside originating chain")
-        }
+        let mut state_view = self.to_view();
+        state_view.insert("chain_id".to_string(), event.chain_id.to_string());
+        StateView::get_complete(&self.to_view(), table_name, client).await
     }
 }

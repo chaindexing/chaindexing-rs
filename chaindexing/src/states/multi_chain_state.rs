@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::handlers::{HandlerContext, PureHandlerContext};
-use crate::{ChaindexingRepoTxnClient, Event};
+use crate::ChaindexingRepoTxnClient;
 
 use super::filters::Filters;
 use super::state::{self, read_many};
@@ -34,7 +34,7 @@ pub trait MultiChainState:
         let event = context.event.clone();
         let client = context.repo_client;
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(table_name, client, &event).await;
+        let state_view = self.to_complete_view(table_name, client).await;
         let updates = updates.clone();
         let client = context.repo_client_for_mcs.clone();
 
@@ -60,7 +60,7 @@ pub trait MultiChainState:
         let event = context.event.clone();
         let client = context.repo_client;
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(table_name, client, &event).await;
+        let state_view = self.to_complete_view(table_name, client).await;
         let client = context.repo_client_for_mcs.clone();
 
         context
@@ -84,8 +84,7 @@ pub trait MultiChainState:
         &self,
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-        event: &Event,
     ) -> HashMap<String, String> {
-        StateView::get_complete(&self.to_view(), table_name, client, event).await
+        StateView::get_complete(&self.to_view(), table_name, client).await
     }
 }
