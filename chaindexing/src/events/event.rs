@@ -4,7 +4,8 @@ use std::hash::{Hash, Hasher};
 use crate::diesel::schema::chaindexing_events;
 use diesel::{Insertable, Queryable};
 use ethers::abi::{LogParam, Token};
-use ethers::types::{Address, Log, U256, U64};
+use ethers::types::{Address, Log, I256, U256, U64};
+use ethers::utils::format_ether;
 
 use crate::{ChainId, ContractEvent};
 use uuid::Uuid;
@@ -175,8 +176,8 @@ impl EventParam {
     pub fn get_uint_array(&self, key: &str) -> Vec<U256> {
         self.get_array_and_transform(key, |token| token.into_uint().unwrap())
     }
-    pub fn get_int_array(&self, key: &str) -> Vec<U256> {
-        self.get_array_and_transform(key, |token| token.into_int().unwrap())
+    pub fn get_int_array(&self, key: &str) -> Vec<I256> {
+        self.get_array_and_transform(key, |token| I256::from_raw(token.into_int().unwrap()))
     }
     pub fn get_address_array(&self, key: &str) -> Vec<Address> {
         self.get_array_and_transform(key, |token| token.into_address().unwrap())
@@ -202,6 +203,22 @@ impl EventParam {
         token.clone().into_fixed_array().or(token.into_array()).unwrap()
     }
 
+    pub fn get_int_gwei(&self, key: &str) -> f64 {
+        pub const GWEI: f64 = 1_000_000_000.0;
+        self.get_int_ether(key) * GWEI
+    }
+    pub fn get_int_ether(&self, key: &str) -> f64 {
+        format_ether(self.get_int(key)).parse().unwrap()
+    }
+
+    pub fn get_uint_gwei(&self, key: &str) -> f64 {
+        pub const GWEI: f64 = 1_000_000_000.0;
+        self.get_uint_ether(key) * GWEI
+    }
+    pub fn get_uint_ether(&self, key: &str) -> f64 {
+        format_ether(self.get_uint(key)).parse().unwrap()
+    }
+
     pub fn get_u8(&self, key: &str) -> u8 {
         self.get_usize(key) as u8
     }
@@ -221,8 +238,8 @@ impl EventParam {
     pub fn get_uint(&self, key: &str) -> U256 {
         self.get_token(key).into_uint().unwrap()
     }
-    pub fn get_int(&self, key: &str) -> U256 {
-        self.get_token(key).into_int().unwrap()
+    pub fn get_int(&self, key: &str) -> I256 {
+        I256::from_raw(self.get_token(key).into_int().unwrap())
     }
     pub fn get_address_string(&self, key: &str) -> String {
         utils::address_to_string(&self.get_address(key)).to_lowercase()
@@ -255,5 +272,34 @@ mod utils {
 
     pub fn address_to_string(address: &H160) -> String {
         hashes::h160_to_string(address)
+    }
+}
+
+#[cfg(test)]
+mod event_param_tests {
+    use ethers::types::I256;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn returns_uint_values() {
+        let event_param =
+            EventParam::new(&json!({"sqrtPriceX96":{"Uint":"0x1ca2dce57b617d43d62181e8"}}));
+        assert_eq!(
+            event_param.get_uint("sqrtPriceX96"),
+            U256::from_dec_str("8862469411596380921745474024").unwrap()
+        );
+    }
+
+    #[test]
+    fn returns_int_values() {
+        let event_param = EventParam::new(
+            &json!({"amount0":{"Int":"0xfffffffffffffffffffffffffffffffffffffffffffffffe92da20f7358d10e9"}}),
+        );
+        assert_eq!(
+            event_param.get_int("amount0"),
+            I256::from_dec_str("-26311681626831253271").unwrap()
+        );
     }
 }
