@@ -1,8 +1,8 @@
 [package]
 name = "chaindexing"
-version = "0.1.68"
+version = "0.1.69"
 edition = "2021"
-description = "Access EVM chain data with SQL"
+description = "Index any EVM chain and query with SQL"
 license = "MIT OR Apache-2.0"
 readme="../README.md"
 repository = "https://github.com/chaindexing/chaindexing-rs"
