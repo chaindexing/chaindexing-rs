@@ -126,7 +126,7 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     Ok(())
 }
 
-pub async fn include_contract_in_indexing<'a, C: handlers::HandlerContext<'a>>(
+pub async fn include_contract<'a, C: handlers::HandlerContext<'a>>(
     event_context: &C,
     contract_name: &str,
     address: &str,
