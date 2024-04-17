@@ -15,7 +15,7 @@ pub trait PureHandler: Send + Sync {
     /// PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
     /// The chain explorer's event section can also be used to easily infer this
     fn abi(&self) -> &'static str;
-    async fn handle_event<'a, 'b>(&self, event_context: PureHandlerContext<'a, 'b>);
+    async fn handle_event<'a, 'b>(&self, context: PureHandlerContext<'a, 'b>);
 }
 
 #[derive(Clone)]

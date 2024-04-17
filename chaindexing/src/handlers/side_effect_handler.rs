@@ -18,10 +18,7 @@ pub trait SideEffectHandler: Send + Sync {
     /// PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
     /// The chain explorer's event section can also be used to easily infer this
     fn abi(&self) -> &'static str;
-    async fn handle_event<'a>(
-        &self,
-        event_context: SideEffectHandlerContext<'a, Self::SharedState>,
-    );
+    async fn handle_event<'a>(&self, context: SideEffectHandlerContext<'a, Self::SharedState>);
 }
 
 // SideEffectHandlers are event handlers that help handle side-effects for events.
