@@ -204,7 +204,6 @@ impl EventParam {
     }
 
     pub fn get_int_gwei(&self, key: &str) -> f64 {
-        pub const GWEI: f64 = 1_000_000_000.0;
         self.get_int_ether(key) * GWEI
     }
     pub fn get_int_ether(&self, key: &str) -> f64 {
@@ -212,7 +211,6 @@ impl EventParam {
     }
 
     pub fn get_uint_gwei(&self, key: &str) -> f64 {
-        pub const GWEI: f64 = 1_000_000_000.0;
         self.get_uint_ether(key) * GWEI
     }
     pub fn get_uint_ether(&self, key: &str) -> f64 {
@@ -252,6 +250,8 @@ impl EventParam {
         self.value.get(key).unwrap().clone()
     }
 }
+
+const GWEI: f64 = 1_000_000_000.0;
 
 mod hashes {
     use ethers::types::{H160, H256};
