@@ -60,6 +60,8 @@ use tokio::time;
 use config::ConfigError;
 use nodes::NodeTasks;
 
+use crate::nodes::{NodeTask, NodeTasksRunner};
+
 pub type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 
 pub enum ChaindexingError {
@@ -115,7 +117,7 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
                 .orchestrate(
                     &config.optimization_config,
                     &active_nodes,
-                    &nodes::get_tasks_runner(&config),
+                    &get_tasks_runner(&config),
                 )
                 .await;
 
@@ -143,4 +145,24 @@ pub async fn include_contract<'a, C: handlers::HandlerContext<'a>>(
 
 async fn wait_for_non_leader_nodes_to_abort(node_election_rate_ms: u64) {
     time::sleep(Duration::from_millis(node_election_rate_ms)).await;
+}
+
+fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
+    config: &Config<S>,
+) -> impl NodeTasksRunner + '_ {
+    struct ChaindexingNodeTasksRunner<'a, S: Send + Sync + Clone + Debug + 'static> {
+        config: &'a Config<S>,
+    }
+    #[async_trait::async_trait]
+    impl<'a, S: Send + Sync + Clone + Debug + 'static> NodeTasksRunner
+        for ChaindexingNodeTasksRunner<'a, S>
+    {
+        async fn run(&self) -> Vec<NodeTask> {
+            let ingester = ingester::start(self.config).await;
+            let handlers = handlers::start(self.config).await;
+
+            vec![ingester, handlers]
+        }
+    }
+    ChaindexingNodeTasksRunner { config }
 }
