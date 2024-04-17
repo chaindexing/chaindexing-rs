@@ -23,8 +23,11 @@ impl Filters {
         }
     }
     pub fn add(mut self, field: impl ToString, value: impl ToString) -> Self {
-        self.values.insert(field.to_string(), value.to_string());
+        self.add_mut(field.to_string(), value.to_string());
         self
+    }
+    pub fn add_mut(&mut self, field: impl ToString, value: impl ToString) {
+        self.values.insert(field.to_string(), value.to_string());
     }
     pub fn within_contract(mut self) -> Self {
         self.context = FiltersContext::Contract;
