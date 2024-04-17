@@ -12,8 +12,10 @@ mod contract_state;
 mod filters;
 mod multi_chain_state;
 mod state;
+mod updates;
 
 pub use filters::Filters;
+pub use updates::Updates;
 
 use crate::{
     ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoTxnClient, ExecutesWithRawQuery,

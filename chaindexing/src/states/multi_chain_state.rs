@@ -8,6 +8,7 @@ use super::filters::Filters;
 use super::state::{self, read_many};
 use super::state_versions::StateVersion;
 use super::state_views::StateView;
+use super::updates::Updates;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -30,7 +31,7 @@ pub trait MultiChainState:
         read_many(filters, context, Self::table_name()).await
     }
 
-    async fn update<'a, 'b>(&self, updates: &Filters, context: &PureHandlerContext<'a, 'b>) {
+    async fn update<'a, 'b>(&self, updates: &Updates, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
         let client = context.repo_client;
         let table_name = Self::table_name();
@@ -45,7 +46,7 @@ pub trait MultiChainState:
 
                 let latest_state_version = StateVersion::update_without_txn(
                     &state_view,
-                    &updates.get(&event),
+                    &updates.values,
                     table_name,
                     &event,
                     &mut client,

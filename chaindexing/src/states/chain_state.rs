@@ -9,6 +9,7 @@ use super::state;
 use super::state::read_many;
 use super::state_versions::StateVersion;
 use super::state_views::StateView;
+use super::updates::Updates;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -28,7 +29,7 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
         read_many(filters, context, Self::table_name()).await
     }
 
-    async fn update<'a, 'b>(&self, updates: &Filters, context: &PureHandlerContext<'a, 'b>) {
+    async fn update<'a, 'b>(&self, updates: &Updates, context: &PureHandlerContext<'a, 'b>) {
         let event = &context.event;
         let client = context.repo_client;
 
@@ -36,7 +37,7 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
         let state_view = self.to_complete_view(table_name, client, event).await;
 
         let latest_state_version =
-            StateVersion::update(&state_view, &updates.get(event), table_name, event, client).await;
+            StateVersion::update(&state_view, &updates.values, table_name, event, client).await;
         StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
