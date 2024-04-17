@@ -161,32 +161,45 @@ impl EventParam {
         token.clone().into_fixed_bytes().or(token.into_bytes()).unwrap()
     }
 
+    pub fn get_i8_array(&self, key: &str) -> Vec<i8> {
+        self.get_array_and_transform(key, |token| token_to_int(token).as_i8())
+    }
+    pub fn get_i32_array(&self, key: &str) -> Vec<i32> {
+        self.get_array_and_transform(key, |token| token_to_int(token).as_i32())
+    }
+    pub fn get_i64_array(&self, key: &str) -> Vec<i64> {
+        self.get_array_and_transform(key, |token| token_to_int(token).as_i64())
+    }
+    pub fn get_i128_array(&self, key: &str) -> Vec<i128> {
+        self.get_array_and_transform(key, |token| token_to_int(token).as_i128())
+    }
+
     pub fn get_u8_array(&self, key: &str) -> Vec<u8> {
-        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_usize() as u8)
+        self.get_array_and_transform(key, |token| token_to_uint(token).as_usize() as u8)
     }
     pub fn get_u32_array(&self, key: &str) -> Vec<u32> {
-        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_u32())
+        self.get_array_and_transform(key, |token| token_to_uint(token).as_u32())
     }
     pub fn get_u64_array(&self, key: &str) -> Vec<u64> {
-        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_u64())
+        self.get_array_and_transform(key, |token| token_to_uint(token).as_u64())
     }
     pub fn get_u128_array(&self, key: &str) -> Vec<u128> {
-        self.get_array_and_transform(key, |token| token.into_uint().unwrap().as_u128())
+        self.get_array_and_transform(key, |token| token_to_uint(token).as_u128())
     }
     pub fn get_uint_array(&self, key: &str) -> Vec<U256> {
-        self.get_array_and_transform(key, |token| token.into_uint().unwrap())
+        self.get_array_and_transform(key, token_to_uint)
     }
     pub fn get_int_array(&self, key: &str) -> Vec<I256> {
         self.get_array_and_transform(key, |token| I256::from_raw(token.into_int().unwrap()))
     }
+
     pub fn get_address_array(&self, key: &str) -> Vec<Address> {
-        self.get_array_and_transform(key, |token| token.into_address().unwrap())
+        self.get_array_and_transform(key, token_to_address)
     }
     pub fn get_address_string_array(&self, key: &str) -> Vec<String> {
-        self.get_array_and_transform(key, |token| {
-            utils::address_to_string(&token.into_address().unwrap()).to_lowercase()
-        })
+        self.get_array_and_transform(key, |token| token_to_address_string(token).to_lowercase())
     }
+
     fn get_array_and_transform<TokenTransformer, Output>(
         &self,
         key: &str,
@@ -217,6 +230,19 @@ impl EventParam {
         format_ether(self.get_uint(key)).parse().unwrap()
     }
 
+    pub fn get_i8(&self, key: &str) -> i8 {
+        self.get_int(key).as_i8()
+    }
+    pub fn get_i32(&self, key: &str) -> i32 {
+        self.get_int(key).as_i32()
+    }
+    pub fn get_i64(&self, key: &str) -> i64 {
+        self.get_int(key).as_i64()
+    }
+    pub fn get_i128(&self, key: &str) -> i128 {
+        self.get_int(key).as_i128()
+    }
+
     pub fn get_u8(&self, key: &str) -> u8 {
         self.get_usize(key) as u8
     }
@@ -234,10 +260,10 @@ impl EventParam {
     }
     /// Same as get_u256
     pub fn get_uint(&self, key: &str) -> U256 {
-        self.get_token(key).into_uint().unwrap()
+        token_to_uint(self.get_token(key))
     }
     pub fn get_int(&self, key: &str) -> I256 {
-        I256::from_raw(self.get_token(key).into_int().unwrap())
+        token_to_int(self.get_token(key))
     }
     pub fn get_address_string(&self, key: &str) -> String {
         utils::address_to_string(&self.get_address(key)).to_lowercase()
@@ -249,6 +275,21 @@ impl EventParam {
     fn get_token(&self, key: &str) -> Token {
         self.value.get(key).unwrap().clone()
     }
+}
+
+fn token_to_address_string(token: Token) -> String {
+    utils::address_to_string(&token_to_address(token)).to_lowercase()
+}
+
+fn token_to_address(token: Token) -> Address {
+    token.into_address().unwrap()
+}
+
+fn token_to_uint(token: Token) -> U256 {
+    token.into_uint().unwrap()
+}
+fn token_to_int(token: Token) -> I256 {
+    I256::from_raw(token.into_int().unwrap())
 }
 
 const GWEI: f64 = 1_000_000_000.0;
