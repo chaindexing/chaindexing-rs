@@ -36,11 +36,11 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
-            ingester::ingest(
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                provider,
                 conn.clone(),
                 &repo_client,
-                provider,
-                &ChainId::Mainnet,
                 &config,
                 &mut HashMap::new(),
             )
@@ -82,11 +82,11 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
-            ingester::ingest(
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                provider,
                 conn.clone(),
                 &repo_client,
-                provider,
-                &ChainId::Mainnet,
                 &config,
                 &mut HashMap::new(),
             )
@@ -123,11 +123,11 @@ mod tests {
 
             let repo_client = Arc::new(Mutex::new(repo_client));
             let config = config.with_blocks_per_batch(blocks_per_batch);
-            ingester::ingest(
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                provider,
                 conn.clone(),
                 &repo_client,
-                provider,
-                &ChainId::Mainnet,
                 &config,
                 &mut HashMap::new(),
             )
@@ -167,11 +167,11 @@ mod tests {
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
 
-            ingester::ingest(
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                provider,
                 conn.clone(),
                 &repo_client,
-                provider,
-                &ChainId::Mainnet,
                 &config,
                 &mut HashMap::new(),
             )
@@ -200,11 +200,11 @@ mod tests {
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
-            ingester::ingest(
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                provider,
                 conn.clone(),
                 &repo_client,
-                provider,
-                &ChainId::Mainnet,
                 &config,
                 &mut HashMap::new(),
             )

@@ -32,14 +32,8 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
             let repo_client_for_mcs = Arc::new(Mutex::new(config.repo.get_client().await));
             let deferred_mutations_for_mcs = DeferredFutures::new();
 
-            let chain_ids: Vec<_> = config.chains.iter().map(|c| c.id as u64).collect();
-            let chain_ids_count = chain_ids.len();
-            let chunk_size = max(chain_ids_count / config.chain_concurrency as usize, 1);
-            let chunked_chain_ids: Vec<_> =
-                chain_ids.chunks(chunk_size).map(|c| c.to_vec()).collect();
-
             async move {
-                for chain_ids in chunked_chain_ids {
+                for chain_ids in get_chunked_chain_ids(&config) {
                     let config = config.clone();
                     let node_task = node_task.clone();
 
@@ -49,11 +43,10 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                     node_task
                         .clone()
                         .add_task(tokio::spawn(async move {
-                            // ChainStates which include ContractState have to be handled orderly
-                            let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
-
                             let mut interval =
                                 interval(Duration::from_millis(config.handler_rate_ms));
+
+                            let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
                             let pure_handlers = contracts::get_pure_handlers(&config.contracts);
                             let side_effect_handlers =
                                 contracts::get_side_effect_handlers(&config.contracts);
@@ -80,9 +73,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                 let state_migrations = contracts::get_state_migrations(&config.contracts);
                 let state_table_names = states::get_all_table_names(&state_migrations);
 
-                let mut interval = interval(Duration::from_millis(
-                    chain_ids_count as u64 * config.handler_rate_ms,
-                ));
+                let mut interval = interval(Duration::from_millis(2 * config.handler_rate_ms));
 
                 loop {
                     maybe_handle_chain_reorg::run(&mut repo_client, &state_table_names).await;
@@ -96,4 +87,14 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
         .await;
 
     node_task
+}
+
+fn get_chunked_chain_ids<S: Send + Sync + Clone + Debug + 'static>(
+    config: &Config<S>,
+) -> Vec<Vec<u64>> {
+    let chain_ids: Vec<_> = config.chains.iter().map(|c| c.id as u64).collect();
+    let chain_ids_count = chain_ids.len();
+    let chunk_size = max(chain_ids_count / config.chain_concurrency as usize, 1);
+
+    chain_ids.chunks(chunk_size).map(|c| c.to_vec()).collect()
 }

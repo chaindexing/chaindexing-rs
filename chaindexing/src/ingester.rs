@@ -17,25 +17,23 @@ use futures_util::StreamExt;
 use tokio::sync::Mutex;
 use tokio::time::interval;
 
-use crate::chains::ChainId;
 use crate::contracts;
 use crate::nodes::NodeTask;
 use crate::pruning::PruningConfig;
 use crate::states;
 use crate::streams::ContractAddressesStream;
 use crate::Chain;
+use crate::ChainId;
 use crate::Config;
+use crate::Contract;
 use crate::ContractAddress;
 use crate::{ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoConn};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo};
 
 pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> NodeTask {
-    let chains: Vec<_> = config.chains.clone();
-    let chunk_size = max(chains.len() / config.chain_concurrency as usize, 1);
-    let chunked_chains: Vec<_> = chains.chunks(chunk_size).map(|c| c.to_vec()).collect();
-
     let node_task = NodeTask::new();
-    for chains in chunked_chains {
+
+    for chains in get_chunked_chains(config) {
         let config = config.clone();
 
         node_task
@@ -44,19 +42,18 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                 let mut last_pruned_at_per_chain_id = HashMap::new();
 
                 loop {
-                    for Chain { id, json_rpc_url } in chains.iter() {
-                        let provider = provider::get(json_rpc_url);
-
+                    for chain in chains.iter() {
+                        let provider = provider::get(&chain.json_rpc_url);
                         let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
                         let pool = config.repo.get_pool(1).await;
                         let conn = ChaindexingRepo::get_conn(&pool).await;
                         let conn = Arc::new(Mutex::new(conn));
 
-                        ingest(
+                        ingest_for_chain(
+                            &chain.id,
+                            provider,
                             conn.clone(),
                             &repo_client,
-                            provider,
-                            id,
                             &config,
                             &mut last_pruned_at_per_chain_id,
                         )
@@ -73,17 +70,24 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
     node_task
 }
 
-pub async fn ingest<'a, S: Send + Sync + Clone>(
+pub fn get_chunked_chains<S: Send + Sync + Clone + 'static>(config: &Config<S>) -> Vec<Vec<Chain>> {
+    let chains: Vec<_> = config.chains.clone();
+    let chunk_size = max(chains.len() / config.chain_concurrency as usize, 1);
+
+    chains.chunks(chunk_size).map(|c| c.to_vec()).collect()
+}
+
+pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
+    chain_id: &ChainId,
+    provider: Arc<impl Provider>,
     conn: Arc<Mutex<ChaindexingRepoConn<'a>>>,
     repo_client: &Arc<Mutex<ChaindexingRepoClient>>,
-    provider: Arc<impl Provider + 'static>,
-    chain_id: &ChainId,
     config @ Config {
         contracts,
         pruning_config,
         ..
     }: &Config<S>,
-    last_pruned_at_per_chain_id: &mut HashMap<ChainId, u64>,
+    last_pruned_at_per_chain_id: &mut HashMap<u64, u64>,
 ) -> Result<(), IngesterError> {
     let current_block_number = provider::fetch_current_block_number(&provider).await;
     let mut contract_addresses_stream =
@@ -116,32 +120,50 @@ pub async fn ingest<'a, S: Send + Sync + Clone>(
             config,
         )
         .await?;
-
-        if let Some(pruning_config @ PruningConfig { prune_interval, .. }) = pruning_config {
-            let now = Utc::now().timestamp() as u64;
-            let last_pruned_at = last_pruned_at_per_chain_id.get(chain_id).unwrap_or(&now);
-            let chain_id_u64 = *chain_id as u64;
-            if now - *last_pruned_at >= *prune_interval {
-                let min_pruning_block_number =
-                    pruning_config.get_min_block_number(current_block_number);
-                ChaindexingRepo::prune_events(repo_client, min_pruning_block_number, chain_id_u64)
-                    .await;
-
-                let state_migrations = contracts::get_state_migrations(contracts);
-                let state_table_names = states::get_all_table_names(&state_migrations);
-                states::prune_state_versions(
-                    &state_table_names,
-                    repo_client,
-                    min_pruning_block_number,
-                    chain_id_u64,
-                )
-                .await;
-            }
-            last_pruned_at_per_chain_id.insert(*chain_id, Utc::now().timestamp() as u64);
-        }
     }
 
+    maybe_prune(
+        pruning_config,
+        last_pruned_at_per_chain_id,
+        contracts,
+        *chain_id as u64,
+        current_block_number,
+        &*repo_client.lock().await,
+    )
+    .await;
+
     Ok(())
+}
+
+async fn maybe_prune<S: Send + Sync + Clone>(
+    pruning_config: &Option<PruningConfig>,
+    last_pruned_at_per_chain_id: &mut HashMap<u64, u64>,
+    contracts: &[Contract<S>],
+    chain_id: u64,
+    current_block_number: u64,
+    repo_client: &ChaindexingRepoClient,
+) {
+    if let Some(pruning_config @ PruningConfig { prune_interval, .. }) = pruning_config {
+        let now = Utc::now().timestamp() as u64;
+        let last_pruned_at = last_pruned_at_per_chain_id.get(&chain_id).unwrap_or(&now);
+        if now - *last_pruned_at >= *prune_interval {
+            let min_pruning_block_number =
+                pruning_config.get_min_block_number(current_block_number);
+
+            ChaindexingRepo::prune_events(repo_client, min_pruning_block_number, chain_id).await;
+
+            let state_migrations = contracts::get_state_migrations(contracts);
+            let state_table_names = states::get_all_table_names(&state_migrations);
+            states::prune_state_versions(
+                &state_table_names,
+                repo_client,
+                min_pruning_block_number,
+                chain_id,
+            )
+            .await;
+        }
+        last_pruned_at_per_chain_id.insert(chain_id, Utc::now().timestamp() as u64);
+    }
 }
 
 fn filter_uningested_contract_addresses(
