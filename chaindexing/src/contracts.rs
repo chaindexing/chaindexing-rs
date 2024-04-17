@@ -2,9 +2,10 @@ use std::fmt::Debug;
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::diesel::schema::chaindexing_contract_addresses;
-use crate::handlers::{PureHandler, SideEffectHandler};
+use crate::handlers::PureHandler;
 use crate::states::StateMigrations;
 use crate::ChainId;
+use crate::{EventHandler, SideEffectHandler};
 use diesel::{Identifiable, Insertable, Queryable};
 
 use ethers::types::U64;
@@ -69,7 +70,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
         self
     }
 
-    pub fn add_handler(mut self, handler: impl PureHandler + 'static) -> Self {
+    pub fn add_event_handler(mut self, handler: impl EventHandler + 'static) -> Self {
         self.pure_handlers.insert(handler.abi(), Arc::new(handler));
 
         self
