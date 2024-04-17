@@ -107,7 +107,7 @@ impl Event {
         self.transaction_index as u32
     }
     pub fn get_log_index(&self) -> u32 {
-        self.transaction_index as u32
+        self.log_index as u32
     }
 
     pub fn get_params(&self) -> EventParam {
@@ -266,10 +266,10 @@ impl EventParam {
         token_to_int(self.get_token(key))
     }
     pub fn get_address_string(&self, key: &str) -> String {
-        utils::address_to_string(&self.get_address(key)).to_lowercase()
+        token_to_address_string(self.get_token(key))
     }
     pub fn get_address(&self, key: &str) -> Address {
-        self.get_token(key).into_address().unwrap()
+        token_to_address(self.get_token(key))
     }
 
     fn get_token(&self, key: &str) -> Token {
