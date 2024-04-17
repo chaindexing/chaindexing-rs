@@ -148,6 +148,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
+    // Configures number of chain batches to be processed concurrently
     pub fn with_chain_concurrency(mut self, chain_concurrency: u32) -> Self {
         self.chain_concurrency = chain_concurrency;
 
