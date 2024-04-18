@@ -6,7 +6,7 @@ use super::STATE_VERSIONS_TABLE_PREFIX;
 // easen the type strictness for consumer applications.
 // Trait/Callback? this way, consumer apps can statically visualize their migrations
 pub trait StateMigrations: Send + Sync {
-    fn migrations(&self) -> Vec<&'static str>;
+    fn migrations(&self) -> &'static [&'static str];
 
     fn get_table_names(&self) -> Vec<String> {
         self.migrations().iter().fold(vec![], |mut table_names, migration| {
@@ -411,8 +411,8 @@ mod contract_state_migrations_get_migration_test {
     struct TestState;
 
     impl StateMigrations for TestState {
-        fn migrations(&self) -> Vec<&'static str> {
-            vec![
+        fn migrations(&self) -> &'static [&'static str] {
+            &[
                 "CREATE TABLE IF NOT EXISTS nft_states (
                       token_id INTEGER NOT NULL,
                       contract_address VARCHAR NOT NULL,
@@ -429,29 +429,25 @@ mod contract_state_migrations_get_migration_test {
     struct TestStateWithPrimaryKey;
 
     impl StateMigrations for TestStateWithPrimaryKey {
-        fn migrations(&self) -> Vec<&'static str> {
-            vec![
-                "CREATE TABLE IF NOT EXISTS nft_states (
+        fn migrations(&self) -> &'static [&'static str] {
+            &["CREATE TABLE IF NOT EXISTS nft_states (
                       id SERIAL PRIMARY KEY,
                       token_id INTEGER NOT NULL,
                       contract_address VARCHAR NOT NULL,
                       owner_address VARCHAR NOT NULL
-                  )",
-            ]
+                  )"]
         }
     }
 
     struct TestStateWithJsonField;
 
     impl StateMigrations for TestStateWithJsonField {
-        fn migrations(&self) -> Vec<&'static str> {
-            vec![
-                "CREATE TABLE IF NOT EXISTS nft_states (
+        fn migrations(&self) -> &'static [&'static str] {
+            &["CREATE TABLE IF NOT EXISTS nft_states (
                       id SERIAL PRIMARY KEY,
                       token_id INTEGER NOT NULL,
                       json_field JSON DEFAULT '{}',
-                  )",
-            ]
+                  )"]
         }
     }
 }
