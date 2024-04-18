@@ -27,7 +27,6 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
             for contract_address in contract_addresses {
                 let from_block_number = contract_address.next_block_number_to_handle_from as u64;
-                let to_block_number = from_block_number + blocks_per_batch;
 
                 let client = repo_client.clone();
                 let mut client = client.lock().await;
@@ -38,7 +37,7 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                     *chain_id,
                     &contract_address.address,
                     from_block_number,
-                    to_block_number,
+                    blocks_per_batch,
                 )
                 .await;
 

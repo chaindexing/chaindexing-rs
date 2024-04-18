@@ -141,7 +141,7 @@ pub trait LoadsDataWithRawQuery: HasRawQueryClient {
         chain_id: u64,
         contract_address: &str,
         from_block_number: u64,
-        to_block_number: u64,
+        limit: u64,
     ) -> Vec<Event>;
 
     async fn load_data<Data: Send + DeserializeOwned>(
