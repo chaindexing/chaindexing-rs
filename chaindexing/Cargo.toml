@@ -1,6 +1,6 @@
 [package]
 name = "chaindexing"
-version = "0.1.71"
+version = "0.1.72"
 edition = "2021"
 description = "Index any EVM chain and query with SQL"
 license = "MIT OR Apache-2.0"

@@ -43,7 +43,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn adds_a_tokio_task() {
+    async fn adds_a_subtask() {
         let node_task = NodeTask::new();
         let subtask = tokio::spawn(async {});
 
@@ -57,7 +57,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn adds_multiple_flattened_tokio_tasks() {
+    async fn adds_multiple_flattened_subtasks() {
         let node_task = NodeTask::new();
         let subtasks = [
             tokio::spawn(async {}),
