@@ -24,7 +24,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
     let config = config.clone();
 
     node_task
-        .add_subtask(&tokio::spawn({
+        .add_subtask(tokio::spawn({
             let node_task = node_task.clone();
 
             // MultiChainStates are indexed in an order-agnostic fashion, so no need for txn client
@@ -41,7 +41,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
 
                     node_task
                         .clone()
-                        .add_subtask(&tokio::spawn(async move {
+                        .add_subtask(tokio::spawn(async move {
                             let mut interval =
                                 interval(Duration::from_millis(config.handler_rate_ms));
 
