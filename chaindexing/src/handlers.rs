@@ -19,7 +19,6 @@ use crate::nodes::NodeTask;
 use crate::Config;
 use crate::{contracts, states, HasRawQueryClient};
 
-// TODO: Use just raw query client through for mutations
 pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>) -> NodeTask {
     let node_task = NodeTask::new();
     let config = config.clone();

@@ -232,13 +232,14 @@ impl LoadsDataWithRawQuery for PostgresRepo {
         chain_id: u64,
         contract_address: &str,
         from_block_number: u64,
-        to_block_number: u64,
+        limit: u64,
     ) -> Vec<Event> {
         let query = format!(
             "SELECT * from chaindexing_events
             WHERE chain_id = {chain_id} AND contract_address= '{contract_address}'
-            AND block_number BETWEEN {from_block_number} AND {to_block_number} 
-            ORDER BY block_number ASC, log_index ASC",
+            AND block_number >= {from_block_number} 
+            ORDER BY block_number ASC, log_index ASC
+            LIMIT {limit}",
         );
 
         Self::load_data_list(client, &query).await
