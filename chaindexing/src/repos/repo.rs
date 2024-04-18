@@ -168,7 +168,7 @@ pub trait RepoMigrations: Migratable {
     fn create_nodes_migration() -> &'static [&'static str];
 
     fn create_contract_addresses_migration() -> &'static [&'static str];
-    fn zero_ingest_and_handlers_next_block_numbers_migration() -> &'static [&'static str];
+    fn restart_ingest_and_handlers_next_block_numbers_migration() -> &'static [&'static str];
     fn zero_next_block_number_for_side_effects_migration() -> &'static [&'static str];
 
     fn create_events_migration() -> &'static [&'static str];
@@ -189,7 +189,7 @@ pub trait RepoMigrations: Migratable {
         [
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
-            Self::zero_ingest_and_handlers_next_block_numbers_migration(),
+            Self::restart_ingest_and_handlers_next_block_numbers_migration(),
         ]
         .concat()
     }
@@ -242,9 +242,9 @@ impl SQLikeMigrations {
         ON chaindexing_contract_addresses(chain_id, address)",
         ]
     }
-    pub fn zero_ingest_and_handlers_next_block_numbers() -> &'static [&'static str] {
+    pub fn restart_ingest_and_handlers_next_block_numbers() -> &'static [&'static str] {
         &["UPDATE chaindexing_contract_addresses 
-           SET next_block_number_to_handle_from = 0, next_block_number_to_ingest_from = 0"]
+           SET next_block_number_to_handle_from = start_block_number, next_block_number_to_ingest_from = start_block_number"]
     }
     pub fn zero_next_block_number_for_side_effects() -> &'static [&'static str] {
         &["UPDATE chaindexing_contract_addresses SET next_block_number_for_side_effects = 0"]
