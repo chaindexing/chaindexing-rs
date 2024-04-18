@@ -8,8 +8,8 @@ impl RepoMigrations for PostgresRepo {
     fn create_contract_addresses_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_contract_addresses()
     }
-    fn zero_ingest_and_handlers_next_block_numbers_migration() -> &'static [&'static str] {
-        SQLikeMigrations::zero_ingest_and_handlers_next_block_numbers()
+    fn restart_ingest_and_handlers_next_block_numbers_migration() -> &'static [&'static str] {
+        SQLikeMigrations::restart_ingest_and_handlers_next_block_numbers()
     }
     fn zero_next_block_number_for_side_effects_migration() -> &'static [&'static str] {
         SQLikeMigrations::zero_next_block_number_for_side_effects()
