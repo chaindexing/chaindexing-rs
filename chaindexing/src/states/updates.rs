@@ -12,7 +12,7 @@ impl Updates {
         }
     }
     pub fn add(mut self, field: impl ToString, value: impl ToString) -> Self {
-        self.add_mut(field.to_string(), value.to_string());
+        self.add_mut(field, value);
         self
     }
     pub fn add_mut(&mut self, field: impl ToString, value: impl ToString) {
