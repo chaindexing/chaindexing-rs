@@ -37,7 +37,7 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
         let config = config.clone();
 
         node_task
-            .add_task(tokio::spawn(async move {
+            .add_subtask(&tokio::spawn(async move {
                 let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
                 let mut last_pruned_at_per_chain_id = HashMap::new();
 
