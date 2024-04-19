@@ -2,7 +2,7 @@
 name = "chaindexing"
 version = "0.1.74"
 edition = "2021"
-description = "Index any EVM chain and query with SQL"
+description = "Index any EVM chain and query in SQL"
 license = "MIT OR Apache-2.0"
 readme="../README.md"
 repository = "https://github.com/chaindexing/chaindexing-rs"
