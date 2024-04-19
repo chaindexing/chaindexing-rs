@@ -12,25 +12,31 @@ use super::updates::Updates;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+/// States derived from different contracts across different chains
 /// N/B: Indexing MultiChainStates must be Order-Agnostic
 #[async_trait::async_trait]
 pub trait MultiChainState:
     DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static
 {
+    /// Table of the state as specified in StateMigrations
     fn table_name() -> &'static str;
 
+    /// Inserts state in the state's table
     async fn create<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         state::create(Self::table_name(), &state::to_view(self), context).await;
     }
 
+    /// Returns a single state matching filters. Panics if there are multiple.
     async fn read_one<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Option<Self> {
         Self::read_many(filters, context).await.first().cloned()
     }
 
+    /// Returns states matching filters
     async fn read_many<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Vec<Self> {
         read_many(filters, context, Self::table_name()).await
     }
 
+    /// Updates state with the specified updates
     async fn update<'a, 'b>(&self, updates: &Updates, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
         let client = context.repo_client;
@@ -57,6 +63,7 @@ pub trait MultiChainState:
             .await;
     }
 
+    /// Deletes state from the state's table
     async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();
         let client = context.repo_client;

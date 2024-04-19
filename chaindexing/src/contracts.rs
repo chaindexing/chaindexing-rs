@@ -34,6 +34,7 @@ impl ContractEvent {
 
 pub type EventAbi = &'static str;
 
+/// Represents the specification for a given contract.
 #[derive(Clone)]
 pub struct Contract<S: Send + Sync + Clone> {
     pub addresses: Vec<UnsavedContractAddress>,
@@ -44,6 +45,15 @@ pub struct Contract<S: Send + Sync + Clone> {
 }
 
 impl<S: Send + Sync + Clone> Contract<S> {
+    /// Builds the specification for a contract.
+    ///
+    ///
+    /// # Example
+    /// ```
+    /// use chaindexing::Contract;
+    ///
+    /// Contract::<()>::new("ERC20");
+    /// ```
     pub fn new(name: &str) -> Self {
         Self {
             addresses: vec![],
@@ -54,6 +64,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
         }
     }
 
+    /// Adds a contract address to a contract
     pub fn add_address(
         mut self,
         address: &str,
@@ -70,12 +81,14 @@ impl<S: Send + Sync + Clone> Contract<S> {
         self
     }
 
+    /// Adds an event handler
     pub fn add_event_handler(mut self, handler: impl EventHandler + 'static) -> Self {
         self.pure_handlers.insert(handler.abi(), Arc::new(handler));
 
         self
     }
 
+    /// Adds a side-effect handler
     pub fn add_side_effect_handler(
         mut self,
         handler: impl SideEffectHandler<SharedState = S> + 'static,
@@ -85,13 +98,14 @@ impl<S: Send + Sync + Clone> Contract<S> {
         self
     }
 
+    /// Adds state migrations for the contract states being indexed
     pub fn add_state_migrations(mut self, state_migration: impl StateMigrations + 'static) -> Self {
         self.state_migrations.push(Arc::new(state_migration));
 
         self
     }
 
-    pub fn get_event_abis(&self) -> Vec<EventAbi> {
+    pub(crate) fn get_event_abis(&self) -> Vec<EventAbi> {
         let mut event_abis: Vec<_> = self.pure_handlers.clone().into_keys().collect();
         let side_effect_abis: Vec<_> = self.pure_handlers.clone().into_keys().collect();
 
@@ -101,14 +115,14 @@ impl<S: Send + Sync + Clone> Contract<S> {
         event_abis
     }
 
-    pub fn get_event_topics(&self) -> Vec<ContractEventTopic> {
+    pub(crate) fn get_event_topics(&self) -> Vec<ContractEventTopic> {
         self.get_event_abis()
             .iter()
             .map(|abi| HumanReadableParser::parse_event(abi).unwrap().signature())
             .collect()
     }
 
-    pub fn build_events(&self) -> Vec<ContractEvent> {
+    pub(crate) fn build_events(&self) -> Vec<ContractEvent> {
         self.get_event_abis().iter().map(|abi| ContractEvent::new(abi)).collect()
     }
 }

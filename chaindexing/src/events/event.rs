@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 use serde::Deserialize;
 
+/// An event aka provider logs are emitted from smart contracts
+/// to help infer their state
 #[derive(Debug, Deserialize, Clone, Eq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {

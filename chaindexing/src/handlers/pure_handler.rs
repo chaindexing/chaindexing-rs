@@ -8,6 +8,8 @@ use crate::{ChaindexingRepoClient, ChaindexingRepoTxnClient, EventParam};
 
 use super::handler_context::HandlerContext;
 
+/// Pure handlers do not contain any side effects. They are simple reducers
+/// that derive or index states deterministically.
 #[async_trait::async_trait]
 pub trait PureHandler: Send + Sync {
     /// The human-readable ABI of the event being handled.
