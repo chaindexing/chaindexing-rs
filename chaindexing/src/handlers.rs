@@ -34,8 +34,6 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
             async move {
                 for chain_ids in get_chunked_chain_ids(&config) {
                     let config = config.clone();
-                    let node_task = node_task.clone();
-
                     let repo_client_for_mcs = repo_client_for_mcs.clone();
                     let deferred_mutations_for_mcs = deferred_mutations_for_mcs.clone();
 
