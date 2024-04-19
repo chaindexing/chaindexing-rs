@@ -10,6 +10,12 @@ use super::handler_context::HandlerContext;
 
 #[async_trait::async_trait]
 
+/// SideEffectHandlers are event handlers that help handle side-effects for events.
+/// This is useful for handling events only ONCE and can rely on a non-deterministic
+/// shared state. Some use-cases are notifications, bridging etc. Chaindexing ensures
+/// that the side-effect handlers are called once immutable regardless of resets.
+/// However, one can dangerously reset including side effects with the new `reset_including_side_effects`
+///  Config API.
 pub trait SideEffectHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
 
@@ -21,12 +27,6 @@ pub trait SideEffectHandler: Send + Sync {
     async fn handle_event<'a>(&self, context: SideEffectHandlerContext<'a, Self::SharedState>);
 }
 
-// SideEffectHandlers are event handlers that help handle side-effects for events.
-// This is useful for handling events only ONCE and can rely on a non-deterministic
-// shared state. Some use-cases are notifications, bridging etc. Chaindexing ensures
-// that the side-effect handlers are called once immutable regardless of resets.
-// However, one can dangerously reset including side effects with the new `reset_including_side_effects`
-// Config API.
 #[derive(Clone)]
 pub struct SideEffectHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub event: Event,

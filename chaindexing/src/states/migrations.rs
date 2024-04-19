@@ -6,6 +6,18 @@ use super::STATE_VERSIONS_TABLE_PREFIX;
 // easen the type strictness for consumer applications.
 // Trait/Callback? this way, consumer apps can statically visualize their migrations
 pub trait StateMigrations: Send + Sync {
+    /// SQL migrations for the state to index. These migrations must be idempotent
+    /// and will require using the 'IF NOT EXISTS` check
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn migrations(&self) -> &'static [&'static str] {
+    ///     &["CREATE TABLE IF NOT EXISTS nfts (
+    ///        token_id INTEGER NOT NULL,
+    ///        owner_address TEXT NOT NULL
+    ///        )"]
+    ///  }
+    /// ```
     fn migrations(&self) -> &'static [&'static str];
 
     fn get_table_names(&self) -> Vec<String> {

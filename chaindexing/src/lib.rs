@@ -62,7 +62,7 @@ use nodes::NodeTasks;
 
 use crate::nodes::{NodeTask, NodeTasksRunner};
 
-pub type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
+pub(crate) type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 
 pub enum ChaindexingError {
     Config(ConfigError),
@@ -84,6 +84,7 @@ impl Debug for ChaindexingError {
     }
 }
 
+/// Starts processes to ingest and index states as configured
 pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     config: &Config<S>,
 ) -> Result<(), ChaindexingError> {
@@ -128,6 +129,23 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     Ok(())
 }
 
+/// Includes runtime-discovered contract addresses for indexing
+///
+/// # Arguments
+///
+/// * `event_context` - context where the contract was discovered. Indexing starts
+/// from this point onwards
+/// * `name` -  name of the contract specification as defined in the config
+/// * `address` -  address of the contract
+///
+/// # Example
+///
+/// ```ignore
+/// // In an EventHandler...
+/// chaindexing::include_contract(&context, "UniswapV3Pool", &pool_contract_address)
+///  .await;
+/// // Includes a new UniswapV3Pool contract:{pool_contract_address} for indexing...
+/// ```
 pub async fn include_contract<'a, C: handlers::HandlerContext<'a>>(
     event_context: &C,
     contract_name: &str,

@@ -45,6 +45,7 @@ impl OptimizationConfig {
     }
 }
 
+/// Configuration for indexing states
 #[derive(Clone, Debug)]
 pub struct Config<SharedState: Sync + Send + Clone> {
     pub chains: Vec<Chain>,
@@ -87,12 +88,14 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         }
     }
 
+    // Includes chain in config
     pub fn add_chain(mut self, chain: Chain) -> Self {
         self.chains.push(chain);
 
         self
     }
 
+    // Includes contract in config
     pub fn add_contract(mut self, contract: Contract<SharedState>) -> Self {
         self.contracts.push(contract);
 
@@ -106,49 +109,61 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
+    /// Restarts indexing from scratch for EventHandlers. SideEffectHandlers
+    /// will not run if they ran already
     pub fn reset(mut self, count: u64) -> Self {
         self.reset_count = count;
 
         self
     }
 
+    /// Restarts indexing from scratch for all Handlers. SideEffectHandlers
+    /// will RUN even if they ran already
     pub fn reset_including_side_effects_dangerously(mut self, count: u64) -> Self {
         self.reset_including_side_effects_count = count;
 
         self
     }
 
+    /// Defines the initial state for side effect handlers
     pub fn with_initial_state(mut self, initial_state: SharedState) -> Self {
         self.shared_state = Some(Arc::new(Mutex::new(initial_state)));
 
         self
     }
 
+    /// The minimum confirmation count for detecting chain-reorganizations or uncled blocks
     pub fn with_min_confirmation_count(mut self, min_confirmation_count: u8) -> Self {
         self.min_confirmation_count = MinConfirmationCount::new(min_confirmation_count);
 
         self
     }
 
+    /// Advance config: How many blocks per batch should be ingested and handled.
+    /// Default is 8_000
     pub fn with_blocks_per_batch(mut self, blocks_per_batch: u64) -> Self {
         self.blocks_per_batch = blocks_per_batch;
 
         self
     }
 
+    /// Advance config: How often should the events handlers processes run.
+    /// Default is 4_000
     pub fn with_handler_rate_ms(mut self, handler_rate_ms: u64) -> Self {
         self.handler_rate_ms = handler_rate_ms;
 
         self
     }
 
+    /// Advance config:  How often should the events ingester processes run.
+    /// Default is 20_000
     pub fn with_ingestion_rate_ms(mut self, ingestion_rate_ms: u64) -> Self {
         self.ingestion_rate_ms = ingestion_rate_ms;
 
         self
     }
 
-    // Configures number of chain batches to be processed concurrently
+    /// Configures number of chain batches to be processed concurrently
     pub fn with_chain_concurrency(mut self, chain_concurrency: u32) -> Self {
         self.chain_concurrency = chain_concurrency;
 
@@ -167,6 +182,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
+    /// Deletes stale events and related-internal data
     pub fn with_pruning(mut self) -> Self {
         self.pruning_config = Some(Default::default());
 
