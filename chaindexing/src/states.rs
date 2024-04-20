@@ -1,3 +1,37 @@
+//! # States
+//! Any struct that can be serialized and deserialized while implementing
+//! any state type, such as ContractState, ChainState, MultiChainState etc.
+//! is a valid Chaindexing State
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use chaindexing::states::{ContractState, StateMigrations};
+//! use serde::{Deserialize, Serialize};
+
+//! #[derive(Clone, Debug, Serialize, Deserialize)]
+//! pub struct Nft {
+//!     pub token_id: u32,
+//!     pub owner_address: String,
+//! }
+
+//! impl ContractState for Nft {
+//!     fn table_name() -> &'static str {
+//!         "nfts"
+//!     }
+//! }
+
+//! pub struct NftMigrations;
+
+//! impl StateMigrations for NftMigrations {
+//!     fn migrations(&self) -> &'static [&'static str] {
+//!         &["CREATE TABLE IF NOT EXISTS nfts (
+//!                 token_id INTEGER NOT NULL,
+//!                 owner_address TEXT NOT NULL
+//!             )"]
+//!     }
+//! }
+//! ```
 pub use migrations::StateMigrations;
 
 use std::collections::HashMap;
@@ -28,7 +62,7 @@ pub use multi_chain_state::MultiChainState;
 use state_versions::{StateVersion, StateVersions, STATE_VERSIONS_TABLE_PREFIX};
 use state_views::StateViews;
 
-pub async fn backtrack_states<'a>(
+pub(crate) async fn backtrack_states<'a>(
     table_names: &Vec<String>,
     chain_id: i64,
     block_number: i64,
@@ -45,7 +79,7 @@ pub async fn backtrack_states<'a>(
     }
 }
 
-pub async fn prune_state_versions(
+pub(crate) async fn prune_state_versions(
     table_names: &Vec<String>,
     client: &ChaindexingRepoClient,
     min_block_number: u64,
@@ -68,7 +102,7 @@ pub async fn prune_state_versions(
     }
 }
 
-pub fn get_all_table_names(state_migrations: &[Arc<dyn StateMigrations>]) -> Vec<String> {
+pub(crate) fn get_all_table_names(state_migrations: &[Arc<dyn StateMigrations>]) -> Vec<String> {
     state_migrations
         .iter()
         .flat_map(|state_migration| state_migration.get_table_names())

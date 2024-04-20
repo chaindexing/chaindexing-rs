@@ -14,6 +14,7 @@ use crate::{
     ContractAddress,
 };
 
+/// Errors from interacting the configured SQL database
 #[derive(Debug, Display)]
 pub enum RepoError {
     NotConnected,

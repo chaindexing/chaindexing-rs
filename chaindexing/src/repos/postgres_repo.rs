@@ -38,6 +38,7 @@ impl From<DieselError> for RepoError {
     }
 }
 
+/// Repo for Postgres databases
 #[derive(Clone, Debug)]
 pub struct PostgresRepo {
     url: String,

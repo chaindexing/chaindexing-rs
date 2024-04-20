@@ -13,20 +13,21 @@ use super::handler_context::HandlerContext;
 /// SideEffectHandlers are event handlers that help handle side-effects for events.
 /// This is useful for handling events only ONCE and can rely on a non-deterministic
 /// shared state. Some use-cases are notifications, bridging etc. Chaindexing ensures
-/// that the side-effect handlers are called once immutable regardless of resets.
-/// However, one can dangerously reset including side effects with the new `reset_including_side_effects`
-///  Config API.
+/// that the side-effect handlers are called once immutably regardless of resets.
+/// However, one can dangerously reset including side effects with the `reset_including_side_effects`
+/// exposed in the Config API.
 pub trait SideEffectHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
 
     /// The human-readable ABI of the event being handled.
-    /// For example, Uniswap's PoolCreated event's name is:
-    /// PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
-    /// The chain explorer's event section can also be used to easily infer this
+    /// For example, Uniswap's PoolCreated event's abi is:
+    /// `PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)`.
+    /// The chain explorer's event section can also be used to infer this.
     fn abi(&self) -> &'static str;
     async fn handle_event<'a>(&self, context: SideEffectHandlerContext<'a, Self::SharedState>);
 }
 
+/// Event's context in a side effect handler
 #[derive(Clone)]
 pub struct SideEffectHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub event: Event,

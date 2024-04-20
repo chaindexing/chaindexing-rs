@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use super::STATE_VERSIONS_TABLE_PREFIX;
 
-// Since contract states are rebuildable from ground up, we can
-// easen the type strictness for consumer applications.
-// Trait/Callback? this way, consumer apps can statically visualize their migrations
+/// Represents the idempotent database migrations required before
+/// indexing a state.
 pub trait StateMigrations: Send + Sync {
     /// SQL migrations for the state to index. These migrations must be idempotent
     /// and will require using the 'IF NOT EXISTS` check

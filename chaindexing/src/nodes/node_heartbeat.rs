@@ -3,6 +3,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// A chaindexing node's heartbeat.
+/// In a distributed environment, this is useful for managing the indexer's
+/// processes such that RPC costs can be reduced based on triggering activities
 #[derive(Clone, Debug)]
 pub struct NodeHeartbeat {
     /// Both in milliseconds

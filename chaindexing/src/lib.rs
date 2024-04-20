@@ -1,56 +1,91 @@
-pub mod booting;
+// TODO: Add back
+// #![warn(
+//     missing_debug_implementations,
+//     missing_docs,
+//     rust_2018_idioms,
+//     unreachable_pub
+// )]
+
+//! # Chaindexing
+//! Index any EVM chain and query in SQL.
+//!
+//! View working examples here: <https://github.com/chaindexing/chaindexing-examples/tree/main/rust>.
 mod chain_reorg;
 mod chains;
 mod config;
 mod contracts;
-pub mod deferred_futures;
 mod diesel;
-pub mod events;
 mod handlers;
-pub mod ingester;
 mod nodes;
 mod pruning;
 mod repos;
 mod root;
-pub mod states;
 
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
-pub use contracts::{Contract, ContractAddress, ContractEvent, EventAbi, UnsavedContractAddress};
+pub use contracts::{Contract, ContractAddress, EventAbi};
 pub use events::{Event, EventParam};
 pub use handlers::{
     PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
     SideEffectHandlerContext as SideEffectContext,
 };
-pub use ingester::Provider as IngesterProvider;
 pub use nodes::NodeHeartbeat as Heartbeat;
+
+pub use ethers::types::{I256, U256};
+use tokio::sync::Mutex;
+
+/// Houses traits and structs for implementing states that can be indexed.
+pub mod states;
+
+/// Hexadecimal representation of addresses (such as contract addresses)
+pub type Address = ethers::types::Address;
+/// Represents bytes
+pub type Bytes = Vec<u8>;
+#[cfg(feature = "postgres")]
+pub use repos::PostgresRepo;
+
+#[doc(hidden)]
+pub mod booting;
+#[doc(hidden)]
+pub mod deferred_futures;
+#[doc(hidden)]
+pub mod events;
+#[doc(hidden)]
+pub mod ingester;
+#[doc(hidden)]
+pub use contracts::{ContractEvent, UnsavedContractAddress};
+#[doc(hidden)]
+pub use ingester::Provider as IngesterProvider;
+#[doc(hidden)]
 pub use repos::*;
 
+#[doc(hidden)]
 #[cfg(feature = "postgres")]
-pub use repos::{PostgresRepo, PostgresRepoConn, PostgresRepoPool};
+pub use repos::{PostgresRepoConn, PostgresRepoPool};
 
 #[cfg(feature = "postgres")]
+#[doc(hidden)]
 pub type ChaindexingRepo = PostgresRepo;
 
 #[cfg(feature = "postgres")]
+#[doc(hidden)]
 pub type ChaindexingRepoPool = PostgresRepoPool;
 
 #[cfg(feature = "postgres")]
+#[doc(hidden)]
 pub type ChaindexingRepoConn<'a> = PostgresRepoConn<'a>;
 
 #[cfg(feature = "postgres")]
+#[doc(hidden)]
 pub type ChaindexingRepoClient = PostgresRepoClient;
 
 #[cfg(feature = "postgres")]
+#[doc(hidden)]
 pub type ChaindexingRepoTxnClient<'a> = PostgresRepoTxnClient<'a>;
 
 #[cfg(feature = "postgres")]
+#[doc(hidden)]
 pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
-
-pub use ethers::types::{Address, U256, U256 as BigInt, U256 as Uint};
-use tokio::sync::Mutex;
-
-pub type Bytes = Vec<u8>;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -64,6 +99,7 @@ use crate::nodes::{NodeTask, NodeTasksRunner};
 
 pub(crate) type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 
+/// Errors from mis-configurations, database connections, internal errors, etc.
 pub enum ChaindexingError {
     Config(ConfigError),
 }
@@ -84,7 +120,7 @@ impl Debug for ChaindexingError {
     }
 }
 
-/// Starts processes to ingest and index states as configured
+/// Starts processes for ingesting events and indexing states as configured.
 pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     config: &Config<S>,
 ) -> Result<(), ChaindexingError> {
@@ -129,14 +165,14 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     Ok(())
 }
 
-/// Includes runtime-discovered contract addresses for indexing
+/// Includes runtime-discovered contract addresses for indexing.
 ///
 /// # Arguments
 ///
-/// * `event_context` - context where the contract was discovered. Indexing starts
-/// from this point onwards
-/// * `name` -  name of the contract specification as defined in the config
-/// * `address` -  address of the contract
+/// * `event_context` - context where the contract was discovered.
+/// N/B: Indexing for this contract starts from this point onwards
+/// * `name` -  name of the contract as defined in the config
+/// * `address` -  address of discovered contract
 ///
 /// # Example
 ///

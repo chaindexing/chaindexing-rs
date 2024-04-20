@@ -26,17 +26,20 @@ impl std::fmt::Debug for ConfigError {
     }
 }
 
+/// Used to configure managing a chaindexing's node heartbeat
+/// based on activities from one's Dapp to achieve ergonomic
+/// ingesting to cut down RPC drastically
 #[derive(Clone, Debug)]
 pub struct OptimizationConfig {
     pub(crate) node_heartbeat: NodeHeartbeat,
-    /// Optimization starts after the seconds specified here.
-    /// This is the typically the estimated time to complete initial indexing
-    /// i.e. the estimated time in seconds for chaindexing to reach
-    /// the current block for all chains being indexed.
     pub(crate) start_after_in_secs: u64,
 }
 
 impl OptimizationConfig {
+    /// Optimization starts after the seconds specified here.
+    /// This is the typically the estimated time to complete initial indexing
+    /// i.e. the estimated time in seconds for chaindexing to reach
+    /// the current block for all chains being indexed.
     pub fn new(node_heartbeat: &NodeHeartbeat, start_after_in_secs: u64) -> Self {
         Self {
             node_heartbeat: node_heartbeat.clone(),

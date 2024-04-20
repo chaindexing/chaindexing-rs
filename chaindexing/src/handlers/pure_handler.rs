@@ -13,13 +13,14 @@ use super::handler_context::HandlerContext;
 #[async_trait::async_trait]
 pub trait PureHandler: Send + Sync {
     /// The human-readable ABI of the event being handled.
-    /// For example, Uniswap's PoolCreated event's name is:
-    /// PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
-    /// The chain explorer's event section can also be used to easily infer this
+    /// For example, Uniswap's PoolCreated event's abi is:
+    /// `PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)`.
+    /// The chain explorer's event section can also be used to infer this.
     fn abi(&self) -> &'static str;
     async fn handle_event<'a, 'b>(&self, context: PureHandlerContext<'a, 'b>);
 }
 
+/// Event's context in a pure event handler
 #[derive(Clone)]
 pub struct PureHandlerContext<'a, 'b> {
     pub event: Event,

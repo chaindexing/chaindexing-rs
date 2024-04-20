@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use serde::Deserialize;
 
-/// An event aka provider logs are emitted from smart contracts
-/// to help infer their state
+/// Events, aka. provider logs, are emitted from smart contracts
+/// to help infer their states.
 #[derive(Debug, Deserialize, Clone, Eq, Queryable, Insertable)]
 #[diesel(table_name = chaindexing_events)]
 pub struct Event {
@@ -99,33 +99,31 @@ impl Event {
         self.abi.as_str()
     }
 
+    /// Returns the event's block number
     pub fn get_block_number(&self) -> u64 {
         self.block_number as u64
     }
+    /// Returns the event's block timestamp
     pub fn get_block_timestamp(&self) -> u64 {
         self.block_timestamp as u64
     }
+    /// Returns the event's transaction index
     pub fn get_transaction_index(&self) -> u32 {
         self.transaction_index as u32
     }
+    /// Returns the event's log index
     pub fn get_log_index(&self) -> u32 {
         self.log_index as u32
     }
 
+    /// Returns the event's parameters
     pub fn get_params(&self) -> EventParam {
         EventParam::new(&self.parameters)
     }
 
+    /// Returns the event's chain id
     pub fn get_chain_id(&self) -> ChainId {
         U64::from(self.chain_id).try_into().unwrap()
-    }
-
-    pub fn not_removed(&self) -> bool {
-        !self.removed
-    }
-
-    pub fn match_contract_address(&self, contract_address: &str) -> bool {
-        self.contract_address.to_lowercase() == *contract_address.to_lowercase()
     }
 
     fn log_params_to_parameters(log_params: &[LogParam]) -> HashMap<String, Token> {
@@ -137,6 +135,9 @@ impl Event {
     }
 }
 
+/// Represents the parameters parsed from an event/log.
+/// Contains convenient parsers to convert or transform into useful primitives
+/// as needed.
 pub struct EventParam {
     value: HashMap<String, Token>,
 }

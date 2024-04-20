@@ -32,9 +32,11 @@ impl ContractEvent {
     }
 }
 
+/// Human Readable ABI defined for ingesting events.
+/// For example, `event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)`
 pub type EventAbi = &'static str;
 
-/// Represents the specification for a given contract.
+/// Represents the template/specification/interface for a given contract.
 #[derive(Clone)]
 pub struct Contract<S: Send + Sync + Clone> {
     pub addresses: Vec<UnsavedContractAddress>,
@@ -45,7 +47,7 @@ pub struct Contract<S: Send + Sync + Clone> {
 }
 
 impl<S: Send + Sync + Clone> Contract<S> {
-    /// Builds the specification for a contract.
+    /// Builds the contract's template/spec/interface.
     ///
     ///
     /// # Example
