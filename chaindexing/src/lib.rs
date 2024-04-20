@@ -21,7 +21,7 @@ mod pruning;
 mod repos;
 mod root;
 
-/// Augmenting modules for standard library to support Chaindexing's asynchronous operations
+/// Augmenting modules for standard library to support Chaindexing's operations
 pub mod augmenting_std;
 
 pub use chains::{Chain, ChainId};

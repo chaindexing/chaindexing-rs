@@ -1,8 +1,8 @@
-/// Represents the chain network ID for contracts being indexed.
+/// Represents the network ID for an EVM Chain
 /// For example, `ChainId::Mainnet`, `ChainId::Polygon`, etc.
 pub type ChainId = ethers::types::Chain;
 
-/// Represents chain network for contracts being indexed
+/// Represents an EVM chain network
 #[derive(Clone, Debug)]
 pub struct Chain {
     pub id: ChainId,
