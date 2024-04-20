@@ -5,7 +5,7 @@ pub struct NftState;
 
 pub struct TransferTestHandler;
 
-#[async_trait::async_trait]
+#[chaindexing::augmenting_std::async_trait::async_trait]
 impl EventHandler for TransferTestHandler {
     fn abi(&self) -> &'static str {
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
@@ -15,7 +15,7 @@ impl EventHandler for TransferTestHandler {
 
 pub struct ApprovalForAllTestHandler;
 
-#[async_trait::async_trait]
+#[chaindexing::augmenting_std::async_trait::async_trait]
 impl EventHandler for ApprovalForAllTestHandler {
     fn abi(&self) -> &'static str {
         "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)"

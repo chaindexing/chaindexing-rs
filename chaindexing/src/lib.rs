@@ -21,6 +21,9 @@ mod pruning;
 mod repos;
 mod root;
 
+/// Augmenting modules for standard library to support Chaindexing's asynchronous operations
+pub mod augmenting_std;
+
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
 pub use contracts::{Contract, ContractAddress, EventAbi};
@@ -207,7 +210,7 @@ fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
     struct ChaindexingNodeTasksRunner<'a, S: Send + Sync + Clone + Debug + 'static> {
         config: &'a Config<S>,
     }
-    #[async_trait::async_trait]
+    #[crate::augmenting_std::async_trait::async_trait]
     impl<'a, S: Send + Sync + Clone + Debug + 'static> NodeTasksRunner
         for ChaindexingNodeTasksRunner<'a, S>
     {

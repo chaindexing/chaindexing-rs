@@ -7,7 +7,7 @@ use rand::seq::SliceRandom;
 pub fn empty_provider() -> impl IngesterProvider {
     #[derive(Clone)]
     struct Provider;
-    #[async_trait::async_trait]
+    #[chaindexing::augmenting_std::async_trait::async_trait]
     impl IngesterProvider for Provider {
         async fn get_block_number(&self) -> Result<U64, ProviderError> {
             Ok(U64::from(0))
@@ -79,7 +79,7 @@ macro_rules! provider_with_logs {
         struct Provider {
             contract_address: String,
         }
-        #[async_trait::async_trait]
+        #[chaindexing::augmenting_std::async_trait::async_trait]
         impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from($current_block_number))
@@ -112,7 +112,7 @@ macro_rules! provider_with_filter_stubber {
 
         #[derive(Clone)]
         struct Provider;
-        #[async_trait::async_trait]
+        #[chaindexing::augmenting_std::async_trait::async_trait]
         impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from(3))
@@ -147,7 +147,7 @@ macro_rules! provider_with_empty_logs {
 
         #[derive(Clone)]
         struct Provider;
-        #[async_trait::async_trait]
+        #[chaindexing::augmenting_std::async_trait::async_trait]
         impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from(3))

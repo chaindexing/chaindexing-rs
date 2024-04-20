@@ -14,7 +14,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 /// States derived from a contract
-#[async_trait::async_trait]
+#[crate::augmenting_std::async_trait::async_trait]
 pub trait ContractState:
     DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static
 {

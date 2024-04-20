@@ -8,14 +8,13 @@ use crate::{ChaindexingRepoTxnClient, EventParam};
 
 use super::handler_context::HandlerContext;
 
-#[async_trait::async_trait]
-
 /// SideEffectHandlers are event handlers that help handle side-effects for events.
 /// This is useful for handling events only ONCE and can rely on a non-deterministic
 /// shared state. Some use-cases are notifications, bridging etc. Chaindexing ensures
 /// that the side-effect handlers are called once immutably regardless of resets.
 /// However, one can dangerously reset including side effects with the `reset_including_side_effects`
 /// exposed in the Config API.
+#[crate::augmenting_std::async_trait::async_trait]
 pub trait SideEffectHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
 

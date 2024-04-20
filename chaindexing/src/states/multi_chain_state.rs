@@ -14,7 +14,7 @@ use serde::Serialize;
 
 /// States derived from different contracts across different chains
 /// N/B: Indexing MultiChainStates must be Order-Agnostic
-#[async_trait::async_trait]
+#[crate::augmenting_std::async_trait::async_trait]
 pub trait MultiChainState:
     DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static
 {

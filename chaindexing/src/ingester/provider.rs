@@ -13,7 +13,7 @@ use super::filters::Filter;
 
 pub type ProviderError = EthersProviderError;
 
-#[async_trait::async_trait]
+#[crate::augmenting_std::async_trait::async_trait]
 pub trait Provider: Clone + Sync + Send {
     async fn get_block_number(&self) -> Result<U64, ProviderError>;
     async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
@@ -50,7 +50,7 @@ pub trait Provider: Clone + Sync + Send {
     }
 }
 
-#[async_trait::async_trait]
+#[crate::augmenting_std::async_trait::async_trait]
 impl Provider for EthersProvider<Http> {
     async fn get_block_number(&self) -> Result<U64, ProviderError> {
         Middleware::get_block_number(&self).await

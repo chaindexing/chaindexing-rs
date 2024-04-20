@@ -54,7 +54,7 @@ impl PostgresRepo {
     }
 }
 
-#[async_trait::async_trait]
+#[crate::augmenting_std::async_trait::async_trait]
 impl Repo for PostgresRepo {
     type Conn<'a> = PgPooledConn<'a>;
     type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
