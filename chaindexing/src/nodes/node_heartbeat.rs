@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 
 /// A chaindexing node's heartbeat.
 /// In a distributed environment, this is useful for managing the indexer's
-/// processes such that RPC costs can be reduced based on triggering activities
+/// processes manually. A popular motivation to do is to reduce RPC's cost.
 #[derive(Clone, Debug)]
 pub struct NodeHeartbeat {
     /// Both in milliseconds
@@ -22,6 +22,7 @@ impl NodeHeartbeat {
             active_grace_period: active_grace_period_ms,
         }
     }
+    /// Keeps your chaindexing node alive
     pub async fn keep_alive(&self) {
         let mut last_keep_alive_at = self.last_keep_alive_at.lock().await;
         *last_keep_alive_at = Self::now();

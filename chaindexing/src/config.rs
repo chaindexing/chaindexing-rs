@@ -27,8 +27,7 @@ impl std::fmt::Debug for ConfigError {
 }
 
 /// Used to configure managing a chaindexing's node heartbeat
-/// based on activities from one's Dapp to achieve ergonomic
-/// ingesting to cut down RPC drastically
+/// to cut down JSON-RPC's (Alchemy, Infura, etc.) cost.
 #[derive(Clone, Debug)]
 pub struct OptimizationConfig {
     pub(crate) node_heartbeat: NodeHeartbeat,
