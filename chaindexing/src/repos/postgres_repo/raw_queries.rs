@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 pub type PostgresRepoClient = Client;
 pub type PostgresRepoTxnClient<'a> = Transaction<'a>;
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 impl HasRawQueryClient for PostgresRepo {
     type RawQueryClient = Client;
     type RawQueryTxnClient<'a> = Transaction<'a>;
@@ -29,7 +29,7 @@ impl HasRawQueryClient for PostgresRepo {
     }
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 impl ExecutesWithRawQuery for PostgresRepo {
     async fn execute(client: &Self::RawQueryClient, query: &str) {
         client.execute(query, &[] as &[&(dyn ToSql + Sync)]).await.unwrap();
@@ -206,7 +206,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
     }
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 impl LoadsDataWithRawQuery for PostgresRepo {
     async fn create_and_load_new_node(client: &Self::RawQueryClient) -> Node {
         Self::load_data(

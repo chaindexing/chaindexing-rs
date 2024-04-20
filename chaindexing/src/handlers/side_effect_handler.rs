@@ -14,7 +14,7 @@ use super::handler_context::HandlerContext;
 /// that the side-effect handlers are called once immutably regardless of resets.
 /// However, one can dangerously reset including side effects with the `reset_including_side_effects`
 /// exposed in the Config API.
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait SideEffectHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
 

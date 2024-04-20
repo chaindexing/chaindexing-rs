@@ -21,7 +21,7 @@ pub enum RepoError {
     Unknown(String),
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait Repo:
     Sync + Send + Migratable + ExecutesWithRawQuery + LoadsDataWithRawQuery + Clone + Debug
 {
@@ -69,7 +69,7 @@ pub trait Repo:
     async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node);
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait HasRawQueryClient {
     type RawQueryClient: Send + Sync;
     type RawQueryTxnClient<'a>: Send + Sync;
@@ -80,7 +80,7 @@ pub trait HasRawQueryClient {
     ) -> Self::RawQueryTxnClient<'a>;
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait ExecutesWithRawQuery: HasRawQueryClient {
     async fn execute(client: &Self::RawQueryClient, query: &str);
     async fn execute_in_txn<'a>(client: &Self::RawQueryTxnClient<'a>, query: &str);
@@ -127,7 +127,7 @@ pub trait ExecutesWithRawQuery: HasRawQueryClient {
     async fn prune_root_states(client: &Self::RawQueryClient, retain_size: u64);
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
     async fn create_and_load_new_node(client: &Self::RawQueryClient) -> Node;
     async fn load_last_root_state(client: &Self::RawQueryClient) -> Option<root::State>;
@@ -196,7 +196,7 @@ pub trait RepoMigrations: Migratable {
     }
 }
 
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
     async fn migrate(client: &Self::RawQueryClient, migrations: Vec<impl AsRef<str> + Send + Sync>)
     where

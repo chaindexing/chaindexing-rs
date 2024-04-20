@@ -20,7 +20,7 @@ use crate::states::Nft;
 
 pub struct TransferHandler;
 
-#[chaindexing::augmenting_std::async_trait::async_trait]
+#[chaindexing::augmenting_std::async_trait]
 impl EventHandler for TransferHandler {
     fn abi(&self) -> &'static str {
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"

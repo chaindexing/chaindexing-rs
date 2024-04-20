@@ -210,7 +210,7 @@ fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
     struct ChaindexingNodeTasksRunner<'a, S: Send + Sync + Clone + Debug + 'static> {
         config: &'a Config<S>,
     }
-    #[crate::augmenting_std::async_trait::async_trait]
+    #[crate::augmenting_std::async_trait]
     impl<'a, S: Send + Sync + Clone + Debug + 'static> NodeTasksRunner
         for ChaindexingNodeTasksRunner<'a, S>
     {

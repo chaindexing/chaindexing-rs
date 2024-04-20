@@ -14,7 +14,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 /// States derived from different contracts within a chain
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send + 'static {
     /// Table of the state as specified in StateMigrations
     fn table_name() -> &'static str;

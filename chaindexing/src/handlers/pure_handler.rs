@@ -10,7 +10,7 @@ use super::handler_context::HandlerContext;
 
 /// Pure handlers do not contain any side effects. They are simple reducers
 /// that derive or index states deterministically.
-#[crate::augmenting_std::async_trait::async_trait]
+#[crate::augmenting_std::async_trait]
 pub trait PureHandler: Send + Sync {
     /// The human-readable ABI of the event being handled.
     /// For example, Uniswap's PoolCreated event's abi is:
