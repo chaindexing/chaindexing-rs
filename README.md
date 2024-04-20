@@ -14,7 +14,7 @@ Index any EVM chain and query in SQL
 
 ```rust
 use chaindexing::states::{ContractState, Filters, Updates};
-use chaindexing::{EventContext, EventHandler, SideEffectContext, SideEffectHandler};
+use chaindexing::{EventContext, EventHandler};
 
 use crate::states::Nft;
 

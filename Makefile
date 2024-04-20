@@ -41,4 +41,4 @@ publish.dirty:
 	cargo publish -p chaindexing --allow-dirty
 
 publish.dirty.dry:
-	make publish.dirty -- --dry-run
+	cargo publish -p chaindexing --allow-dirty --dry-run
