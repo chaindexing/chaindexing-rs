@@ -78,4 +78,4 @@ A quick and effective way to get started is by exploring the comprehensive examp
 
 ## Contributing
 
-All contributions are welcome. Before working on a PR, please consider opening an issue detailing the feature/bug. On PR submission, all checks should succeed for a successful review.
+All contributions are welcome. Before working on a PR, please consider opening an issue detailing the feature/bug. Equally when submitting a PR, ensure that all checks pass to facilitate a smooth review process.
