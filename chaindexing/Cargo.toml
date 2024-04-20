@@ -1,6 +1,6 @@
 [package]
 name = "chaindexing"
-version = "0.1.75"
+version = "0.1.76"
 authors = ["Chaindexing Contributors <chaindexing@gmail.com>"]
 description = "Index any EVM chain and query in SQL"
 keywords = ["index", "multi-chain", "ethereum", "evm", "web3"]
