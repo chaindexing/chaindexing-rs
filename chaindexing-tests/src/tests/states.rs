@@ -80,15 +80,16 @@ mod tests {
     }
 }
 
+use chaindexing::augmenting_std::serde::{Deserialize, Serialize};
 use chaindexing::{
     states::{ContractState, StateMigrations},
     HasRawQueryClient,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{factory::bayc_contract, test_runner};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(crate = "chaindexing::augmenting_std::serde")]
 struct Nft {
     token_id: i32,
 }

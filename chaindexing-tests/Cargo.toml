@@ -4,13 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-trait = "0.1"
 chaindexing = { path = "../chaindexing", features = ["postgres"] }
 ethers = "2.0"
 futures-util = "0.3"
 dotenvy = "0.15"
 diesel = { version = "2", features = ["postgres", "chrono"] }
 rand = "0.8.5"
-serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.37", features = ["full"] }
 
