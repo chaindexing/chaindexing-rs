@@ -59,7 +59,7 @@ A quick and effective way to get started is by exploring the comprehensive examp
 🧂&nbsp;Granular, 🧩 Modular & 📈 Scalable<br/>
 🌍&nbsp;Environment-agnostic to allow inspecting 🔍 & replicating indexes anywhere!<br/>
 🔓&nbsp;ORM-agnostic, use any ORM to access indexed data<br/>
-📤&nbsp;Easy export to your favorite data lake: S3, Snowflake, Redshift<br/>
+📤&nbsp;Easy export to any data lake: S3, Snowflake, etc.<br/>
 🚫&nbsp;No complex YAML/JSON/CLI config<br/>
 💪&nbsp;Index contracts discovered at runtime<br/>
 ✨&nbsp;Handles re-org with no UX impact<br/>
@@ -78,4 +78,4 @@ A quick and effective way to get started is by exploring the comprehensive examp
 
 ## Contributing
 
-All contributions are welcome. Before working on a PR, please consider opening an issue detailing the feature/bug. Equally when submitting a PR, ensure that all checks pass to facilitate a smooth review process.
+All contributions are welcome. Before working on a PR, please consider opening an issue detailing the feature/bug. Equally, when submitting a PR, please ensure that all checks pass to facilitate a smooth review process.
