@@ -34,5 +34,11 @@ doc:
 publish:
 	cargo publish -p chaindexing
 
+publish.dry:
+	make publish -- --dry-run
+
 publish.dirty:
 	cargo publish -p chaindexing --allow-dirty
+
+publish.dirty.dry:
+	make publish.dirty -- --dry-run
