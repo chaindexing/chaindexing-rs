@@ -46,15 +46,16 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
 
                 for event in &events {
                     {
-                        let handler = pure_handlers.get(event.get_abi()).unwrap();
-                        let handler_context = PureHandlerContext::new(
-                            event,
-                            &txn_client,
-                            repo_client_for_mcs,
-                            deferred_mutations_for_mcs,
-                        );
+                        if let Some(handler) = pure_handlers.get(event.get_abi()) {
+                            let handler_context = PureHandlerContext::new(
+                                event,
+                                &txn_client,
+                                repo_client_for_mcs,
+                                deferred_mutations_for_mcs,
+                            );
 
-                        handler.handle_event(handler_context).await;
+                            handler.handle_event(handler_context).await;
+                        }
                     }
 
                     {
