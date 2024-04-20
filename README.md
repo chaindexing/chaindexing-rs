@@ -20,7 +20,7 @@ use crate::states::Nft;
 
 pub struct TransferHandler;
 
-#[async_trait::async_trait]
+#[chaindexing::augmenting_std::async_trait::async_trait]
 impl EventHandler for TransferHandler {
     fn abi(&self) -> &'static str {
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
@@ -53,28 +53,28 @@ A quick and effective way to get started is by exploring the comprehensive examp
 
 ## Design Goals & Features
 
-💸&nbsp;Free forever<br/>
-⚡&nbsp;Real-time use-cases<br/>
-🌐&nbsp;Multi-chain<br/>
-🧂&nbsp;Granular, 🧩 Modular & 📈 Scalable<br/>
-🌍&nbsp;Environment-agnostic to allow inspecting 🔍 & replicating indexes anywhere!<br/>
-🔓&nbsp;ORM-agnostic, use any ORM to access indexed data<br/>
-📤&nbsp;Easy export to any data lake: S3, Snowflake, etc.<br/>
-🚫&nbsp;No complex YAML/JSON/CLI config<br/>
-💪&nbsp;Index contracts discovered at runtime<br/>
-✨&nbsp;Handles re-org with no UX impact<br/>
-🔥&nbsp;Side effect handling for notifications & bridging use cases<br/>
-💸&nbsp;Optimize RPC cost by indexing when certain activities happen in your DApp<br/>
-💎&nbsp;Language-agnostic, so no macros!<br/>
+- 💸&nbsp;Free forever<br/>
+- ⚡&nbsp;Real-time use-cases<br/>
+- 🌐&nbsp;Multi-chain<br/>
+- 🧂&nbsp;Granular, 🧩 Modular & 📈 Scalable<br/>
+- 🌍&nbsp;Environment-agnostic to allow inspecting 🔍 & replicating indexes anywhere!<br/>
+- 🔓&nbsp;ORM-agnostic, use any ORM to access indexed data<br/>
+- 📤&nbsp;Easy export to any data lake: S3, Snowflake, etc.<br/>
+- 🚫&nbsp;No complex YAML/JSON/CLI config<br/>
+- 💪&nbsp;Index contracts discovered at runtime<br/>
+- ✨&nbsp;Handles re-org with no UX impact<br/>
+- 🔥&nbsp;Side effect handling for notifications & bridging use cases<br/>
+- 💸&nbsp;Optimize RPC cost by indexing when certain activities happen in your DApp<br/>
+- 💎&nbsp;Language-agnostic, so no macros!<br/>
 
 ## RoadMap
 
-⬜&nbsp;Expose `is_at_block_tail` flag to improve op heuristics for applications<br/>
-⬜&nbsp;Support SQLite Database (Currently supports only Postgres)<br/>
-⬜&nbsp;Support indexing raw transactions & call traces.<br/>
-⬜&nbsp;Improved error handling/messages/reporting (Please feel free to open an issue when an opaque runtime error is encountered)<br/>
-⬜&nbsp;SSL Support<br/>
-⬜&nbsp;Minimal UI for inspecting events and indexed states<br/>
+- ⬜&nbsp;Expose `is_at_block_tail` flag to improve op heuristics for applications<br/>
+- ⬜&nbsp;Support SQLite Database (Currently supports only Postgres)<br/>
+- ⬜&nbsp;Support indexing raw transactions & call traces.<br/>
+- ⬜&nbsp;Improved error handling/messages/reporting (Please feel free to open an issue when an opaque runtime error is encountered)<br/>
+- ⬜&nbsp;SSL Support<br/>
+- ⬜&nbsp;Minimal UI for inspecting events and indexed states<br/>
 
 ## Contributing
 
