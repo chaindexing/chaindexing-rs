@@ -73,7 +73,7 @@ A quick and effective way to get started is by exploring the comprehensive examp
 - ⬜&nbsp;Support SQLite Database (Currently supports only Postgres)<br/>
 - ⬜&nbsp;Support indexing raw transactions & call traces.<br/>
 - ⬜&nbsp;Improved error handling/messages/reporting (Please feel free to open an issue when an opaque runtime error is encountered)<br/>
-- ⬜&nbsp;SSL Support<br/>
+- ⬜&nbsp;Support TLS connections<br/>
 - ⬜&nbsp;Minimal UI for inspecting events and indexed states<br/>
 
 ## Contributing
