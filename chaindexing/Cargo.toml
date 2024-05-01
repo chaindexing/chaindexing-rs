@@ -18,7 +18,7 @@ postgres = ["tokio-postgres"]
 async-trait = "0.1"
 bb8 = "0.8"
 derive_more = "0.99"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.38", features = ["serde"] }
 diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
 diesel-async = { version = "0.4", features = ["bb8", "postgres"] }
 pin-project-lite = "0.2.14"
