@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 chaindexing = { path = "../chaindexing", features = ["postgres"] }
-ethers = "2.0"
+ethers = "2.0.14"
 futures-util = "0.3"
 dotenvy = "0.15"
 diesel = { version = "2", features = ["postgres", "chrono"] }
