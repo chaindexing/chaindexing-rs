@@ -20,7 +20,7 @@ bb8 = "0.8"
 derive_more = "0.99"
 chrono = { version = "0.4", features = ["serde"] }
 diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
-diesel-async = { version = "0.4", features = ["bb8", "postgres"] }
+diesel-async = { version = "0.4.1", features = ["bb8", "postgres"] }
 pin-project-lite = "0.2.14"
 ethers = "2.0"
 serde = { version = "1.0", features = ["derive"] }
