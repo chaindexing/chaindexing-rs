@@ -223,3 +223,21 @@ fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
     }
     ChaindexingNodeTasksRunner { config }
 }
+
+pub mod prelude {
+    pub use crate::augmenting_std::{async_trait, serde};
+    pub use crate::chains::{Chain, ChainId};
+    pub use crate::config::{Config, OptimizationConfig};
+    pub use crate::contracts::{Contract, ContractAddress, EventAbi};
+    pub use crate::events::{Event, EventParam};
+    pub use crate::handlers::{
+        PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
+        SideEffectHandlerContext as SideEffectContext,
+    };
+    pub use crate::nodes::NodeHeartbeat as Heartbeat;
+    pub use crate::states::{
+        ChainState, ContractState, Filters, MultiChainState, StateMigrations, Updates,
+    };
+    pub use crate::Address;
+    pub use ethers::types::{I256, U256};
+}
