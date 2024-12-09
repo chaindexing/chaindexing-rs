@@ -16,7 +16,7 @@ postgres = ["tokio-postgres"]
 
 [dependencies]
 async-trait = "0.1"
-bb8 = "0.8"
+bb8 = "0.9"
 derive_more = "0.99"
 chrono = { version = "0.4", features = ["serde"] }
 diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
