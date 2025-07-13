@@ -4,10 +4,15 @@ version = "0.1.77"
 authors = ["Chaindexing Contributors <chaindexing@gmail.com>"]
 description = "Index any EVM chain and query in SQL"
 keywords = ["index", "multi-chain", "ethereum", "evm", "web3"]
-categories = ["encoding", "cryptography::cryptocurrencies", "asynchronous", "concurrency"]
+categories = [
+    "encoding",
+    "cryptography::cryptocurrencies",
+    "asynchronous",
+    "concurrency",
+]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-readme="../README.md"
+readme = "../README.md"
 repository = "https://github.com/chaindexing/chaindexing-rs"
 
 [features]
@@ -16,18 +21,24 @@ postgres = ["tokio-postgres"]
 
 [dependencies]
 async-trait = "0.1"
-bb8 = "0.8"
-derive_more = "0.99"
+bb8 = "0.9"
+derive_more = { version = "2", features = ["display"] }
 chrono = { version = "0.4", features = ["serde"] }
-diesel = { version = "2", features = ["postgres", "uuid", "chrono", "serde_json"] }
-diesel-async = { version = "0.4", features = ["bb8", "postgres"] }
+diesel = { version = "2", features = [
+    "postgres",
+    "uuid",
+    "chrono",
+    "serde_json",
+] }
+diesel-async = { version = "0.6", features = ["bb8", "postgres"] }
 pin-project-lite = "0.2.14"
 ethers = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1"], optional = true }
+tokio-postgres = { version = "0.7", features = [
+    "with-serde_json-1",
+], optional = true }
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 futures-core = { version = "0.3", features = ["alloc"] }
 futures-util = "0.3"
-
