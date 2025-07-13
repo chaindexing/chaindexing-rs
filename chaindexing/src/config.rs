@@ -75,7 +75,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             chains: vec![],
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
-            blocks_per_batch: 8_000,
+            blocks_per_batch: 450,
             handler_rate_ms: 4_000,
             ingestion_rate_ms: 20_000,
             chain_concurrency: 4,
