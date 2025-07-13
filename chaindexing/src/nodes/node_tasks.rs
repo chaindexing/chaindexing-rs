@@ -23,6 +23,7 @@ enum NodeTasksState {
     Aborted,
 }
 
+#[allow(dead_code)]
 pub struct NodeTasks<'a> {
     current_node: &'a Node,
     state: NodeTasksState,

@@ -2,7 +2,7 @@ use chaindexing::IngesterProvider;
 use ethers::providers::ProviderError;
 use ethers::types::{Block, Filter, Log, TxHash, U64};
 
-use rand::seq::SliceRandom;
+use rand::prelude::*;
 
 pub fn empty_provider() -> impl IngesterProvider {
     #[derive(Clone)]
@@ -32,7 +32,7 @@ use ethers::types::{Bytes, H160, H256};
 use std::str::FromStr;
 
 pub fn transfer_log(contract_address: &str) -> Log {
-    let log_index = *(1..800).collect::<Vec<_>>().choose(&mut rand::thread_rng()).unwrap();
+    let log_index = *(1..800).collect::<Vec<_>>().choose(&mut rand::rng()).unwrap();
 
     Log {
         address: H160::from_str(contract_address).unwrap(),
