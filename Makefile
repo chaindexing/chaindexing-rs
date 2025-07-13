@@ -31,6 +31,11 @@ tests.with.backtrace:
 doc:
 	cargo doc --open
 
+lint:
+	cargo clippy
+	cargo fmt --all -- --check
+	cargo machete
+
 publish:
 	cargo publish -p chaindexing
 

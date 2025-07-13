@@ -11,7 +11,7 @@ pub async fn setup_nodes<S: Sync + Send + Clone>(
     ChaindexingRepo::prune_nodes(client, config.max_concurrent_node_count).await;
 }
 
-pub async fn setup<'a, S: Sync + Send + Clone>(
+pub async fn setup<S: Sync + Send + Clone>(
     Config {
         contracts,
         reset_count,

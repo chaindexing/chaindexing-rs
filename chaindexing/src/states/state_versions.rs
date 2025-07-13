@@ -127,12 +127,12 @@ impl StateVersion {
         state_version.extend(updates.clone());
         Self::append(&state_version, state_table_name, event, client).await
     }
-    pub async fn update_without_txn<'b>(
+    pub async fn update_without_txn(
         state: &HashMap<String, String>,
         updates: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &'b mut ChaindexingRepoClient,
+        client: &mut ChaindexingRepoClient,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.extend(updates.clone());
@@ -149,11 +149,11 @@ impl StateVersion {
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
         Self::append(&state_version, state_table_name, event, client).await
     }
-    pub async fn delete_without_txn<'b>(
+    pub async fn delete_without_txn(
         state: &HashMap<String, String>,
         state_table_name: &str,
         event: &Event,
-        client: &'b ChaindexingRepoClient,
+        client: &ChaindexingRepoClient,
     ) -> HashMap<String, String> {
         let mut state_version = state.clone();
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());

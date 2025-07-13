@@ -117,7 +117,7 @@ impl Debug for ChaindexingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChaindexingError::Config(config_error) => {
-                write!(f, "Config Error: {:?}", config_error)
+                write!(f, "Config Error: {config_error:?}")
             }
         }
     }
@@ -173,7 +173,7 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
 /// # Arguments
 ///
 /// * `event_context` - context where the contract was discovered.
-/// N/B: Indexing for this contract starts from this point onwards
+///   N/B: Indexing for this contract starts from this point onwards
 /// * `name` -  name of the contract as defined in the config
 /// * `address` -  address of discovered contract
 ///

@@ -79,7 +79,7 @@ pub async fn fetch_current_block_number(provider: &Arc<impl Provider>) -> u64 {
                 maybe_current_block_number = Some(current_block_number.as_u64())
             }
             Err(provider_error) => {
-                eprintln!("Provider Error: {}", provider_error);
+                eprintln!("Provider Error: {provider_error}");
 
                 backoff(retries_so_far).await;
                 retries_so_far += 1;
@@ -102,7 +102,7 @@ pub async fn fetch_logs(provider: &Arc<impl Provider>, filters: &[Filter]) -> Ve
                 maybe_logs = Some(logs)
             }
             Err(provider_error) => {
-                eprintln!("Provider Error: {}", provider_error);
+                eprintln!("Provider Error: {provider_error}");
 
                 backoff(retries_so_far).await;
                 retries_so_far += 1;
@@ -124,7 +124,7 @@ pub async fn fetch_blocks_by_number(
         match provider.get_blocks_by_number(logs).await {
             Ok(blocks_by_tx_hash) => maybe_blocks_by_number = Some(blocks_by_tx_hash),
             Err(provider_error) => {
-                eprintln!("Provider Error: {}", provider_error);
+                eprintln!("Provider Error: {provider_error}");
 
                 backoff(retries_so_far).await;
                 retries_so_far += 1;

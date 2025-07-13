@@ -195,8 +195,8 @@ fn set_state_versions_table_name(migration: &str) -> String {
 }
 
 fn extract_migration_columns(migration: &str) -> Vec<String> {
-    let migration_tokens = migration.split('(');
-    let migration = migration_tokens.last().unwrap();
+    let mut migration_tokens = migration.split('(');
+    let migration = migration_tokens.next_back().unwrap();
     let mut migration_tokens = migration.split(')');
     let migration = migration_tokens.next().unwrap();
 

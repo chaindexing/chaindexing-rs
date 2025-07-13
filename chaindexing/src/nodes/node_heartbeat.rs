@@ -15,7 +15,7 @@ pub struct NodeHeartbeat {
 
 impl NodeHeartbeat {
     /// * `active_grace_period_ms` - how long should the Node wait
-    /// till it goes inactive
+    ///   till it goes inactive
     pub fn new(active_grace_period_ms: u32) -> Self {
         Self {
             last_keep_alive_at: Arc::new(Mutex::new(Self::now())),

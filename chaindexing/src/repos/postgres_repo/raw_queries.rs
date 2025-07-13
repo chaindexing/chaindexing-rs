@@ -18,7 +18,7 @@ impl HasRawQueryClient for PostgresRepo {
     async fn get_client(&self) -> Self::RawQueryClient {
         let (client, conn) = tokio_postgres::connect(&self.url, NoTls).await.unwrap();
 
-        tokio::spawn(async move { conn.await.map_err(|e| eprintln!("connection error: {}", e)) });
+        tokio::spawn(async move { conn.await.map_err(|e| eprintln!("connection error: {e}")) });
 
         client
     }
