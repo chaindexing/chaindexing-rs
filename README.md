@@ -76,6 +76,19 @@ A quick and effective way to get started is by exploring the comprehensive examp
 - ⬜&nbsp;Support TLS connections<br/>
 - ⬜&nbsp;Minimal UI for inspecting events and indexed states<br/>
 
+## Performance Considerations & Limitations
+
+Chaindexing is still young and optimized for ergonomics rather than raw throughput. The default configuration works well for real-time indexing of a few contracts, but historical backfills or very high-volume workloads may expose the following constraints:
+
+- 🐢 **Historical Throughput:** Each chain ingester pulls **`blocks_per_batch`** blocks every **`ingestion_rate_ms`** milliseconds. With the defaults (450 blocks / 20 000 ms) this translates to roughly **22 blocks / s per chain**. Tune these knobs to trade throughput for RPC cost.
+- 🔗 **Chain Concurrency:** Only `chain_concurrency` chains are ingested in parallel (default **4**). Additional chains are processed sequentially.
+- ⚙️ **Handler Cadence:** Event handlers execute every `handler_rate_ms` (default **4 000 ms**). If a contract emits thousands of events per block this cycle can lag behind ingestion.
+- 🗄️ **Database Bottlenecks:** Chaindexing currently supports **Postgres** only. Inserts are batched inside transactions over a limited connection pool—disk or network latency can throttle the pipeline.
+- 🌐 **RPC Provider Limits:** Latency and rate-limits of your JSON-RPC provider (e.g. Alchemy, Infura) directly affect indexing speed. Public endpoints often cap block ranges and requests per second.
+- ⏳ **Deep Backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized and may require substantial time and memory. Consider chunked backfills or starting closer to the present block.
+
+These limitations are passively being addressed; community benchmarks and pull requests are highly appreciated!
+
 ## Contributing
 
 All contributions are welcome. Before working on a PR, please consider opening an issue detailing the feature/bug. Equally, when submitting a PR, please ensure that all checks pass to facilitate a smooth review process.
