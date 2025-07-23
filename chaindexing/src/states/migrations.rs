@@ -2,162 +2,57 @@ use std::collections::HashMap;
 
 use super::STATE_VERSIONS_TABLE_PREFIX;
 
-/// Represents the idempotent database migrations required before
-/// indexing a state.
-pub trait StateMigrations: Send + Sync {
-    /// SQL migrations for the state to index. These migrations must be idempotent
-    /// and will require using the 'IF NOT EXISTS` check
-    ///
-    /// # Example
-    /// ```ignore
-    /// fn migrations(&self) -> &'static [&'static str] {
-    ///     &["CREATE TABLE IF NOT EXISTS nfts (
-    ///        token_id INTEGER NOT NULL,
-    ///        owner_address TEXT NOT NULL
-    ///        )"]
-    ///  }
-    /// ```
-    fn migrations(&self) -> &'static [&'static str];
+use sqlparser::ast::{Statement, DataType};
+use sqlparser::dialect::PostgreSqlDialect;
+use sqlparser::parser::Parser;
 
-    fn get_table_names(&self) -> Vec<String> {
-        self.migrations().iter().fold(vec![], |mut table_names, migration| {
-            if migration.starts_with("CREATE TABLE IF NOT EXISTS") {
-                let table_name = extract_table_name(migration);
-                table_names.push(table_name)
-            }
-
-            table_names
-        })
-    }
-
-    fn get_migrations(&self) -> Vec<String> {
-        self.migrations()
-            .iter()
-            .flat_map(|user_migration| {
-                // NOTE: We intentionally skip strict validation here to allow the
-                // end-user supply ANY valid SQL definition (including complex
-                // types like ID/BIGSERIAL, TIMESTAMPTZ, ARRAY, NUMERIC(10,2), etc.)
-                // Previously `validate_migration` rejected some of these
-                // definitions in order to keep the SQL parser simple, but it
-                // proved too restrictive in real-world use-cases.  By removing
-                // this early validation we accept the responsibility of the
-                // underlying database to validate the statement semantics.
-
-                if user_migration.starts_with("CREATE TABLE IF NOT EXISTS") {
-                    let create_state_views_table_migration =
-                        append_migration(user_migration, &get_remaining_state_views_migration());
-                    let create_state_views_table_migration =
-                        DefaultMigration::remove_repeating_occurrences(
-                            &create_state_views_table_migration,
-                        );
-
-                    let create_state_versions_table_migration =
-                        append_migration(user_migration, &get_remaining_state_versions_migration());
-                    let create_state_versions_table_migration =
-                        set_state_versions_table_name(&create_state_versions_table_migration);
-                    let create_state_versions_table_migration =
-                        DefaultMigration::remove_repeating_occurrences(
-                            &create_state_versions_table_migration,
-                        );
-
-                    let state_versions_table_name =
-                        extract_table_name(&create_state_versions_table_migration);
-                    let state_versions_fields =
-                        extract_table_fields(&create_state_versions_table_migration, true);
-
-                    let create_state_versions_table_migration =
-                        maybe_normalize_user_primary_key_column(
-                            &create_state_versions_table_migration,
-                        );
-
-                    let mut migrations_to_return = vec![
-                        create_state_views_table_migration,
-                        create_state_versions_table_migration,
-                    ];
-
-                    // Attempt to build a UNIQUE INDEX only when we have been able to
-                    // safely extract column names from the original migration.
-                    if !state_versions_fields.is_empty() {
-                        migrations_to_return.push(
-                            get_unique_index_migration_for_state_versions(
-                                &state_versions_table_name,
-                                state_versions_fields,
-                            ),
-                        );
-                    }
-
-                    migrations_to_return
-                } else {
-                    vec![user_migration.to_string()]
-                }
-            })
-            .collect()
-    }
-
-    fn get_reset_migrations(&self) -> Vec<String> {
-        self.get_migrations()
-            .iter()
-            .filter_map(|migration| {
-                if migration.starts_with("CREATE TABLE IF NOT EXISTS") {
-                    let table_name = extract_table_name(migration);
-
-                    Some(format!("DROP TABLE IF EXISTS {table_name}"))
-                } else {
-                    None
-                }
-            })
-            .collect()
+fn parse_create_table(migration: &str) -> Option<Statement> {
+    let dialect = PostgreSqlDialect {};
+    let mut stmts = Parser::parse_sql(&dialect, migration).ok()?;
+    if stmts.is_empty() {
+        None
+    } else {
+        Some(stmts.remove(0))
     }
 }
 
 fn extract_table_name(migration: &str) -> String {
-    migration
-        .replace("CREATE TABLE IF NOT EXISTS", "")
-        .split('(')
-        .collect::<Vec<&str>>()
-        .first()
-        .unwrap()
-        .trim()
-        .to_string()
+    let dialect = PostgreSqlDialect {};
+    let ast = Parser::parse_sql(&dialect, migration).expect("Failed to parse SQL");
+
+    ast.iter()
+        .find_map(|stmt| match stmt {
+            Statement::CreateTable { name, .. } => Some(name.to_string()),
+            _ => None,
+        })
+        .expect("CREATE TABLE statement not found")
 }
 
 fn extract_table_fields(migration: &str, remove_json_fields: bool) -> Vec<String> {
-    migration
-        .replace(')', "")
-        .split('(')
-        .collect::<Vec<&str>>()
-        .last()
-        .unwrap()
-        .split(',')
-        .filter_map(|field| {
-            // Skip JSON fields if requested
-            if remove_json_fields && (field.contains("JSON") || field.contains("JSONB")) {
-                return None;
+    let dialect = PostgreSqlDialect {};
+    let ast = Parser::parse_sql(&dialect, migration).expect("Failed to parse SQL");
+
+    ast.iter()
+        .find_map(|stmt| match stmt {
+            Statement::CreateTable { columns, .. } => Some(columns),
+            _ => None,
+        })
+        .expect("CREATE TABLE statement not found")
+        .iter()
+        .filter_map(|col| {
+            if remove_json_fields {
+                match &col.data_type {
+                    DataType::JSON => return None,
+                    DataType::Custom(name, _) => {
+                        if name.0.iter().any(|ident| ident.value.to_uppercase() == "JSONB") {
+                            return None;
+                        }
+                    }
+                    _ => {}
+                }
             }
 
-            // The first whitespace-separated token is assumed to be the column name.
-            // When the type itself contains commas (e.g. NUMERIC(10,2)) the split
-            // above will incorrectly treat `2` as a separate `field`.  We guard
-            // against this by checking that the candidate token starts with an
-            // alphabetic character – legitimate column names must start with a
-            // letter or an underscore.
-            let token = field
-                .split_ascii_whitespace()
-                .collect::<Vec<&str>>()
-                .first()
-                .unwrap()
-                .trim();
-
-            if token.is_empty() {
-                return None;
-            }
-
-            let first_char = token.chars().next().unwrap();
-            if first_char.is_ascii_alphabetic() || first_char == '_' {
-                Some(token.to_string())
-            } else {
-                None
-            }
+            Some(col.name.value.clone())
         })
         .collect()
 }
@@ -327,6 +222,104 @@ impl DefaultMigration {
                 unique_migration_tokens
             })
             .join(",")
+    }
+}
+
+/// Represents the idempotent database migrations required before
+/// indexing a state.
+pub trait StateMigrations: Send + Sync {
+    /// SQL migrations for the state to index. These migrations must be idempotent
+    /// and should include the `IF NOT EXISTS` check to keep them safe on repeated runs.
+    fn migrations(&self) -> &'static [&'static str];
+
+    /// All table names created by the user's migrations (derived via SQL parsing).
+    fn get_table_names(&self) -> Vec<String> {
+        self.migrations().iter().fold(Vec::new(), |mut names, mig| {
+            if let Some(Statement::CreateTable { name, .. }) = parse_create_table(mig) {
+                names.push(name.to_string());
+            }
+            names
+        })
+    }
+
+    /// Expands the user's migrations with Chaindexing-specific additions
+    /// (`state_views` and `state_versions` tables, unique index, etc.).
+    fn get_migrations(&self) -> Vec<String> {
+        self.migrations()
+            .iter()
+            .flat_map(|user_migration| {
+                if let Some(Statement::CreateTable { .. }) = parse_create_table(user_migration) {
+                    // Build companion migrations deterministically.
+                    let create_state_views_table_migration =
+                        append_migration(user_migration, &get_remaining_state_views_migration());
+                    let create_state_views_table_migration =
+                        DefaultMigration::remove_repeating_occurrences(
+                            &create_state_views_table_migration,
+                        );
+
+                    let create_state_versions_table_migration = append_migration(
+                        user_migration,
+                        &get_remaining_state_versions_migration(),
+                    );
+                    let create_state_versions_table_migration =
+                        set_state_versions_table_name(&create_state_versions_table_migration);
+                    let create_state_versions_table_migration =
+                        DefaultMigration::remove_repeating_occurrences(
+                            &create_state_versions_table_migration,
+                        );
+
+                    // Determine state_versions table name and columns via AST for reliability.
+                    let (state_versions_table_name, state_versions_fields) = if let Some(Statement::CreateTable { name, .. }) = parse_create_table(user_migration)
+                    {
+                        (
+                            format!("{STATE_VERSIONS_TABLE_PREFIX}{}", name),
+                            extract_table_fields(&create_state_versions_table_migration, true),
+                        )
+                    } else {
+                        (
+                            extract_table_name(&create_state_versions_table_migration),
+                            extract_table_fields(&create_state_versions_table_migration, true),
+                        )
+                    };
+
+                    let create_state_versions_table_migration =
+                        maybe_normalize_user_primary_key_column(
+                            &create_state_versions_table_migration,
+                        );
+
+                    let mut migrations = vec![
+                        create_state_views_table_migration,
+                        create_state_versions_table_migration,
+                    ];
+
+                    // Append deterministic UNIQUE INDEX if fields are available.
+                    if !state_versions_fields.is_empty() {
+                        migrations.push(get_unique_index_migration_for_state_versions(
+                            &state_versions_table_name,
+                            state_versions_fields,
+                        ));
+                    }
+
+                    migrations
+                } else {
+                    vec![user_migration.to_string()]
+                }
+            })
+            .collect()
+    }
+
+    /// The inverse of `get_migrations`: returns SQL that drops every table we created.
+    fn get_reset_migrations(&self) -> Vec<String> {
+        self.get_migrations()
+            .iter()
+            .filter_map(|mig| {
+                if let Some(Statement::CreateTable { name, .. }) = parse_create_table(mig) {
+                    Some(format!("DROP TABLE IF EXISTS {}", name))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
