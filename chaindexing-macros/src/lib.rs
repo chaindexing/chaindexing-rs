@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ExprArray, Expr, Lit};
+use syn::{parse_macro_input, Expr, ExprArray, Lit};
 
 /// Validates SQL migration strings at compile time and re-emits them as a
 /// `&[&'static str]` slice literal.
@@ -52,4 +52,4 @@ pub fn state_migrations(input: TokenStream) -> TokenStream {
         &[ #( #elems_iter ),* ]
     }
     .into()
-} 
+}

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::STATE_VERSIONS_TABLE_PREFIX;
 
-use sqlparser::ast::{Statement, DataType};
+use sqlparser::ast::{DataType, Statement};
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
@@ -257,10 +257,8 @@ pub trait StateMigrations: Send + Sync {
                             &create_state_views_table_migration,
                         );
 
-                    let create_state_versions_table_migration = append_migration(
-                        user_migration,
-                        &get_remaining_state_versions_migration(),
-                    );
+                    let create_state_versions_table_migration =
+                        append_migration(user_migration, &get_remaining_state_versions_migration());
                     let create_state_versions_table_migration =
                         set_state_versions_table_name(&create_state_versions_table_migration);
                     let create_state_versions_table_migration =
@@ -269,18 +267,20 @@ pub trait StateMigrations: Send + Sync {
                         );
 
                     // Determine state_versions table name and columns via AST for reliability.
-                    let (state_versions_table_name, state_versions_fields) = if let Some(Statement::CreateTable { name, .. }) = parse_create_table(user_migration)
-                    {
-                        (
-                            format!("{STATE_VERSIONS_TABLE_PREFIX}{}", name),
-                            extract_table_fields(&create_state_versions_table_migration, true),
-                        )
-                    } else {
-                        (
-                            extract_table_name(&create_state_versions_table_migration),
-                            extract_table_fields(&create_state_versions_table_migration, true),
-                        )
-                    };
+                    let (state_versions_table_name, state_versions_fields) =
+                        if let Some(Statement::CreateTable { name, .. }) =
+                            parse_create_table(user_migration)
+                        {
+                            (
+                                format!("{STATE_VERSIONS_TABLE_PREFIX}{name}"),
+                                extract_table_fields(&create_state_versions_table_migration, true),
+                            )
+                        } else {
+                            (
+                                extract_table_name(&create_state_versions_table_migration),
+                                extract_table_fields(&create_state_versions_table_migration, true),
+                            )
+                        };
 
                     let create_state_versions_table_migration =
                         maybe_normalize_user_primary_key_column(
@@ -314,7 +314,7 @@ pub trait StateMigrations: Send + Sync {
             .iter()
             .filter_map(|mig| {
                 if let Some(Statement::CreateTable { name, .. }) = parse_create_table(mig) {
-                    Some(format!("DROP TABLE IF EXISTS {}", name))
+                    Some(format!("DROP TABLE IF EXISTS {name}"))
                 } else {
                     None
                 }
