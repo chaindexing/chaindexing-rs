@@ -35,6 +35,7 @@ pub use handlers::{
 pub use nodes::NodeHeartbeat as Heartbeat;
 
 pub use ethers::types::{I256, U256};
+pub use chaindexing_macros::state_migrations;
 use tokio::sync::Mutex;
 
 /// Houses traits and structs for implementing states that can be indexed.
@@ -240,4 +241,5 @@ pub mod prelude {
     };
     pub use crate::Address;
     pub use ethers::types::{I256, U256};
+    pub use chaindexing_macros::state_migrations;
 }

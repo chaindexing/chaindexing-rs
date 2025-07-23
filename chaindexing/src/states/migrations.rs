@@ -34,7 +34,14 @@ pub trait StateMigrations: Send + Sync {
         self.migrations()
             .iter()
             .flat_map(|user_migration| {
-                validate_migration(user_migration);
+                // NOTE: We intentionally skip strict validation here to allow the
+                // end-user supply ANY valid SQL definition (including complex
+                // types like ID/BIGSERIAL, TIMESTAMPTZ, ARRAY, NUMERIC(10,2), etc.)
+                // Previously `validate_migration` rejected some of these
+                // definitions in order to keep the SQL parser simple, but it
+                // proved too restrictive in real-world use-cases.  By removing
+                // this early validation we accept the responsibility of the
+                // underlying database to validate the statement semantics.
 
                 if user_migration.starts_with("CREATE TABLE IF NOT EXISTS") {
                     let create_state_views_table_migration =
@@ -58,22 +65,28 @@ pub trait StateMigrations: Send + Sync {
                     let state_versions_fields =
                         extract_table_fields(&create_state_versions_table_migration, true);
 
-                    let state_versions_unique_index_migration =
-                        get_unique_index_migration_for_state_versions(
-                            &state_versions_table_name,
-                            state_versions_fields,
-                        );
-
                     let create_state_versions_table_migration =
                         maybe_normalize_user_primary_key_column(
                             &create_state_versions_table_migration,
                         );
 
-                    vec![
+                    let mut migrations_to_return = vec![
                         create_state_views_table_migration,
                         create_state_versions_table_migration,
-                        state_versions_unique_index_migration,
-                    ]
+                    ];
+
+                    // Attempt to build a UNIQUE INDEX only when we have been able to
+                    // safely extract column names from the original migration.
+                    if !state_versions_fields.is_empty() {
+                        migrations_to_return.push(
+                            get_unique_index_migration_for_state_versions(
+                                &state_versions_table_name,
+                                state_versions_fields,
+                            ),
+                        );
+                    }
+
+                    migrations_to_return
                 } else {
                     vec![user_migration.to_string()]
                 }
@@ -117,15 +130,31 @@ fn extract_table_fields(migration: &str, remove_json_fields: bool) -> Vec<String
         .unwrap()
         .split(',')
         .filter_map(|field| {
-            if remove_json_fields && !(field.contains("JSON") || field.contains("JSONB")) {
-                Some(
-                    field
-                        .split_ascii_whitespace()
-                        .collect::<Vec<&str>>()
-                        .first()
-                        .unwrap()
-                        .to_string(),
-                )
+            // Skip JSON fields if requested
+            if remove_json_fields && (field.contains("JSON") || field.contains("JSONB")) {
+                return None;
+            }
+
+            // The first whitespace-separated token is assumed to be the column name.
+            // When the type itself contains commas (e.g. NUMERIC(10,2)) the split
+            // above will incorrectly treat `2` as a separate `field`.  We guard
+            // against this by checking that the candidate token starts with an
+            // alphabetic character – legitimate column names must start with a
+            // letter or an underscore.
+            let token = field
+                .split_ascii_whitespace()
+                .collect::<Vec<&str>>()
+                .first()
+                .unwrap()
+                .trim();
+
+            if token.is_empty() {
+                return None;
+            }
+
+            let first_char = token.chars().next().unwrap();
+            if first_char.is_ascii_alphabetic() || first_char == '_' {
+                Some(token.to_string())
             } else {
                 None
             }
@@ -146,15 +175,10 @@ fn get_unique_index_migration_for_state_versions(
     )
 }
 
-fn validate_migration(migration: &str) {
-    let invalid_migration_keywords = [" timestamp", " timestamptz", " date", " time"];
-
-    invalid_migration_keywords.iter().for_each(|keyword| {
-        if migration.to_lowercase().contains(keyword) {
-            panic!("{keyword} tyoe of fields cannot be indexed. Consider using Unix time for timestamp fields.")
-        }
-    });
-}
+// Note: Runtime/database will now enforce semantic correctness of field types, so the previous
+// `validate_migration` helper—used to forbid timestamp/date fields—has been removed.  This keeps
+// the crate free of dead-code warnings while relying on the new `state_migrations!` macro for
+// syntactic validation.
 
 fn append_migration(migration: &str, migration_to_append: &str) -> String {
     let mut migration = migration.replace('\n', "");
