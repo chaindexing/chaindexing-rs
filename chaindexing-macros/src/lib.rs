@@ -8,10 +8,10 @@ use syn::{parse_macro_input, Expr, ExprArray, Lit};
 /// # Example
 /// ```
 /// use chaindexing_macros::state_migrations;
-/// const MIGRATIONS: &[&str] = state_migrations![
+/// const MIGRATIONS: &[&str] = state_migrations!([
 ///     r#"CREATE TABLE IF NOT EXISTS foo (id BIGSERIAL PRIMARY KEY)"#,
 ///     r#"CREATE INDEX IF NOT EXISTS idx_id ON foo(id)"#
-/// ];
+/// ]);
 /// ```
 #[proc_macro]
 pub fn state_migrations(input: TokenStream) -> TokenStream {
