@@ -14,7 +14,7 @@ tests.setup:
 	cargo run -p chaindexing-tests
 
 tests:
-	make tests.setup && cargo test -- --nocapture
+	make tests.setup && cargo test -- --nocapture --test-threads=1
 
 tests.without.capture: 
 	make tests.setup && cargo test -- --nocapture

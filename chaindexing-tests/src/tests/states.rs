@@ -8,7 +8,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::*;
-    use crate::factory::{bayc_contract, transfer_event_with_contract};
+    use crate::factory::{bayc_contract, unique_transfer_event_with_contract};
     use crate::test_runner;
 
     #[tokio::test]
@@ -18,18 +18,18 @@ mod tests {
         let mut repo_client = test_runner::new_repo().get_client().await;
         let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
-            &transfer_event_with_contract(bayc_contract),
+            &unique_transfer_event_with_contract(bayc_contract),
             &repo_txn_client,
             &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
-        let new_state = Nft { token_id: 2 };
+        let new_state = Nft { token_id: 100 };
 
         new_state.create(&event_context).await;
 
         let returned_state =
-            Nft::read_one(&Filters::new("token_id", 2), &event_context).await.unwrap();
+            Nft::read_one(&Filters::new("token_id", 100), &event_context).await.unwrap();
 
         assert_eq!(new_state, returned_state);
     }
@@ -41,20 +41,20 @@ mod tests {
         let mut repo_client = test_runner::new_repo().get_client().await;
         let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
-            &transfer_event_with_contract(bayc_contract),
+            &unique_transfer_event_with_contract(bayc_contract),
             &repo_txn_client,
             &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
-        let new_state = Nft { token_id: 1 };
+        let new_state = Nft { token_id: 200 };
         new_state.create(&event_context).await;
-        new_state.update(&Updates::new("token_id", 4), &event_context).await;
+        new_state.update(&Updates::new("token_id", 201), &event_context).await;
 
-        let initial_state = Nft::read_one(&Filters::new("token_id", 1), &event_context).await;
+        let initial_state = Nft::read_one(&Filters::new("token_id", 200), &event_context).await;
         assert_eq!(initial_state, None);
 
-        let updated_state = Nft::read_one(&Filters::new("token_id", 4), &event_context).await;
+        let updated_state = Nft::read_one(&Filters::new("token_id", 201), &event_context).await;
         assert!(updated_state.is_some());
     }
 
@@ -65,17 +65,17 @@ mod tests {
         let mut repo_client = test_runner::new_repo().get_client().await;
         let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
         let event_context: EventContext<'_, '_> = EventContext::new(
-            &transfer_event_with_contract(bayc_contract),
+            &unique_transfer_event_with_contract(bayc_contract),
             &repo_txn_client,
             &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
             &DeferredFutures::new(),
         );
 
-        let new_state = Nft { token_id: 9 };
+        let new_state = Nft { token_id: 300 };
         new_state.create(&event_context).await;
         new_state.delete(&event_context).await;
 
-        let state = Nft::read_one(&Filters::new("token_id", 9), &event_context).await;
+        let state = Nft::read_one(&Filters::new("token_id", 300), &event_context).await;
         assert_eq!(state, None);
     }
 }

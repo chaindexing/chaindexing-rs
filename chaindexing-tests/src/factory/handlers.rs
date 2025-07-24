@@ -1,8 +1,5 @@
 use chaindexing::{EventContext, EventHandler};
 
-#[derive(Clone, Debug)]
-pub struct NftState;
-
 pub struct TransferTestHandler;
 
 #[chaindexing::augmenting_std::async_trait]
