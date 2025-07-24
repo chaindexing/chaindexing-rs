@@ -77,16 +77,31 @@ fn get_unique_index_migration_for_state_versions(
 // syntactic validation.
 
 fn append_migration(migration: &str, migration_to_append: &str) -> String {
-    let mut migration = migration.replace('\n', "");
-    migration.push(',');
-    migration.push_str(migration_to_append);
-    migration
-        .split_ascii_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ")
-        .replace("),", ",")
-        .replace("),,", ",")
-        .replace(", ,", ",")
+    let dialect = PostgreSqlDialect {};
+    let mut ast = Parser::parse_sql(&dialect, migration).expect("Failed to parse user migration");
+
+    if let Some(Statement::CreateTable(ref mut create_table)) = ast.first_mut() {
+        // Remove trailing parenthesis if it exists, since we'll add our own
+        let columns_str = migration_to_append.trim_end_matches(')').trim();
+
+        // Create a temporary table with the columns to append to properly parse them
+        let temp_table_sql = format!("CREATE TABLE temp_table ({columns_str})");
+
+        if let Ok(mut temp_ast) = Parser::parse_sql(&dialect, &temp_table_sql) {
+            if let Some(Statement::CreateTable(temp_table)) = temp_ast.first_mut() {
+                // Add all columns from the temporary table to the original table
+                for column in &temp_table.columns {
+                    create_table.columns.push(column.clone());
+                }
+            }
+        }
+
+        // Convert back to SQL string
+        create_table.to_string()
+    } else {
+        // If it's not a CREATE TABLE statement, return as-is
+        migration.to_string()
+    }
 }
 
 fn get_remaining_state_versions_migration() -> String {
@@ -97,14 +112,13 @@ fn get_remaining_state_versions_migration() -> String {
     format!(
         "state_version_id BIGSERIAL PRIMARY KEY,
         state_version_is_deleted BOOL NOT NULL default false,
-        {}
-        ",
+        {})",
         DefaultMigration::get()
     )
 }
 
 fn get_remaining_state_views_migration() -> String {
-    DefaultMigration::get().to_string()
+    format!("{})", DefaultMigration::get())
 }
 
 fn set_state_versions_table_name(migration: &str) -> String {
@@ -155,6 +169,24 @@ fn maybe_normalize_user_primary_key_column(state_versions_migration: &str) -> St
     }
 }
 
+fn get_alter_table_migrations(table_name: &str, default_columns_sql: &str) -> Vec<String> {
+    // Split the default column definitions by comma and build ALTER TABLE statements for each
+    default_columns_sql
+        .split(',')
+        .filter_map(|tok| {
+            let col_def = tok.trim().trim_start_matches('(').trim_end_matches(')').trim();
+
+            if col_def.is_empty() {
+                return None;
+            }
+
+            Some(format!(
+                "ALTER TABLE IF EXISTS {table_name} ADD COLUMN IF NOT EXISTS {col_def}"
+            ))
+        })
+        .collect()
+}
+
 struct DefaultMigration;
 
 impl DefaultMigration {
@@ -166,7 +198,7 @@ impl DefaultMigration {
         block_number BIGINT NOT NULL,
         transaction_hash VARCHAR NOT NULL,
         transaction_index INTEGER NOT NULL,
-        log_index INTEGER NOT NULL)"
+        log_index INTEGER NOT NULL"
             .to_string()
     }
 
@@ -267,11 +299,24 @@ pub trait StateMigrations: Send + Sync {
                             &create_state_versions_table_migration,
                         );
 
-                    // Determine state_versions table name and columns via AST for reliability.
-                    let (state_versions_table_name, state_versions_fields) =
+                    // Determine state_views and state_versions table names and columns via AST for reliability.
+                    let (state_views_table_name, user_fields) =
                         if let Some(ct) = parse_create_table(user_migration) {
                             (
-                                format!("{STATE_VERSIONS_TABLE_PREFIX}{}", ct.name),
+                                ct.name.to_string(),
+                                extract_table_fields(user_migration, true),
+                            )
+                        } else {
+                            (
+                                extract_table_name(user_migration),
+                                extract_table_fields(user_migration, true),
+                            )
+                        };
+
+                    let (state_versions_table_name, state_versions_fields) =
+                        if let Some(ct) = parse_create_table(&create_state_versions_table_migration) {
+                            (
+                                ct.name.to_string(),
                                 extract_table_fields(&create_state_versions_table_migration, true),
                             )
                         } else {
@@ -287,23 +332,54 @@ pub trait StateMigrations: Send + Sync {
                         );
 
                     let mut migrations = vec![
-                        create_state_views_table_migration,
-                        create_state_versions_table_migration,
+                        create_state_views_table_migration.clone(),
+                        create_state_versions_table_migration.clone(),
                     ];
+
+                    // Ensure legacy installations gain missing default columns (idempotent ADD COLUMN IF NOT EXISTS)
+                    migrations.extend(get_alter_table_migrations(
+                        &state_views_table_name,
+                        &DefaultMigration::get(),
+                    ));
+                    migrations.extend(get_alter_table_migrations(
+                        &state_versions_table_name,
+                        &format!(
+                            "state_version_id BIGSERIAL PRIMARY KEY, state_version_is_deleted BOOL NOT NULL default false, {}",
+                            DefaultMigration::get()
+                        ),
+                    ));
 
                     // Append deterministic UNIQUE INDEX if fields are available.
                     let mut fields_for_index = if state_versions_fields.is_empty() {
-                        extract_table_fields(user_migration, true)
+                        user_fields.clone()
                     } else {
-                        state_versions_fields.clone()
+                        // Combine user fields with essential blockchain fields for proper uniqueness
+                        let mut combined_fields = user_fields.clone();
+
+                        // Add essential blockchain fields that ensure each state version is unique
+                        let essential_fields = ["chain_id", "block_number", "transaction_hash", "log_index"];
+                        for field in essential_fields {
+                            if !combined_fields.contains(&field.to_string()) {
+                                combined_fields.push(field.to_string());
+                            }
+                        }
+
+                        combined_fields
                     };
 
                     if fields_for_index.is_empty() {
-                        fields_for_index =
-                            DefaultMigration::get_fields().iter().map(|s| s.to_string()).collect();
+                        fields_for_index = DefaultMigration::get_fields()
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect();
                     }
 
                     if !fields_for_index.is_empty() {
+                        // Drop any existing unique index that might have incorrect fields
+                        migrations.push(format!(
+                            "DROP INDEX IF EXISTS unique_{state_versions_table_name}"
+                        ));
+
                         migrations.push(get_unique_index_migration_for_state_versions(
                             &state_versions_table_name,
                             fields_for_index,
@@ -340,39 +416,49 @@ mod contract_state_migrations_get_migration_test {
     #[test]
     fn returns_two_more_migrations_for_create_state_migrations() {
         let contract_state = TestState;
+        let migrations = contract_state.get_migrations();
 
-        assert_eq!(
-            contract_state.get_migrations().len(),
-            contract_state.migrations().len() + 2
-        );
+        // With the new logic, we generate more migrations (CREATE TABLE + ALTER TABLE for backward compatibility + INDEX operations)
+        // The exact count depends on the number of default fields and backward compatibility updates
+        assert!(migrations.len() > contract_state.migrations().len() + 2);
+
+        // Verify we have the core CREATE TABLE migrations
+        let create_tables = migrations.iter().filter(|m| m.contains("CREATE TABLE")).count();
+        assert_eq!(create_tables, 2); // One for state_views, one for state_versions
     }
 
     #[test]
     fn appends_default_migration_to_create_state_views_migrations() {
         let contract_state = TestState;
         let migrations = contract_state.get_migrations();
-        let create_state_migration = migrations.first().unwrap();
+        let create_state_views_migration = migrations
+            .iter()
+            .find(|m| m.contains("CREATE TABLE") && !m.contains(STATE_VERSIONS_TABLE_PREFIX))
+            .unwrap();
 
         assert_ne!(
-            create_state_migration,
+            create_state_views_migration,
             contract_state.migrations().first().unwrap()
         );
 
-        assert_default_migration(create_state_migration);
+        assert_default_migration(create_state_views_migration);
     }
 
     #[test]
     fn removes_repeating_default_migrations_in_create_state_views_migration() {
         let contract_state = TestState;
         let migrations = contract_state.get_migrations();
-        let create_state_migration = migrations.first().unwrap();
+        let create_state_views_migration = migrations
+            .iter()
+            .find(|m| m.contains("CREATE TABLE") && !m.contains(STATE_VERSIONS_TABLE_PREFIX))
+            .unwrap();
 
         assert_eq!(
-            create_state_migration.matches("contract_address").count(),
+            create_state_views_migration.matches("contract_address").count(),
             2
         );
         assert_eq!(
-            create_state_migration.matches("pool_contract_address").count(),
+            create_state_views_migration.matches("pool_contract_address").count(),
             1
         )
     }
@@ -380,9 +466,11 @@ mod contract_state_migrations_get_migration_test {
     #[test]
     fn creates_an_extra_migration_for_creating_state_versions() {
         let contract_state = TestState;
-        let mut migrations = contract_state.get_migrations();
-        migrations.pop();
-        let create_state_versions_migration = migrations.last().unwrap();
+        let migrations = contract_state.get_migrations();
+        let create_state_versions_migration = migrations
+            .iter()
+            .find(|m| m.contains("CREATE TABLE") && m.contains(STATE_VERSIONS_TABLE_PREFIX))
+            .unwrap();
 
         assert!(create_state_versions_migration.contains(STATE_VERSIONS_TABLE_PREFIX));
         assert_default_migration(create_state_versions_migration);
@@ -391,9 +479,11 @@ mod contract_state_migrations_get_migration_test {
     #[test]
     fn normalizes_user_primary_key_column_before_creating_state_versions_migrations() {
         let contract_state = TestStateWithPrimaryKey;
-        let mut migrations = contract_state.get_migrations();
-        migrations.pop();
-        let create_state_versions_migration = migrations.last().unwrap();
+        let migrations = contract_state.get_migrations();
+        let create_state_versions_migration = migrations
+            .iter()
+            .find(|m| m.contains("CREATE TABLE") && m.contains(STATE_VERSIONS_TABLE_PREFIX))
+            .unwrap();
 
         assert_eq!(
             create_state_versions_migration.matches("PRIMARY KEY").count(),
@@ -418,10 +508,11 @@ mod contract_state_migrations_get_migration_test {
     #[test]
     fn returns_other_migrations_untouched() {
         let contract_state = TestState;
+        let migrations = contract_state.get_migrations();
 
         assert_eq!(
             contract_state.migrations().last().unwrap(),
-            contract_state.get_migrations().last().unwrap()
+            migrations.last().unwrap()
         );
     }
 
@@ -430,7 +521,9 @@ mod contract_state_migrations_get_migration_test {
         let contract_state = TestState;
         let migrations = contract_state.get_migrations();
 
-        let unique_index_migration = migrations.get(2);
+        // Find the CREATE UNIQUE INDEX migration (it should be present somewhere in the list)
+        let unique_index_migration =
+            migrations.iter().find(|m| m.contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
 
         assert!(unique_index_migration.is_some());
         assert!(unique_index_migration.unwrap().contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
