@@ -50,6 +50,8 @@ jobs:
       - name: Setup Database
         run: cargo run -p chaindexing-tests
       - name: Run Tests
+        env:
+          SETUP_TEST_DB: 1
         run: cargo test
 
   clippy:

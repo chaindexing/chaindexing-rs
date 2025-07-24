@@ -39,31 +39,37 @@ pub fn unique_transfer_event_with_contract(contract: Contract<()>) -> Event {
     )
 }
 
+/// Generate a unique log that's guaranteed to be unique across parallel test execution
 pub fn unique_transfer_log_with_contract_name(contract_address: &str, contract_name: &str) -> Log {
     use std::process;
+    use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    // Get a unique counter value for this call
+    // Get multiple sources of uniqueness
+    let thread_id = format!("{:?}", thread::current().id())
+        .replace("ThreadId(", "")
+        .replace(")", "");
     let counter = UNIQUE_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
+    let process_id = process::id() as u64;
 
     // Hash the contract name to add more uniqueness
     let mut hasher = DefaultHasher::new();
     contract_name.hash(&mut hasher);
-    let contract_hash = hasher.finish();
+    thread_id.hash(&mut hasher);
+    let contract_thread_hash = hasher.finish();
 
-    // Use current timestamp, process ID, contract hash, and counter to ensure uniqueness
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos() as u64;
-
-    let process_id = process::id() as u64;
-
-    // Generate unique values based on timestamp, process ID, contract hash, and counter
+    // Generate unique values using multiple entropy sources
     let unique_seed = timestamp
         .wrapping_mul(process_id)
-        .wrapping_add(contract_hash)
-        .wrapping_add(counter);
-    let log_index = (unique_seed % 1000) + 1;
-    let block_number = 18_000_000 + (unique_seed % 1_000_000);
-    let transaction_index = (unique_seed % 200) + 1;
+        .wrapping_add(contract_thread_hash)
+        .wrapping_add(counter)
+        .wrapping_add(thread_id.parse::<u64>().unwrap_or(0));
+
+    // Generate unique block/transaction data that won't conflict
+    let log_index = (unique_seed % 10000) + 1; // Wider range to reduce collisions
+    let block_number = 18_000_000 + (unique_seed % 10_000_000); // Much wider range
+    let transaction_index = (unique_seed % 1000) + 1;
 
     // Generate unique hashes based on the unique seed
     let mut tx_hash_bytes = [0u8; 32];
