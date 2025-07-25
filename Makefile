@@ -37,13 +37,17 @@ lint:
 	cargo machete
 
 publish:
+	cargo publish -p chaindexing-macros
 	cargo publish -p chaindexing
 
 publish.dry:
-	make publish -- --dry-run
+	cargo publish -p chaindexing-macros --dry-run
+	cargo publish -p chaindexing --dry-run
 
 publish.dirty:
+	cargo publish -p chaindexing-macros --allow-dirty
 	cargo publish -p chaindexing --allow-dirty
 
 publish.dirty.dry:
+	cargo publish -p chaindexing-macros --allow-dirty --dry-run
 	cargo publish -p chaindexing --allow-dirty --dry-run
