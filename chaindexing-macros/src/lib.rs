@@ -1,11 +1,11 @@
 //! # Chaindexing Macros
-//! 
+//!
 //! This crate provides procedural macros for the Chaindexing library.
-//! 
+//!
 //! **Note**: These macros are re-exported by the main `chaindexing` crate.
 //! Users should import them from `chaindexing` instead of depending on this crate directly:
-//! 
-//! ```rust
+//!
+//! ```text
 //! use chaindexing::state_migrations;
 //! // or
 //! use chaindexing::prelude::*;
