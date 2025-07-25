@@ -1,8 +1,13 @@
 [package]
 name = "chaindexing-macros"
-version = "0.1.0"
+version = "0.1.80"
+authors = ["Chaindexing Contributors <chaindexing@gmail.com>"]
 edition = "2021"
 description = "Procedural macros for Chaindexing"
+license = "MIT OR Apache-2.0"
+readme = "../README.md"
+repository = "https://github.com/chaindexing/chaindexing-rs"
+keywords = ["macros", "sql", "validation", "ethereum", "chaindexing"]
 
 [lib]
 proc-macro = true

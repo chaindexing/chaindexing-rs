@@ -44,5 +44,5 @@ uuid = { version = "1", features = ["v4", "serde"] }
 futures-core = { version = "0.3", features = ["alloc"] }
 futures-util = "0.3"
 sqlparser = "0.58"
-chaindexing-macros = { path = "../chaindexing-macros" }
+chaindexing-macros = { path = "../chaindexing-macros", version = "0.1.80" }
 once_cell = { version = "1.19", optional = true }
