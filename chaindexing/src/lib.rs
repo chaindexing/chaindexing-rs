@@ -24,6 +24,9 @@ mod root;
 /// Augmenting modules for standard library to support Chaindexing's operations
 pub mod augmenting_std;
 
+#[cfg(feature = "live-states")]
+pub mod state_bus;
+
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
 pub use contracts::{Contract, ContractAddress, EventAbi};
@@ -47,6 +50,22 @@ pub type Address = ethers::types::Address;
 pub type Bytes = Vec<u8>;
 #[cfg(feature = "postgres")]
 pub use repos::PostgresRepo;
+
+#[cfg(feature = "live-states")]
+pub use state_bus::subscribe as subscribe_state_changes;
+
+use serde::Serialize;
+use std::collections::HashMap;
+
+/// Represents a state change that occurred during indexing
+#[derive(Clone, Debug, Serialize)]
+pub struct StateChange {
+    pub table: String,
+    pub op: String, // "upsert" | "delete"
+    pub state: HashMap<String, String>,
+    pub block: i64,
+    pub chain_id: i64,
+}
 
 #[doc(hidden)]
 pub mod booting;

@@ -55,11 +55,43 @@ impl StateView {
 
         if StateVersion::was_deleted(latest_state_version) {
             Self::delete(&state_version_group_id, table_name, client).await;
+
+            // Publish delete state change
+            #[cfg(feature = "live-states")]
+            crate::state_bus::publish(crate::StateChange {
+                table: table_name.to_string(),
+                op: "delete".to_string(),
+                state: HashMap::new(), // Empty for delete
+                block: latest_state_version
+                    .get("block_number")
+                    .and_then(|b| b.parse().ok())
+                    .unwrap_or(0),
+                chain_id: latest_state_version
+                    .get("chain_id")
+                    .and_then(|c| c.parse().ok())
+                    .unwrap_or(0),
+            });
         } else {
             let new_state_view = Self::from_latest_state_version(latest_state_version);
 
             Self::delete(&state_version_group_id, table_name, client).await;
             Self::create(&new_state_view, table_name, client).await;
+
+            // Publish upsert state change
+            #[cfg(feature = "live-states")]
+            crate::state_bus::publish(crate::StateChange {
+                table: table_name.to_string(),
+                op: "upsert".to_string(),
+                state: new_state_view.clone(),
+                block: latest_state_version
+                    .get("block_number")
+                    .and_then(|b| b.parse().ok())
+                    .unwrap_or(0),
+                chain_id: latest_state_version
+                    .get("chain_id")
+                    .and_then(|c| c.parse().ok())
+                    .unwrap_or(0),
+            });
         }
     }
 
@@ -72,11 +104,43 @@ impl StateView {
 
         if StateVersion::was_deleted(latest_state_version) {
             Self::delete_without_txn(&state_version_group_id, table_name, client).await;
+
+            // Publish delete state change
+            #[cfg(feature = "live-states")]
+            crate::state_bus::publish(crate::StateChange {
+                table: table_name.to_string(),
+                op: "delete".to_string(),
+                state: HashMap::new(), // Empty for delete
+                block: latest_state_version
+                    .get("block_number")
+                    .and_then(|b| b.parse().ok())
+                    .unwrap_or(0),
+                chain_id: latest_state_version
+                    .get("chain_id")
+                    .and_then(|c| c.parse().ok())
+                    .unwrap_or(0),
+            });
         } else {
             let new_state_view = Self::from_latest_state_version(latest_state_version);
 
             Self::delete_without_txn(&state_version_group_id, table_name, client).await;
             Self::create_without_txn(&new_state_view, table_name, client).await;
+
+            // Publish upsert state change
+            #[cfg(feature = "live-states")]
+            crate::state_bus::publish(crate::StateChange {
+                table: table_name.to_string(),
+                op: "upsert".to_string(),
+                state: new_state_view.clone(),
+                block: latest_state_version
+                    .get("block_number")
+                    .and_then(|b| b.parse().ok())
+                    .unwrap_or(0),
+                chain_id: latest_state_version
+                    .get("chain_id")
+                    .and_then(|c| c.parse().ok())
+                    .unwrap_or(0),
+            });
         }
     }
 

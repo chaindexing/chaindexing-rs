@@ -18,6 +18,7 @@ repository = "https://github.com/chaindexing/chaindexing-rs"
 [features]
 default = ["postgres"]
 postgres = ["tokio-postgres"]
+live-states = ["tokio/sync", "once_cell"]
 
 [dependencies]
 async-trait = "0.1"
@@ -44,3 +45,4 @@ futures-core = { version = "0.3", features = ["alloc"] }
 futures-util = "0.3"
 sqlparser = "0.58"
 chaindexing-macros = { path = "../chaindexing-macros" }
+once_cell = { version = "1.19", optional = true }

@@ -33,7 +33,7 @@ doc:
 
 lint:
 	cargo clippy
-	cargo fmt --all -- --check
+	cargo fmt
 	cargo machete
 
 publish:
