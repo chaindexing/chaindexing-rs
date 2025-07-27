@@ -140,6 +140,11 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client: &Self::RawQueryTxnClient<'a>,
         reorged_block_ids: &[i32],
     ) {
+        // Skip the query if there are no IDs to update
+        if reorged_block_ids.is_empty() {
+            return;
+        }
+
         let query = format!(
             "UPDATE chaindexing_reorged_blocks
             SET handled_at = '{handled_at}'

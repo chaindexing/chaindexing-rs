@@ -118,7 +118,7 @@ fn get_remaining_state_versions_migration() -> String {
 }
 
 fn get_remaining_state_views_migration() -> String {
-    format!("{})", DefaultMigration::get())
+    DefaultMigration::get()
 }
 
 fn set_state_versions_table_name(migration: &str) -> String {
