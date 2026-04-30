@@ -30,7 +30,7 @@ diesel = { version = "2", features = [
     "chrono",
     "serde_json",
 ] }
-diesel-async = { version = "0.6", features = ["bb8", "postgres"] }
+diesel-async = { version = "0.9", features = ["bb8", "postgres"] }
 pin-project-lite = "0.2.14"
 ethers = "2.0"
 serde = { version = "1.0", features = ["derive"] }
