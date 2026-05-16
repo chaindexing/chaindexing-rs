@@ -6,7 +6,7 @@ use crate::chain_reorg::UnsavedReorgedBlock;
 use crate::chain_blocks::{self, ChainBlock, ConflictingBlock};
 use crate::checkpoints::{self, CheckpointKind};
 use crate::{contracts::ContractAddress, events::Event, nodes::Node, ChainId};
-use diesel::sql_query;
+use diesel::{sql_query, QueryableByName};
 use diesel_async::RunQueryDsl;
 
 use diesel::{
@@ -48,6 +48,12 @@ pub struct PostgresRepo {
 }
 
 type PgPooledConn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
+
+#[derive(QueryableByName)]
+struct AdvisoryLock {
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    acquired: bool,
+}
 
 impl PostgresRepo {
     pub fn new(url: &str) -> Self {
@@ -101,6 +107,19 @@ impl PostgresRepo {
         }
 
         conflict.map(|block| block.block_number)
+    }
+
+    pub(crate) async fn try_advisory_lock<'a>(conn: &mut Conn<'a>, lock_id: i64) -> bool {
+        sql_query(format!(
+            "SELECT pg_try_advisory_lock({lock_id}) AS acquired"
+        ))
+        .load::<AdvisoryLock>(conn)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .map(|lock| lock.acquired)
+        .unwrap_or(false)
     }
 }
 

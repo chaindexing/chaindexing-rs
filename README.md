@@ -82,6 +82,7 @@ Chaindexing's Postgres backend is being hardened around these guarantees:
 - Handler state is deterministic and replayable from persisted events.
 - Reorg repair is bounded by the configured confirmation depth and now records canonical block hashes for detected event-bearing blocks.
 - Ingestion and handler checkpoints are stored durably in Postgres and written transactionally with cursor updates.
+- Multi-node leader election uses a Postgres advisory lock by default.
 - Empty event batches are safe to retry.
 - Direct side-effect handlers are supported for compatibility; durable external side effects should be written to `chaindexing_outbox` with `SideEffectContext::enqueue_outbox`.
 

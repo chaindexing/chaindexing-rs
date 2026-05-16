@@ -3,7 +3,7 @@ use crate::OptimizationConfig;
 use chrono::Utc;
 use std::fmt::Debug;
 
-use super::node::{self, Node};
+use super::node::Node;
 use super::node_tasks_runner::NodeTasksRunner;
 use super::NodeTask;
 
@@ -44,15 +44,13 @@ impl<'a> NodeTasks<'a> {
         }
     }
 
-    pub async fn orchestrate(
+    pub async fn orchestrate_with_leadership(
         &mut self,
+        is_leader: bool,
         optimization_config: &Option<OptimizationConfig>,
-        active_nodes: &[Node],
         tasks_runner: &impl NodeTasksRunner,
     ) {
-        let leader_node = node::elect_leader(active_nodes);
-
-        if self.current_node.is_leader(leader_node) {
+        if is_leader {
             match self.state {
                 NodeTasksState::Idle | NodeTasksState::Aborted => {
                     self.make_active(tasks_runner).await;

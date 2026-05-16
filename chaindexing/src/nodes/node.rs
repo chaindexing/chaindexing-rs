@@ -24,16 +24,3 @@ impl Node {
         self.id == leader.id
     }
 }
-
-pub fn elect_leader(nodes: &[Node]) -> &Node {
-    let mut nodes_iter = nodes.iter();
-    let mut leader: Option<&Node> = nodes_iter.next();
-
-    for node in nodes_iter {
-        if node.inserted_at > leader.unwrap().inserted_at {
-            leader = Some(node);
-        }
-    }
-
-    leader.unwrap()
-}

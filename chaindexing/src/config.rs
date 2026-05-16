@@ -10,6 +10,8 @@ use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
 use crate::{ChaindexingRepo, Contract};
 
+const DEFAULT_LEADER_LOCK_ID: i64 = 8_841_337_001;
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum ConfigError {
     NoContract,
@@ -106,6 +108,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub max_concurrent_node_count: u16,
     pub optimization_config: Option<OptimizationConfig>,
     pub(crate) pruning_config: Option<PruningConfig>,
+    pub(crate) leader_lock_id: i64,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -127,6 +130,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             max_concurrent_node_count: nodes::DEFAULT_MAX_CONCURRENT_NODE_COUNT,
             optimization_config: None,
             pruning_config: None,
+            leader_lock_id: DEFAULT_LEADER_LOCK_ID,
         }
     }
 
@@ -220,6 +224,13 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
     pub fn with_max_concurrent_node_count(mut self, max_concurrent_node_count: u16) -> Self {
         self.max_concurrent_node_count = max_concurrent_node_count;
+
+        self
+    }
+
+    /// Sets the Postgres advisory lock id used for leader election.
+    pub fn with_leader_lock_id(mut self, leader_lock_id: i64) -> Self {
+        self.leader_lock_id = leader_lock_id;
 
         self
     }

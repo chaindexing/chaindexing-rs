@@ -82,6 +82,13 @@ impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
         }
     }
 
+    /// Sets the Postgres advisory lock id used for leader election.
+    pub fn leader_lock_id(self, leader_lock_id: i64) -> Self {
+        Self {
+            config: self.config.with_leader_lock_id(leader_lock_id),
+        }
+    }
+
     /// Provides shared state for side-effect handlers.
     pub fn initial_state(self, initial_state: SharedState) -> Self {
         Self {

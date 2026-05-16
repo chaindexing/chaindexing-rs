@@ -160,13 +160,12 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
         loop {
             // Keep node active first to guarantee that at least this node is active before election
             ChaindexingRepo::keep_node_active(conn, &current_node).await;
-            let active_nodes =
-                ChaindexingRepo::get_active_nodes(conn, config.get_node_election_rate_ms()).await;
+            let is_leader = ChaindexingRepo::try_advisory_lock(conn, config.leader_lock_id).await;
 
             node_tasks
-                .orchestrate(
+                .orchestrate_with_leadership(
+                    is_leader,
                     &config.optimization_config,
-                    &active_nodes,
                     &get_tasks_runner(&config),
                 )
                 .await;
