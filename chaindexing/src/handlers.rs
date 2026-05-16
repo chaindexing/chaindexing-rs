@@ -28,6 +28,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
             "handler-supervisor",
             tokio::spawn({
                 let node_task = node_task.clone();
+                let cancellation_token = node_task.cancellation_token();
 
                 // MultiChainStates are indexed in an order-agnostic fashion, so no need for txn client
                 let repo_client_for_mcs = Arc::new(Mutex::new(config.repo.get_client().await));
@@ -39,6 +40,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                         let config = config.clone();
                         let repo_client_for_mcs = repo_client_for_mcs.clone();
                         let deferred_mutations_for_mcs = deferred_mutations_for_mcs.clone();
+                        let cancellation_token = cancellation_token.clone();
 
                         node_task
                             .clone()
@@ -56,6 +58,10 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                         contracts::get_side_effect_handlers(&config.contracts);
 
                                     loop {
+                                        if cancellation_token.is_cancelled() {
+                                            break;
+                                        }
+
                                         handle_events::run(
                                             &pure_handlers,
                                             &side_effect_handlers,
@@ -66,7 +72,10 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                         )
                                         .await;
 
-                                        interval.tick().await;
+                                        tokio::select! {
+                                            _ = interval.tick() => {}
+                                            _ = cancellation_token.cancelled() => break,
+                                        }
                                     }
                                 }),
                             )
@@ -81,11 +90,18 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                     let mut interval = interval(Duration::from_millis(2 * config.handler_rate_ms));
 
                     loop {
+                        if cancellation_token.is_cancelled() {
+                            break;
+                        }
+
                         maybe_handle_chain_reorg::run(&mut repo_client, &state_table_names).await;
 
                         deferred_mutations_for_mcs.consume().await;
 
-                        interval.tick().await;
+                        tokio::select! {
+                            _ = interval.tick() => {}
+                            _ = cancellation_token.cancelled() => break,
+                        }
                     }
                 }
             }),

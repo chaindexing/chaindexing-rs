@@ -35,6 +35,7 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
 
     for (index, chains) in get_chunked_chains(config).into_iter().enumerate() {
         let config = config.clone();
+        let cancellation_token = node_task.cancellation_token();
 
         node_task
             .add_named_subtask(
@@ -44,7 +45,15 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                     let mut last_pruned_at_per_chain_id = HashMap::new();
 
                     loop {
+                        if cancellation_token.is_cancelled() {
+                            break;
+                        }
+
                         for chain in chains.iter() {
+                            if cancellation_token.is_cancelled() {
+                                break;
+                            }
+
                             let provider = provider::get(&chain.json_rpc_url);
                             let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
                             let pool = config.repo.get_pool(1).await;
@@ -63,7 +72,10 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                             .unwrap();
                         }
 
-                        interval.tick().await;
+                        tokio::select! {
+                            _ = interval.tick() => {}
+                            _ = cancellation_token.cancelled() => break,
+                        }
                     }
                 }),
             )

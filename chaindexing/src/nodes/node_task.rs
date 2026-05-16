@@ -1,14 +1,57 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Duration;
+use tokio::sync::{Mutex, Notify};
 
 #[derive(Clone)]
 pub struct NodeTask {
     subtasks: Arc<Mutex<Vec<NodeSubtask>>>,
+    cancellation_token: CancellationToken,
 }
 
 struct NodeSubtask {
     name: String,
     handle: tokio::task::JoinHandle<()>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CancellationToken {
+    is_cancelled: Arc<AtomicBool>,
+    notify: Arc<Notify>,
+}
+
+impl Default for CancellationToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self {
+            is_cancelled: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(Notify::new()),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.is_cancelled.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.is_cancelled.load(Ordering::SeqCst)
+    }
+
+    pub async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+
+        self.notify.notified().await;
+    }
 }
 
 impl std::fmt::Debug for NodeTask {
@@ -29,8 +72,14 @@ impl NodeTask {
     pub fn new() -> Self {
         NodeTask {
             subtasks: Arc::new(Mutex::new(Vec::new())),
+            cancellation_token: CancellationToken::new(),
         }
     }
+
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.clone()
+    }
+
     pub async fn add_subtask(&self, task: tokio::task::JoinHandle<()>) {
         self.add_named_subtask("unnamed", task).await;
     }
@@ -49,12 +98,10 @@ impl NodeTask {
 
     pub async fn stop(&self) {
         let mut subtasks = self.subtasks.lock().await;
-        for subtask in subtasks.iter() {
-            subtask.handle.abort();
-        }
+        self.cancellation_token.cancel();
 
         while let Some(subtask) = subtasks.pop() {
-            let _ = subtask.handle.await;
+            await_or_abort(subtask.handle).await;
         }
     }
 
@@ -80,6 +127,13 @@ impl NodeTask {
         }
 
         errors
+    }
+}
+
+async fn await_or_abort(mut handle: tokio::task::JoinHandle<()>) {
+    if tokio::time::timeout(Duration::from_millis(500), &mut handle).await.is_err() {
+        handle.abort();
+        let _ = handle.await;
     }
 }
 
@@ -118,5 +172,27 @@ mod tests {
         node_task.stop().await;
 
         assert!(node_task.collect_errors().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stop_requests_cooperative_cancellation() {
+        let node_task = NodeTask::new();
+        let token = node_task.cancellation_token();
+        let observed_cancel = Arc::new(AtomicBool::new(false));
+        let observed_cancel_for_task = observed_cancel.clone();
+
+        node_task
+            .add_named_subtask(
+                "cooperative-task",
+                tokio::spawn(async move {
+                    token.cancelled().await;
+                    observed_cancel_for_task.store(true, Ordering::SeqCst);
+                }),
+            )
+            .await;
+
+        node_task.stop().await;
+
+        assert!(observed_cancel.load(Ordering::SeqCst));
     }
 }
