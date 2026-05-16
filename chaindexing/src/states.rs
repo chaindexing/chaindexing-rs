@@ -114,7 +114,7 @@ pub(crate) fn to_columns_and_values(state: &HashMap<String, String>) -> (Vec<Str
         (vec![], vec![]),
         |(mut columns, mut values), (column, value)| {
             columns.push(column.to_string());
-            values.push(format!("'{value}'"));
+            values.push(to_sql_string_literal(value));
 
             (columns, values)
         },
@@ -127,7 +127,7 @@ pub(crate) fn to_and_filters(
     let filters = state.iter().fold(vec![], |mut filters, (column, value)| {
         let column = column.to_string();
         let value = value.to_string();
-        filters.push(format!("{column} = '{value}'"));
+        filters.push(format!("{column} = {}", to_sql_string_literal(&value)));
 
         filters
     });
@@ -149,4 +149,8 @@ pub(crate) fn serde_map_to_string_map(
 
         map
     })
+}
+
+fn to_sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }

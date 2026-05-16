@@ -54,6 +54,8 @@ impl PartialEq for Event {
             && self.contract_address == other.contract_address
             && self.abi == other.abi
             && self.block_hash == other.block_hash
+            && self.transaction_hash == other.transaction_hash
+            && self.log_index == other.log_index
     }
 }
 
@@ -63,6 +65,8 @@ impl Hash for Event {
         self.contract_address.hash(state);
         self.abi.hash(state);
         self.block_hash.hash(state);
+        self.transaction_hash.hash(state);
+        self.log_index.hash(state);
     }
 }
 
@@ -321,6 +325,8 @@ mod utils {
 
 #[cfg(test)]
 mod event_param_tests {
+    use std::collections::HashSet;
+
     use ethers::types::I256;
     use serde_json::json;
 
@@ -345,5 +351,40 @@ mod event_param_tests {
             event_param.get_int("amount0"),
             I256::from_dec_str("-26311681626831253271").unwrap()
         );
+    }
+
+    fn event_with_identity(transaction_hash: &str, log_index: i32) -> Event {
+        Event {
+            id: uuid::Uuid::new_v4(),
+            chain_id: 1,
+            contract_address: "0x0000000000000000000000000000000000000001".to_string(),
+            contract_name: "ERC721".to_string(),
+            abi:
+                "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+                    .to_string(),
+            parameters: serde_json::Value::Null,
+            topics: serde_json::Value::Null,
+            block_hash: "0xblock".to_string(),
+            block_number: 10,
+            block_timestamp: 100,
+            transaction_hash: transaction_hash.to_string(),
+            transaction_index: 1,
+            log_index,
+            removed: false,
+        }
+    }
+
+    #[test]
+    fn event_identity_distinguishes_events_in_same_block() {
+        let first_event = event_with_identity("0xtx1", 0);
+        let second_event = event_with_identity("0xtx2", 1);
+
+        assert_ne!(first_event, second_event);
+
+        let mut events = HashSet::new();
+        events.insert(first_event);
+        events.insert(second_event);
+
+        assert_eq!(events.len(), 2);
     }
 }

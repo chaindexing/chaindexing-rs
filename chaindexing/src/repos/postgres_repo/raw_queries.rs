@@ -45,6 +45,10 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client: &Self::RawQueryClient,
         contract_addresses: &[UnsavedContractAddress],
     ) {
+        if contract_addresses.is_empty() {
+            return;
+        }
+
         let contract_addresses_values = contract_addresses
             .iter()
             .map(
@@ -243,7 +247,7 @@ impl LoadsDataWithRawQuery for PostgresRepo {
             "SELECT * from chaindexing_events
             WHERE chain_id = {chain_id} AND contract_address= '{contract_address}'
             AND block_number >= {from_block_number} 
-            ORDER BY block_number ASC, log_index ASC
+            ORDER BY block_number ASC, transaction_index ASC, log_index ASC
             LIMIT {limit}",
         );
 
@@ -254,6 +258,10 @@ impl LoadsDataWithRawQuery for PostgresRepo {
         client: &Self::RawQueryClient,
         addresses: &[String],
     ) -> Vec<PartialEvent> {
+        if addresses.is_empty() {
+            return vec![];
+        }
+
         let query = format!(
             "WITH EventsWithRowNumbers AS (
                 SELECT

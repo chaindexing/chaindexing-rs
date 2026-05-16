@@ -72,6 +72,6 @@ pub trait ChainState: DeserializeOwned + Serialize + Clone + Debug + Sync + Send
     ) -> HashMap<String, String> {
         let mut state_view = self.to_view();
         state_view.insert("chain_id".to_string(), event.chain_id.to_string());
-        StateView::get_complete(&self.to_view(), table_name, client).await
+        StateView::get_complete(&state_view, table_name, client).await
     }
 }

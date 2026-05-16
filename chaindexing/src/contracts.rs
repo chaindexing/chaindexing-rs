@@ -109,7 +109,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
 
     pub(crate) fn get_event_abis(&self) -> Vec<EventAbi> {
         let mut event_abis: Vec<_> = self.pure_handlers.clone().into_keys().collect();
-        let side_effect_abis: Vec<_> = self.pure_handlers.clone().into_keys().collect();
+        let side_effect_abis: Vec<_> = self.side_effect_handlers.clone().into_keys().collect();
 
         event_abis.extend(side_effect_abis);
         event_abis.dedup();
@@ -126,6 +126,41 @@ impl<S: Send + Sync + Clone> Contract<S> {
 
     pub(crate) fn build_events(&self) -> Vec<ContractEvent> {
         self.get_event_abis().iter().map(|abi| ContractEvent::new(abi)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handlers::SideEffectHandlerContext;
+
+    const TRANSFER_ABI: &str =
+        "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)";
+
+    struct TransferSideEffectHandler;
+
+    #[crate::augmenting_std::async_trait]
+    impl SideEffectHandler for TransferSideEffectHandler {
+        type SharedState = ();
+
+        fn abi(&self) -> &'static str {
+            TRANSFER_ABI
+        }
+
+        async fn handle_event<'a>(
+            &self,
+            _context: SideEffectHandlerContext<'a, Self::SharedState>,
+        ) {
+        }
+    }
+
+    #[test]
+    fn includes_side_effect_only_event_abis() {
+        let contract =
+            Contract::<()>::new("ERC721").add_side_effect_handler(TransferSideEffectHandler);
+
+        assert_eq!(contract.get_event_abis(), vec![TRANSFER_ABI]);
+        assert_eq!(contract.get_event_topics().len(), 1);
     }
 }
 

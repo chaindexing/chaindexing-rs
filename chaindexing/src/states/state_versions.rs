@@ -55,6 +55,10 @@ impl StateVersions {
         state_table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
     ) {
+        if ids.is_empty() {
+            return;
+        }
+
         let query = format!(
             "DELETE FROM {table_name}
             WHERE state_version_id IN ({ids})",
@@ -70,10 +74,14 @@ impl StateVersions {
         state_table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
     ) -> Vec<HashMap<String, String>> {
+        if group_ids.is_empty() {
+            return vec![];
+        }
+
         let query = format!(
             "SELECT DISTINCT ON (state_version_group_id) * FROM {table_name} 
             WHERE state_version_group_id IN ({group_ids}) 
-            ORDER BY state_version_group_id, block_number, log_index DESC",
+            ORDER BY state_version_group_id, block_number DESC, transaction_index DESC, log_index DESC, state_version_id DESC",
             table_name = StateVersion::table_name(state_table_name),
             group_ids = group_ids.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",")
         );

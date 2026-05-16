@@ -85,8 +85,20 @@ impl Repo for PostgresRepo {
     async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
+        if events.is_empty() {
+            return;
+        }
+
         diesel::insert_into(chaindexing_events)
             .values(events)
+            .on_conflict((
+                chain_id,
+                contract_address,
+                block_hash,
+                transaction_hash,
+                log_index,
+            ))
+            .do_nothing()
             .execute(conn)
             .await
             .unwrap();

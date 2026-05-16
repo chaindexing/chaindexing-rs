@@ -178,10 +178,13 @@ pub trait RepoMigrations: Migratable {
     fn create_reorged_blocks_migration() -> &'static [&'static str];
     fn drop_reorged_blocks_migration() -> &'static [&'static str];
 
+    fn create_checkpoints_migration() -> &'static [&'static str];
+
     fn get_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
+            Self::create_checkpoints_migration(),
         ]
         .concat()
     }
@@ -274,6 +277,8 @@ impl SQLikeMigrations {
             ON chaindexing_events(chain_id,contract_address,block_number,log_index)",
             "CREATE INDEX IF NOT EXISTS chaindexing_events_abi
             ON chaindexing_events(abi)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_events_identity
+            ON chaindexing_events(chain_id,contract_address,block_hash,transaction_hash,log_index)",
         ]
     }
     pub fn drop_events() -> &'static [&'static str] {
@@ -291,5 +296,21 @@ impl SQLikeMigrations {
     }
     pub fn drop_reorged_blocks() -> &'static [&'static str] {
         &["DROP TABLE IF EXISTS chaindexing_reorged_blocks"]
+    }
+
+    pub fn create_checkpoints() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_checkpoints (
+                id BIGSERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                contract_address VARCHAR NOT NULL DEFAULT '',
+                handler_kind VARCHAR NOT NULL,
+                handler_id VARCHAR NOT NULL,
+                next_block_number BIGINT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_checkpoints_identity
+            ON chaindexing_checkpoints(chain_id, contract_address, handler_kind, handler_id)",
+        ]
     }
 }
