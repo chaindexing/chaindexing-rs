@@ -6,6 +6,42 @@ This plan is for making `chaindexing` drastically easier and safer for Rust apps
 
 > Give Chaindexing Postgres, RPC URLs, contracts, and Rust handlers; get resumable, idempotent, reorg-aware indexing with deterministic SQL state and production-grade operational visibility.
 
+## Execution Progress
+
+Completed and pushed on May 16, 2026:
+
+- `e95d854` docs: add rust improvement plan
+- `6ad257d` fix: harden event indexing foundations
+- `3aac64a` feat: dual-write progress checkpoints
+- `9ad625f` feat: track canonical block hashes
+- `548cddc` feat: add indexer builder api
+- `e09b955` feat: add durable outbox enqueue api
+- `f5cd57d` feat: surface worker task failures
+- `d191811` feat: track blocks across ingested ranges
+- `6037b65` feat: use advisory lock leadership
+- `3c5e27b` feat: add outbox dispatcher primitives
+- `d499aa2` feat: add app-side state reads
+
+Examples repository updates pushed:
+
+- `9c6935e` docs: use indexer builder in rust examples
+- `bc004f4` docs: demonstrate side effect outbox
+
+Verification run after major slices:
+
+- `cargo fmt`
+- `cargo test -p chaindexing --lib`
+- `cargo test --workspace --no-run`
+- `cargo check --workspace --config 'patch.crates-io.chaindexing.path="../../chaindexing-rs/chaindexing"'` in `chaindexing-examples/rust`
+
+Remaining hardening gaps:
+
+- Full fork-point search by walking parent hashes backward when the first conflicting block is not the true fork point.
+- Integration tests with a real Postgres instance for fresh install, upgrade, reorg replay, checkpoint rewind, and outbox dispatch.
+- Parameterized SQL cleanup for the remaining dynamic state/query paths.
+- Graceful cancellation tokens for long-running workers; current supervision records failures and aborts on stop.
+- More examples: reorg simulation, historical backfill, production deployment, and standalone outbox dispatcher.
+
 ## Guiding Principles
 
 - Preserve the current ergonomic handler model where possible.
