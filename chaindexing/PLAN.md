@@ -21,6 +21,12 @@ Completed and pushed on May 16, 2026:
 - `6037b65` feat: use advisory lock leadership
 - `3c5e27b` feat: add outbox dispatcher primitives
 - `d499aa2` feat: add app-side state reads
+- `06e93f3` docs: record execution progress
+- `ec8ad29` feat: search fork point within reorg window
+- `0d8fce8` feat: add cooperative worker cancellation
+- `380a750` fix: escape dynamic sql literals
+- `590550d` test: add optional postgres integration coverage
+- `7e4ac82` test: cover checkpoint compatibility
 
 Examples repository updates pushed:
 
@@ -36,10 +42,9 @@ Verification run after major slices:
 
 Remaining hardening gaps:
 
-- Full fork-point search by walking parent hashes backward when the first conflicting block is not the true fork point.
-- Integration tests with a real Postgres instance for fresh install, upgrade, reorg replay, checkpoint rewind, and outbox dispatch.
-- Parameterized SQL cleanup for the remaining dynamic state/query paths.
-- Graceful cancellation tokens for long-running workers; current supervision records failures and aborts on stop.
+- Real-Postgres tests now cover fresh install, event idempotency, checkpoint compatibility, and outbox dispatch. Upgrade, reorg replay, and full checkpoint rewind still need database-backed coverage.
+- Dynamic SQL paths now consistently escape string literals in the known user-controlled state/query paths. A deeper follow-up should replace the raw string builders with parameterized query APIs instead of controlled escaping.
+- Worker shutdown now uses cooperative cancellation tokens with abort fallback. Bounded retry/backoff policy and richer runtime health reporting remain.
 - More examples: reorg simulation, historical backfill, production deployment, and standalone outbox dispatcher.
 
 ## Guiding Principles
