@@ -1,13 +1,16 @@
 #[cfg(test)]
 mod postgres_integration {
     use std::env;
+    use std::sync::Arc;
 
     use chaindexing::{
         augmenting_std::serde::Deserialize, booting, dispatch_pending_outbox_jobs, ChainId,
         ChaindexingRepo, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery,
-        OutboxDispatchConfig, OutboxDispatcher, OutboxJob, Repo,
+        OutboxDispatchConfig, OutboxDispatcher, OutboxJob, Repo, UnsavedContractAddress,
     };
     use dotenvy::dotenv;
+    use futures_util::StreamExt;
+    use tokio::sync::Mutex;
 
     use crate::db;
     use crate::factory;
@@ -99,6 +102,95 @@ mod postgres_integration {
         .unwrap();
 
         assert_eq!(count.count, 1);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct CheckpointRow {
+        next_block_number: i64,
+    }
+
+    #[tokio::test]
+    async fn checkpoint_updates_dual_write_and_stream_reads_checkpoint_first() {
+        let Some((_database_url, mut repo_client)) = setup_postgres().await else {
+            eprintln!("skipping postgres integration test; TEST_DATABASE_URL is not set");
+            return;
+        };
+        let suffix = test_runner::generate_unique_test_suffix();
+        let contract_name = format!("integration-checkpoint-{suffix}");
+        let address = format!("0xcheckpoint{suffix}").to_lowercase();
+        let chain_id = ChainId::Mainnet;
+        let checkpoint_block_number = 44;
+        let stale_cursor_block_number = 11;
+
+        ChaindexingRepo::create_contract_addresses(
+            &repo_client,
+            &[UnsavedContractAddress::new(
+                &contract_name,
+                &address,
+                &chain_id,
+                10,
+            )],
+        )
+        .await;
+
+        let txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
+        ChaindexingRepo::update_next_block_number_to_handle_from(
+            &txn_client,
+            &address,
+            chain_id as u64,
+            checkpoint_block_number,
+        )
+        .await;
+        ChaindexingRepo::commit_txns(txn_client).await;
+
+        let checkpoint: CheckpointRow = ChaindexingRepo::load_data(
+            &repo_client,
+            &format!(
+                "SELECT next_block_number
+                 FROM chaindexing_checkpoints
+                 WHERE chain_id = {}
+                   AND contract_address = '{}'
+                   AND handler_kind = 'reducer'
+                   AND handler_id = 'default'",
+                chain_id as u64, address
+            ),
+        )
+        .await
+        .unwrap();
+        assert_eq!(checkpoint.next_block_number, checkpoint_block_number as i64);
+
+        ChaindexingRepo::execute(
+            &repo_client,
+            &format!(
+                "UPDATE chaindexing_contract_addresses
+                 SET next_block_number_to_handle_from = {stale_cursor_block_number}
+                 WHERE chain_id = {} AND address = '{}'",
+                chain_id as u64, address
+            ),
+        )
+        .await;
+
+        let shared_client = Arc::new(Mutex::new(repo_client));
+        let stream =
+            chaindexing::streams::ContractAddressesStream::new(&shared_client, chain_id as i64)
+                .with_chunk_size(1);
+        futures_util::pin_mut!(stream);
+
+        let mut streamed_contract = None;
+        while let Some(batch) = stream.next().await {
+            streamed_contract =
+                batch.into_iter().find(|contract_address| contract_address.address == address);
+
+            if streamed_contract.is_some() {
+                break;
+            }
+        }
+
+        let streamed_contract = streamed_contract.unwrap();
+        assert_eq!(
+            streamed_contract.next_block_number_to_handle_from,
+            checkpoint_block_number as i64
+        );
     }
 
     struct SuccessfulDispatcher;
