@@ -32,6 +32,9 @@ impl RepoMigrations for PostgresRepo {
     fn create_checkpoints_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_checkpoints()
     }
+    fn drop_checkpoints_migration() -> &'static [&'static str] {
+        SQLikeMigrations::drop_checkpoints()
+    }
 
     fn create_root_states_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_root_states()

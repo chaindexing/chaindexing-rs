@@ -14,6 +14,7 @@ use futures_util::FutureExt;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
+use crate::checkpoints;
 use crate::{ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery};
 
 type DataStream = Vec<ContractAddress>;
@@ -139,11 +140,10 @@ impl Stream for ContractAddressesStream {
                     let data_stream_future = async move {
                         let client = client.lock().await;
 
-                        let query = format!(
-                            "
-                        SELECT * FROM chaindexing_contract_addresses 
-                        WHERE chain_id = {chain_id_} AND id BETWEEN {from} AND {chunk_limit}
-                        "
+                        let query = checkpoints::contract_addresses_select_query(
+                            chain_id_,
+                            from,
+                            chunk_limit,
                         );
 
                         let addresses: Vec<ContractAddress> =

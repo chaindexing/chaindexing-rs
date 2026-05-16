@@ -12,6 +12,7 @@
 //! View working examples here: <https://github.com/chaindexing/chaindexing-examples/tree/main/rust>.
 mod chain_reorg;
 mod chains;
+mod checkpoints;
 mod config;
 mod contracts;
 mod diesel;

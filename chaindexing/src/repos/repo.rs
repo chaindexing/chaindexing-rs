@@ -179,6 +179,7 @@ pub trait RepoMigrations: Migratable {
     fn drop_reorged_blocks_migration() -> &'static [&'static str];
 
     fn create_checkpoints_migration() -> &'static [&'static str];
+    fn drop_checkpoints_migration() -> &'static [&'static str];
 
     fn get_internal_migrations() -> Vec<&'static str> {
         [
@@ -193,6 +194,7 @@ pub trait RepoMigrations: Migratable {
         [
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
+            Self::drop_checkpoints_migration(),
             Self::restart_ingest_and_handlers_next_block_numbers_migration(),
         ]
         .concat()
@@ -312,5 +314,9 @@ impl SQLikeMigrations {
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_checkpoints_identity
             ON chaindexing_checkpoints(chain_id, contract_address, handler_kind, handler_id)",
         ]
+    }
+
+    pub fn drop_checkpoints() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_checkpoints"]
     }
 }

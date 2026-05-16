@@ -1,6 +1,7 @@
 use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
 
 use crate::chain_reorg::ReorgedBlock;
+use crate::checkpoints::{self, CheckpointKind};
 use crate::events::PartialEvent;
 use crate::nodes::Node;
 use crate::{root, Event, UnsavedContractAddress};
@@ -109,6 +110,11 @@ impl ExecutesWithRawQuery for PostgresRepo {
         );
 
         Self::execute_in_txn(client, &query).await;
+        Self::execute_in_txn(
+            client,
+            &checkpoints::upsert_query(chain_id, address, CheckpointKind::Reducer, block_number),
+        )
+        .await;
     }
 
     async fn update_next_block_numbers_to_handle_from<'a>(
@@ -123,6 +129,15 @@ impl ExecutesWithRawQuery for PostgresRepo {
         );
 
         Self::execute_in_txn(client, &query).await;
+        Self::execute_in_txn(
+            client,
+            &checkpoints::upsert_all_for_chain_query(
+                chain_id,
+                CheckpointKind::Reducer,
+                block_number,
+            ),
+        )
+        .await;
     }
 
     async fn update_next_block_number_for_side_effects<'a>(
@@ -138,6 +153,11 @@ impl ExecutesWithRawQuery for PostgresRepo {
         );
 
         Self::execute_in_txn(client, &query).await;
+        Self::execute_in_txn(
+            client,
+            &checkpoints::upsert_query(chain_id, address, CheckpointKind::SideEffect, block_number),
+        )
+        .await;
     }
 
     async fn update_reorged_blocks_as_handled<'a>(

@@ -3,7 +3,9 @@ mod raw_queries;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
 
+use crate::checkpoints::{self, CheckpointKind};
 use crate::{contracts::ContractAddress, events::Event, nodes::Node};
+use diesel::sql_query;
 use diesel_async::RunQueryDsl;
 
 use diesel::{
@@ -142,6 +144,16 @@ impl Repo for PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
+
+        sql_query(checkpoints::upsert_query(
+            contract_address.chain_id as u64,
+            &contract_address.address,
+            CheckpointKind::Ingestion,
+            block_number as u64,
+        ))
+        .execute(conn)
+        .await
+        .unwrap();
     }
 
     async fn create_reorged_block<'a>(
