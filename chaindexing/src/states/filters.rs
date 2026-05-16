@@ -110,4 +110,8 @@ impl Filters {
 
         filters
     }
+
+    pub(super) fn values(&self) -> HashMap<String, String> {
+        self.values.clone()
+    }
 }

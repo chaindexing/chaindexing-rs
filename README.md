@@ -138,6 +138,23 @@ let dispatched = dispatch_pending_outbox_jobs(
 # }
 ```
 
+Application code can read indexed state directly from Postgres:
+
+```rust
+use chaindexing::states::{ContractState, Filters};
+use chaindexing::ChainId;
+
+# async fn read_nft() {
+let nft = Nft::read_one_from_postgres(
+    &std::env::var("DATABASE_URL").unwrap(),
+    &ChainId::Mainnet,
+    "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+    &Filters::new("token_id", 42),
+)
+.await;
+# }
+```
+
 ## Design Goals & Features
 
 - 💸&nbsp;Free forever<br/>

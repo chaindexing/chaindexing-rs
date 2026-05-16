@@ -36,6 +36,16 @@ pub trait MultiChainState:
         read_many(filters, context, Self::table_name()).await
     }
 
+    /// Returns a single state from Postgres outside a handler context.
+    async fn read_one_from_postgres(postgres_url: &str, filters: &Filters) -> Option<Self> {
+        Self::read_many_from_postgres(postgres_url, filters).await.first().cloned()
+    }
+
+    /// Returns states from Postgres outside a handler context.
+    async fn read_many_from_postgres(postgres_url: &str, filters: &Filters) -> Vec<Self> {
+        state::read_many_from_postgres(postgres_url, Self::table_name(), filters.values()).await
+    }
+
     /// Updates state with the specified updates
     async fn update<'a, 'b>(&self, updates: &Updates, context: &PureHandlerContext<'a, 'b>) {
         let event = context.event.clone();

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::handlers::{HandlerContext, PureHandlerContext};
-use crate::{ChaindexingRepoTxnClient, Event};
+use crate::{ChainId, ChaindexingRepoTxnClient, Event};
 
 use super::filters::Filters;
 use super::state;
@@ -34,6 +34,36 @@ pub trait ContractState:
     /// Returns states matching filters
     async fn read_many<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Vec<Self> {
         read_many(filters, context, Self::table_name()).await
+    }
+
+    /// Returns a single state from Postgres outside a handler context.
+    async fn read_one_from_postgres(
+        postgres_url: &str,
+        chain_id: &ChainId,
+        contract_address: &str,
+        filters: &Filters,
+    ) -> Option<Self> {
+        Self::read_many_from_postgres(postgres_url, chain_id, contract_address, filters)
+            .await
+            .first()
+            .cloned()
+    }
+
+    /// Returns states from Postgres outside a handler context.
+    async fn read_many_from_postgres(
+        postgres_url: &str,
+        chain_id: &ChainId,
+        contract_address: &str,
+        filters: &Filters,
+    ) -> Vec<Self> {
+        let mut filters = filters.values();
+        filters.insert("chain_id".to_string(), (*chain_id as i64).to_string());
+        filters.insert(
+            "contract_address".to_string(),
+            contract_address.to_lowercase(),
+        );
+
+        state::read_many_from_postgres(postgres_url, Self::table_name(), filters).await
     }
 
     /// Updates state with the specified updates
