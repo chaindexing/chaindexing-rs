@@ -184,12 +184,15 @@ pub trait RepoMigrations: Migratable {
     fn create_checkpoints_migration() -> &'static [&'static str];
     fn drop_checkpoints_migration() -> &'static [&'static str];
 
+    fn create_outbox_migration() -> &'static [&'static str];
+
     fn get_internal_migrations() -> Vec<&'static str> {
         [
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
             Self::create_blocks_migration(),
             Self::create_checkpoints_migration(),
+            Self::create_outbox_migration(),
         ]
         .concat()
     }
@@ -345,5 +348,29 @@ impl SQLikeMigrations {
 
     pub fn drop_checkpoints() -> &'static [&'static str] {
         &["DROP TABLE IF EXISTS chaindexing_checkpoints"]
+    }
+
+    pub fn create_outbox() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_outbox (
+                id BIGSERIAL PRIMARY KEY,
+                idempotency_key VARCHAR NOT NULL,
+                chain_id BIGINT NOT NULL,
+                contract_address VARCHAR NOT NULL,
+                event_id UUID NOT NULL,
+                handler_id VARCHAR NOT NULL,
+                payload JSONB NOT NULL,
+                status VARCHAR NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                next_attempt_at TIMESTAMPTZ,
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_outbox_idempotency_key
+            ON chaindexing_outbox(idempotency_key)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_outbox_status_next_attempt_at
+            ON chaindexing_outbox(status, next_attempt_at)",
+        ]
     }
 }

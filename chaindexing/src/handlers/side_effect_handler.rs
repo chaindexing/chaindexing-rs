@@ -4,7 +4,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::events::Event;
-use crate::{ChaindexingRepoTxnClient, EventParam};
+use crate::outbox::{OutboxReceipt, UnsavedOutboxJob};
+use crate::{ChaindexingRepo, ChaindexingRepoTxnClient, EventParam, ExecutesWithRawQuery};
 
 use super::handler_context::HandlerContext;
 
@@ -14,6 +15,9 @@ use super::handler_context::HandlerContext;
 /// that the side-effect handlers are called once immutably regardless of resets.
 /// However, one can dangerously reset including side effects with the `reset_including_side_effects`
 /// exposed in the Config API.
+///
+/// For stronger durability, prefer `SideEffectHandlerContext::enqueue_outbox` and dispatch
+/// external calls from the durable Postgres outbox.
 #[crate::augmenting_std::async_trait]
 pub trait SideEffectHandler: Send + Sync {
     type SharedState: Send + Sync + Clone + Debug;
@@ -55,6 +59,23 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
 
     pub fn get_event_params(&self) -> EventParam {
         self.event.get_params()
+    }
+
+    /// Enqueues a durable, idempotent outbox job for the current event.
+    ///
+    /// The idempotency key is derived from the handler id and canonical event identity, so
+    /// replaying the same event does not enqueue duplicate jobs.
+    pub async fn enqueue_outbox<Payload: serde::Serialize>(
+        &self,
+        handler_id: &str,
+        payload: &Payload,
+    ) -> OutboxReceipt {
+        let job = UnsavedOutboxJob::new(&self.event, handler_id, payload).unwrap();
+        let receipt = job.receipt();
+
+        ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await;
+
+        receipt
     }
 }
 

@@ -83,13 +83,34 @@ Chaindexing's Postgres backend is being hardened around these guarantees:
 - Reorg repair is bounded by the configured confirmation depth and now records canonical block hashes for detected event-bearing blocks.
 - Ingestion and handler checkpoints are stored durably in Postgres and written transactionally with cursor updates.
 - Empty event batches are safe to retry.
-- Direct side-effect handlers are supported for compatibility, but durable exactly-once external side effects require the planned outbox API.
+- Direct side-effect handlers are supported for compatibility; durable external side effects should be written to `chaindexing_outbox` with `SideEffectContext::enqueue_outbox`.
 
 Non-goals:
 
 - Chaindexing does not promise reorg safety beyond the configured confirmation window.
 - Chaindexing does not promise exactly-once network calls from direct side-effect handlers.
 - Postgres is the supported production backend while the core guarantees are being completed.
+
+Example side-effect outbox usage:
+
+```rust
+#[chaindexing::augmenting_std::async_trait]
+impl SideEffectHandler for TransferSideEffectHandler {
+    type SharedState = ();
+
+    fn abi(&self) -> &'static str {
+        "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+    }
+
+    async fn handle_event<'a>(&self, context: SideEffectContext<'a, Self::SharedState>) {
+        let token_id = context.get_event_params().get_u32("tokenId");
+
+        context
+            .enqueue_outbox("nft-transfer-notification", &format!("token {token_id} moved"))
+            .await;
+    }
+}
+```
 
 ## Design Goals & Features
 

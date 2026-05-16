@@ -43,6 +43,10 @@ impl RepoMigrations for PostgresRepo {
         SQLikeMigrations::drop_checkpoints()
     }
 
+    fn create_outbox_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_outbox()
+    }
+
     fn create_root_states_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_root_states()
     }
