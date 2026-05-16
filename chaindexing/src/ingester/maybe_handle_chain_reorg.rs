@@ -37,8 +37,13 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let already_ingested_events = get_already_ingested_events(conn, &filters).await;
-        let blocks_by_number =
-            provider::fetch_blocks_for_filters(provider, &filters, current_block_number).await;
+        let blocks_by_number = provider::fetch_blocks_for_filters(
+            provider,
+            &filters,
+            current_block_number,
+            min_confirmation_count.as_u64(),
+        )
+        .await;
         let logs = provider::fetch_logs(provider, &filters).await;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_number);
 

@@ -3,7 +3,7 @@ mod raw_queries;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
 
-use crate::chain_blocks::{self, ChainBlock, ConflictingBlock};
+use crate::chain_blocks::{self, CanonicalBlock, ChainBlock};
 use crate::checkpoints::{self, CheckpointKind};
 use crate::{contracts::ContractAddress, events::Event, nodes::Node, ChainId};
 use diesel::{sql_query, QueryableByName};
@@ -82,20 +82,16 @@ impl PostgresRepo {
         event_chain_id: &ChainId,
         blocks: &[ChainBlock],
     ) -> Option<i64> {
-        let conflict = match chain_blocks::earliest_conflicting_block_query(blocks) {
-            Some(query) => sql_query(query)
-                .load::<ConflictingBlock>(conn)
-                .await
-                .unwrap()
-                .into_iter()
-                .next(),
-            None => None,
+        let canonical_blocks = match chain_blocks::canonical_blocks_query(blocks) {
+            Some(query) => sql_query(query).load::<CanonicalBlock>(conn).await.unwrap(),
+            None => vec![],
         };
+        let fork_point = chain_blocks::find_fork_point(blocks, &canonical_blocks);
 
-        if let Some(conflicting_block) = &conflict {
+        if let Some(fork_point) = fork_point {
             sql_query(chain_blocks::mark_reorged_from_query(
                 *event_chain_id,
-                conflicting_block.block_number,
+                fork_point,
             ))
             .execute(conn)
             .await
@@ -106,7 +102,7 @@ impl PostgresRepo {
             sql_query(query).execute(conn).await.unwrap();
         }
 
-        conflict.map(|block| block.block_number)
+        fork_point
     }
 
     pub(crate) async fn try_advisory_lock<'a>(conn: &mut Conn<'a>, lock_id: i64) -> bool {

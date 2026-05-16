@@ -14,9 +14,11 @@ pub(crate) struct ChainBlock {
 }
 
 #[derive(Debug, QueryableByName)]
-pub(crate) struct ConflictingBlock {
+pub(crate) struct CanonicalBlock {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub block_number: i64,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub block_hash: String,
 }
 
 pub(crate) fn from_provider_blocks(
@@ -43,24 +45,68 @@ pub(crate) fn from_provider_blocks(
     blocks
 }
 
-pub(crate) fn earliest_conflicting_block_query(blocks: &[ChainBlock]) -> Option<String> {
+pub(crate) fn canonical_blocks_query(blocks: &[ChainBlock]) -> Option<String> {
     if blocks.is_empty() {
         return None;
     }
 
+    let chain_id = blocks[0].chain_id;
+    let block_numbers = blocks
+        .iter()
+        .map(|block| block.block_number.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
     Some(format!(
-        "WITH incoming(chain_id, block_number, block_hash, parent_hash, status) AS (VALUES {})
-         SELECT existing.block_number
-         FROM chaindexing_blocks existing
-         JOIN incoming
-           ON incoming.chain_id = existing.chain_id
-          AND incoming.block_number = existing.block_number
-         WHERE existing.status = 'canonical'
-           AND existing.block_hash <> incoming.block_hash
-         ORDER BY existing.block_number ASC
-         LIMIT 1",
-        values(blocks)
+        "SELECT block_number, block_hash::TEXT AS block_hash
+         FROM chaindexing_blocks
+         WHERE chain_id = {chain_id}
+           AND status = 'canonical'
+           AND block_number IN ({block_numbers})
+         ORDER BY block_number ASC"
     ))
+}
+
+pub(crate) fn find_fork_point(
+    incoming_blocks: &[ChainBlock],
+    canonical_blocks: &[CanonicalBlock],
+) -> Option<i64> {
+    let incoming_by_number: HashMap<_, _> =
+        incoming_blocks.iter().map(|block| (block.block_number, block)).collect();
+    let canonical_by_number: HashMap<_, _> = canonical_blocks
+        .iter()
+        .map(|block| (block.block_number, block.block_hash.as_str()))
+        .collect();
+
+    let mut fork_point = incoming_blocks
+        .iter()
+        .filter(|incoming_block| {
+            canonical_by_number
+                .get(&incoming_block.block_number)
+                .map(|canonical_hash| *canonical_hash != incoming_block.block_hash)
+                .unwrap_or(false)
+        })
+        .map(|block| block.block_number)
+        .min()?;
+
+    while let Some(incoming_block) = incoming_by_number.get(&fork_point) {
+        let parent_block_number = fork_point - 1;
+        let Some(canonical_parent_hash) = canonical_by_number.get(&parent_block_number) else {
+            break;
+        };
+
+        if *canonical_parent_hash == incoming_block.parent_hash {
+            break;
+        }
+
+        if incoming_by_number.contains_key(&parent_block_number) {
+            fork_point = parent_block_number;
+        } else {
+            break;
+        }
+    }
+
+    Some(fork_point)
 }
 
 pub(crate) fn mark_reorged_from_query(chain_id: ChainId, block_number: i64) -> String {
@@ -125,24 +171,118 @@ mod tests {
 
     #[test]
     fn returns_none_queries_for_empty_block_lists() {
-        assert_eq!(earliest_conflicting_block_query(&[]), None);
+        assert_eq!(canonical_blocks_query(&[]), None);
         assert_eq!(upsert_blocks_query(&[]), None);
     }
 
     #[test]
-    fn builds_conflict_query_for_canonical_blocks() {
-        let blocks = vec![ChainBlock {
+    fn builds_canonical_blocks_query() {
+        let blocks = vec![
+            ChainBlock {
+                chain_id: 1,
+                block_number: 10,
+                block_hash: "0xaaa".to_string(),
+                parent_hash: "0x999".to_string(),
+            },
+            ChainBlock {
+                chain_id: 1,
+                block_number: 11,
+                block_hash: "0xbbb".to_string(),
+                parent_hash: "0xaaa".to_string(),
+            },
+        ];
+
+        let query = canonical_blocks_query(&blocks).unwrap();
+
+        assert!(query.contains("chain_id = 1"));
+        assert!(query.contains("block_number IN (10,11)"));
+        assert!(query.contains("status = 'canonical'"));
+    }
+
+    #[test]
+    fn finds_first_conflicting_block_when_parent_matches() {
+        let incoming = vec![
+            ChainBlock {
+                chain_id: 1,
+                block_number: 10,
+                block_hash: "0xold10".to_string(),
+                parent_hash: "0xold9".to_string(),
+            },
+            ChainBlock {
+                chain_id: 1,
+                block_number: 11,
+                block_hash: "0xnew11".to_string(),
+                parent_hash: "0xold10".to_string(),
+            },
+        ];
+        let canonical = vec![
+            CanonicalBlock {
+                block_number: 10,
+                block_hash: "0xold10".to_string(),
+            },
+            CanonicalBlock {
+                block_number: 11,
+                block_hash: "0xold11".to_string(),
+            },
+        ];
+
+        assert_eq!(find_fork_point(&incoming, &canonical), Some(11));
+    }
+
+    #[test]
+    fn walks_back_to_true_fork_point_when_parent_mismatches() {
+        let incoming = vec![
+            ChainBlock {
+                chain_id: 1,
+                block_number: 9,
+                block_hash: "0xold9".to_string(),
+                parent_hash: "0xold8".to_string(),
+            },
+            ChainBlock {
+                chain_id: 1,
+                block_number: 10,
+                block_hash: "0xnew10".to_string(),
+                parent_hash: "0xold9".to_string(),
+            },
+            ChainBlock {
+                chain_id: 1,
+                block_number: 11,
+                block_hash: "0xnew11".to_string(),
+                parent_hash: "0xnew10".to_string(),
+            },
+        ];
+        let canonical = vec![
+            CanonicalBlock {
+                block_number: 9,
+                block_hash: "0xold9".to_string(),
+            },
+            CanonicalBlock {
+                block_number: 10,
+                block_hash: "0xold10".to_string(),
+            },
+            CanonicalBlock {
+                block_number: 11,
+                block_hash: "0xold11".to_string(),
+            },
+        ];
+
+        assert_eq!(find_fork_point(&incoming, &canonical), Some(10));
+    }
+
+    #[test]
+    fn returns_none_when_incoming_blocks_match_canonical_blocks() {
+        let incoming = vec![ChainBlock {
             chain_id: 1,
             block_number: 10,
-            block_hash: "0xabc".to_string(),
-            parent_hash: "0xdef".to_string(),
+            block_hash: "0xold10".to_string(),
+            parent_hash: "0xold9".to_string(),
+        }];
+        let canonical = vec![CanonicalBlock {
+            block_number: 10,
+            block_hash: "0xold10".to_string(),
         }];
 
-        let query = earliest_conflicting_block_query(&blocks).unwrap();
-
-        assert!(query.contains("(1, 10, '0xabc', '0xdef', 'canonical')"));
-        assert!(query.contains("existing.status = 'canonical'"));
-        assert!(query.contains("existing.block_hash <> incoming.block_hash"));
+        assert_eq!(find_fork_point(&incoming, &canonical), None);
     }
 
     #[test]

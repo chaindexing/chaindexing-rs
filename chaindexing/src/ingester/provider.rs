@@ -66,8 +66,10 @@ pub trait Provider: Clone + Sync + Send {
         &self,
         filters: &[Filter],
         current_block_number: u64,
+        lookback_block_count: u64,
     ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
-        let block_numbers = block_numbers_for_filters(filters, current_block_number);
+        let block_numbers =
+            block_numbers_for_filters(filters, current_block_number, lookback_block_count);
 
         self.get_blocks(&block_numbers).await
     }
@@ -140,12 +142,16 @@ pub async fn fetch_blocks_for_filters(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
     current_block_number: u64,
+    lookback_block_count: u64,
 ) -> HashMap<U64, Block<TxHash>> {
     let mut maybe_blocks_by_number = None;
     let mut retries_so_far = 0;
 
     while maybe_blocks_by_number.is_none() {
-        match provider.get_blocks_for_filters(filters, current_block_number).await {
+        match provider
+            .get_blocks_for_filters(filters, current_block_number, lookback_block_count)
+            .await
+        {
             Ok(blocks_by_tx_hash) => maybe_blocks_by_number = Some(blocks_by_tx_hash),
             Err(provider_error) => {
                 eprintln!("Provider Error: {provider_error}");
@@ -159,11 +165,20 @@ pub async fn fetch_blocks_for_filters(
     maybe_blocks_by_number.unwrap()
 }
 
-fn block_numbers_for_filters(filters: &[Filter], current_block_number: u64) -> Vec<U64> {
+fn block_numbers_for_filters(
+    filters: &[Filter],
+    current_block_number: u64,
+    lookback_block_count: u64,
+) -> Vec<U64> {
     filters
         .iter()
         .flat_map(|filter| {
-            let from = filter.value.get_from_block().unwrap().as_u64();
+            let from = filter
+                .value
+                .get_from_block()
+                .unwrap()
+                .as_u64()
+                .saturating_sub(lookback_block_count);
             let to = min(
                 filter.value.get_to_block().unwrap().as_u64(),
                 current_block_number,
@@ -205,8 +220,28 @@ mod tests {
         ];
 
         assert_eq!(
-            block_numbers_for_filters(&filters, 13),
+            block_numbers_for_filters(&filters, 13, 0),
             vec![U64::from(10), U64::from(11), U64::from(12), U64::from(13)]
+        );
+    }
+
+    #[test]
+    fn block_numbers_for_filters_includes_lookback_blocks() {
+        let filters = vec![Filter {
+            contract_address_id: 1,
+            address: "0x1".to_string(),
+            value: EthersFilter::new().from_block(10).to_block(12),
+        }];
+
+        assert_eq!(
+            block_numbers_for_filters(&filters, 12, 2),
+            vec![
+                U64::from(8),
+                U64::from(9),
+                U64::from(10),
+                U64::from(11),
+                U64::from(12)
+            ]
         );
     }
 }

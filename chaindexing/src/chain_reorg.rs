@@ -23,6 +23,10 @@ impl MinConfirmationCount {
         max(start_block_number, deduction as u64)
     }
 
+    pub(crate) fn as_u64(&self) -> u64 {
+        self.value as u64
+    }
+
     pub fn is_in_confirmation_window(
         &self,
         next_block_number: u64,

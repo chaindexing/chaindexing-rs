@@ -26,6 +26,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     Config {
         contracts,
         blocks_per_batch,
+        min_confirmation_count,
         ..
     }: &Config<S>,
 ) -> Result<(), IngesterError> {
@@ -40,8 +41,13 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     let filters = remove_already_ingested_filters(&filters, &contract_addresses, repo_client).await;
 
     if !filters.is_empty() {
-        let blocks_by_tx_hash =
-            provider::fetch_blocks_for_filters(provider, &filters, current_block_number).await;
+        let blocks_by_tx_hash = provider::fetch_blocks_for_filters(
+            provider,
+            &filters,
+            current_block_number,
+            min_confirmation_count.as_u64(),
+        )
+        .await;
         let logs = provider::fetch_logs(provider, &filters).await;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);
         let events = events::get(
