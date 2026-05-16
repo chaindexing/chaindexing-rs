@@ -1,4 +1,5 @@
 mod ingester;
+mod integration;
 mod repos;
 mod states;
 
