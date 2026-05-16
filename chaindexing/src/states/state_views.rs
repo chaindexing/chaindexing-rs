@@ -5,7 +5,9 @@ use crate::{ChaindexingRepo, ChaindexingRepoTxnClient};
 use crate::{ExecutesWithRawQuery, LoadsDataWithRawQuery};
 
 use super::state_versions::{StateVersion, StateVersions, STATE_VERSIONS_UNIQUE_FIELDS};
-use super::{serde_map_to_string_map, to_and_filters, to_columns_and_values};
+use super::{
+    serde_map_to_string_map, to_and_filters, to_columns_and_values, to_sql_string_literal,
+};
 
 pub struct StateViews;
 
@@ -114,7 +116,8 @@ impl StateView {
     }
     fn delete_query(state_version_group_id: &str, table_name: &str) -> String {
         format!(
-            "DELETE FROM {table_name} WHERE state_version_group_id = '{state_version_group_id}'",
+            "DELETE FROM {table_name} WHERE state_version_group_id = {state_version_group_id}",
+            state_version_group_id = to_sql_string_literal(state_version_group_id),
         )
     }
 
@@ -140,5 +143,17 @@ impl StateView {
             columns = columns.join(","),
             values = values.join(",")
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delete_query_escapes_state_version_group_id() {
+        let query = StateView::delete_query("group'1", "nfts");
+
+        assert!(query.contains("state_version_group_id = 'group''1'"));
     }
 }

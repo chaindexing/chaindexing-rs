@@ -5,7 +5,7 @@ use crate::{
 };
 use crate::{ChaindexingRepoClient, Event};
 
-use super::{serde_map_to_string_map, to_columns_and_values};
+use super::{serde_map_to_string_map, to_columns_and_values, to_sql_string_literal};
 
 pub const STATE_VERSIONS_TABLE_PREFIX: &str = "chaindexing_state_versions_for_";
 pub const STATE_VERSIONS_UNIQUE_FIELDS: [&str; 2] =
@@ -83,7 +83,7 @@ impl StateVersions {
             WHERE state_version_group_id IN ({group_ids}) 
             ORDER BY state_version_group_id, block_number DESC, transaction_index DESC, log_index DESC, state_version_id DESC",
             table_name = StateVersion::table_name(state_table_name),
-            group_ids = group_ids.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(",")
+            group_ids = join_sql_string_literals(group_ids)
         );
 
         ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(client, &query)
@@ -92,6 +92,14 @@ impl StateVersions {
             .map(serde_map_to_string_map)
             .collect()
     }
+}
+
+fn join_sql_string_literals(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|value| to_sql_string_literal(value))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub struct StateVersion;
@@ -238,5 +246,17 @@ impl StateVersion {
             ("block_number".to_string(), event.block_number.to_string()),
             ("block_hash".to_string(), event.block_hash.to_owned()),
         ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn joins_group_ids_as_escaped_sql_literals() {
+        let ids = vec!["group'1".to_string(), "group2".to_string()];
+
+        assert_eq!(join_sql_string_literals(&ids), "'group''1','group2'");
     }
 }

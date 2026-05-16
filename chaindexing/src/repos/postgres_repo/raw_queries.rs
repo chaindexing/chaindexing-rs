@@ -50,21 +50,7 @@ impl ExecutesWithRawQuery for PostgresRepo {
             return;
         }
 
-        let contract_addresses_values = contract_addresses
-            .iter()
-            .map(
-                |UnsavedContractAddress {
-                     address,
-                     chain_id,
-                     contract_name,
-                     start_block_number,
-                     ..
-                 }| {
-                    format!("('{address}', {chain_id}, '{contract_name}', {start_block_number}, {start_block_number}, {start_block_number})")
-                },
-            )
-            .collect::<Vec<_>>()
-            .join(",");
+        let contract_addresses_values = contract_address_values(contract_addresses);
 
         let query = format!("
             INSERT INTO chaindexing_contract_addresses 
@@ -81,15 +67,15 @@ impl ExecutesWithRawQuery for PostgresRepo {
         client: &Self::RawQueryTxnClient<'a>,
         contract_address: &UnsavedContractAddress,
     ) {
-        let address = &contract_address.address;
-        let contract_name = &contract_address.contract_name;
+        let address = sql_string_literal(&contract_address.address);
+        let contract_name = sql_string_literal(&contract_address.contract_name);
         let chain_id = contract_address.chain_id;
         let start_block_number = contract_address.start_block_number;
 
         let query = format!(
             "INSERT INTO chaindexing_contract_addresses 
             (address, chain_id, contract_name, next_block_number_to_handle_from, next_block_number_to_ingest_from, start_block_number)
-            VALUES ('{address}', {chain_id}, '{contract_name}', {start_block_number}, {start_block_number}, {start_block_number})
+            VALUES ({address}, {chain_id}, {contract_name}, {start_block_number}, {start_block_number}, {start_block_number})
             ON CONFLICT (chain_id, address)
             DO NOTHING"
         );
@@ -106,7 +92,8 @@ impl ExecutesWithRawQuery for PostgresRepo {
         let query = format!(
             "UPDATE chaindexing_contract_addresses
         SET next_block_number_to_handle_from = {block_number}
-        WHERE chain_id = {chain_id} AND address = '{address}'"
+        WHERE chain_id = {chain_id} AND address = {address}",
+            address = sql_string_literal(address),
         );
 
         Self::execute_in_txn(client, &query).await;
@@ -149,7 +136,8 @@ impl ExecutesWithRawQuery for PostgresRepo {
         let query = format!(
             "UPDATE chaindexing_contract_addresses
         SET next_block_number_for_side_effects = {block_number}
-        WHERE chain_id = {chain_id} AND address = '{address}'"
+        WHERE chain_id = {chain_id} AND address = {address}",
+            address = sql_string_literal(address),
         );
 
         Self::execute_in_txn(client, &query).await;
@@ -265,10 +253,11 @@ impl LoadsDataWithRawQuery for PostgresRepo {
     ) -> Vec<Event> {
         let query = format!(
             "SELECT * from chaindexing_events
-            WHERE chain_id = {chain_id} AND contract_address= '{contract_address}'
+            WHERE chain_id = {chain_id} AND contract_address= {contract_address}
             AND block_number >= {from_block_number} 
             ORDER BY block_number ASC, transaction_index ASC, log_index ASC
             LIMIT {limit}",
+            contract_address = sql_string_literal(contract_address),
         );
 
         Self::load_data_list(client, &query).await
@@ -381,5 +370,64 @@ fn join_numbers_with_comma(numbers: &[impl ToString]) -> String {
 }
 
 fn join_strings_with_comma(strings: &[String]) -> String {
-    strings.iter().map(|string| format!("'{string}'")).collect::<Vec<_>>().join(",")
+    strings
+        .iter()
+        .map(|string| sql_string_literal(string))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn contract_address_values(contract_addresses: &[UnsavedContractAddress]) -> String {
+    contract_addresses
+        .iter()
+        .map(
+            |UnsavedContractAddress {
+                 address,
+                 chain_id,
+                 contract_name,
+                 start_block_number,
+                 ..
+             }| {
+                format!(
+                    "({}, {chain_id}, {}, {start_block_number}, {start_block_number}, {start_block_number})",
+                    sql_string_literal(address),
+                    sql_string_literal(contract_name),
+                )
+            },
+        )
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ChainId;
+
+    #[test]
+    fn joins_strings_as_escaped_sql_literals() {
+        let values = vec!["owner's wallet".to_string(), "plain".to_string()];
+
+        assert_eq!(
+            join_strings_with_comma(&values),
+            "'owner''s wallet','plain'"
+        );
+    }
+
+    #[test]
+    fn contract_address_values_escapes_user_strings() {
+        let values = contract_address_values(&[UnsavedContractAddress::new(
+            "ERC'721",
+            "0xabc'def",
+            &ChainId::Mainnet,
+            10,
+        )]);
+
+        assert!(values.contains("'ERC''721'"));
+        assert!(values.contains("'0xabc''def'"));
+    }
 }

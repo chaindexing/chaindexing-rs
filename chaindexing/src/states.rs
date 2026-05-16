@@ -151,6 +151,6 @@ pub(crate) fn serde_map_to_string_map(
     })
 }
 
-fn to_sql_string_literal(value: &str) -> String {
+pub(crate) fn to_sql_string_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
