@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,18 +20,12 @@ pub trait Provider: Clone + Sync + Send {
     async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
 
     async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError>;
-    async fn get_blocks_by_number(
-        &self,
-        logs: &Vec<Log>,
-    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
-        let block_numbers: Vec<_> = logs
-            .iter()
-            .filter_map(|log| log.block_number)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
 
-        const CHUNK_SIZE: usize = 4;
+    async fn get_blocks(
+        &self,
+        block_numbers: &[U64],
+    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+        const CHUNK_SIZE: usize = 8;
         let chunked_block_numbers: Vec<_> = block_numbers.chunks(CHUNK_SIZE).collect();
 
         let mut blocks = vec![];
@@ -45,10 +40,36 @@ pub trait Provider: Clone + Sync + Send {
 
         let mut blocks_by_number = HashMap::new();
         for block @ Block { number, .. } in blocks {
-            blocks_by_number.insert(number.unwrap(), block);
+            if let Some(number) = number {
+                blocks_by_number.insert(number, block);
+            }
         }
 
         Ok(blocks_by_number)
+    }
+
+    async fn get_blocks_by_number(
+        &self,
+        logs: &Vec<Log>,
+    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+        let block_numbers: Vec<_> = logs
+            .iter()
+            .filter_map(|log| log.block_number)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        self.get_blocks(&block_numbers).await
+    }
+
+    async fn get_blocks_for_filters(
+        &self,
+        filters: &[Filter],
+        current_block_number: u64,
+    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+        let block_numbers = block_numbers_for_filters(filters, current_block_number);
+
+        self.get_blocks(&block_numbers).await
     }
 }
 
@@ -115,15 +136,16 @@ pub async fn fetch_logs(provider: &Arc<impl Provider>, filters: &[Filter]) -> Ve
     maybe_logs.unwrap()
 }
 
-pub async fn fetch_blocks_by_number(
+pub async fn fetch_blocks_for_filters(
     provider: &Arc<impl Provider>,
-    logs: &Vec<Log>,
+    filters: &[Filter],
+    current_block_number: u64,
 ) -> HashMap<U64, Block<TxHash>> {
     let mut maybe_blocks_by_number = None;
     let mut retries_so_far = 0;
 
     while maybe_blocks_by_number.is_none() {
-        match provider.get_blocks_by_number(logs).await {
+        match provider.get_blocks_for_filters(filters, current_block_number).await {
             Ok(blocks_by_tx_hash) => maybe_blocks_by_number = Some(blocks_by_tx_hash),
             Err(provider_error) => {
                 eprintln!("Provider Error: {provider_error}");
@@ -137,6 +159,54 @@ pub async fn fetch_blocks_by_number(
     maybe_blocks_by_number.unwrap()
 }
 
+fn block_numbers_for_filters(filters: &[Filter], current_block_number: u64) -> Vec<U64> {
+    filters
+        .iter()
+        .flat_map(|filter| {
+            let from = filter.value.get_from_block().unwrap().as_u64();
+            let to = min(
+                filter.value.get_to_block().unwrap().as_u64(),
+                current_block_number,
+            );
+
+            if from > to {
+                vec![]
+            } else {
+                (from..=to).map(U64::from).collect()
+            }
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 async fn backoff(retries_so_far: u32) {
     sleep(Duration::from_secs(2u64.pow(retries_so_far))).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethers::types::Filter as EthersFilter;
+
+    #[test]
+    fn block_numbers_for_filters_deduplicates_and_clamps_to_current_block() {
+        let filters = vec![
+            Filter {
+                contract_address_id: 1,
+                address: "0x1".to_string(),
+                value: EthersFilter::new().from_block(10).to_block(12),
+            },
+            Filter {
+                contract_address_id: 2,
+                address: "0x2".to_string(),
+                value: EthersFilter::new().from_block(11).to_block(20),
+            },
+        ];
+
+        assert_eq!(
+            block_numbers_for_filters(&filters, 13),
+            vec![U64::from(10), U64::from(11), U64::from(12), U64::from(13)]
+        );
+    }
 }

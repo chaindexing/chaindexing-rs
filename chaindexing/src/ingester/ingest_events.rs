@@ -40,8 +40,9 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     let filters = remove_already_ingested_filters(&filters, &contract_addresses, repo_client).await;
 
     if !filters.is_empty() {
+        let blocks_by_tx_hash =
+            provider::fetch_blocks_for_filters(provider, &filters, current_block_number).await;
         let logs = provider::fetch_logs(provider, &filters).await;
-        let blocks_by_tx_hash = provider::fetch_blocks_by_number(provider, &logs).await;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);
         let events = events::get(
             &logs,
