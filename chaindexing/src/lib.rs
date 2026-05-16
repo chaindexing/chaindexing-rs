@@ -38,7 +38,9 @@ pub use handlers::{
 };
 pub use indexer::Indexer;
 pub use nodes::NodeHeartbeat as Heartbeat;
-pub use outbox::OutboxReceipt;
+pub use outbox::{
+    dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxJob, OutboxReceipt,
+};
 
 pub use chaindexing_macros::state_migrations;
 pub use ethers::types::{I256, U256};
@@ -245,7 +247,10 @@ pub mod prelude {
     };
     pub use crate::indexer::Indexer;
     pub use crate::nodes::NodeHeartbeat as Heartbeat;
-    pub use crate::outbox::OutboxReceipt;
+    pub use crate::outbox::{
+        dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxJob,
+        OutboxReceipt,
+    };
     pub use crate::states::{
         ChainState, ContractState, Filters, MultiChainState, StateMigrations, Updates,
     };

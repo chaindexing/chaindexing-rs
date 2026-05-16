@@ -113,6 +113,31 @@ impl SideEffectHandler for TransferSideEffectHandler {
 }
 ```
 
+Dispatch pending outbox jobs from a worker process:
+
+```rust
+use chaindexing::{dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxJob};
+
+struct Dispatcher;
+
+#[chaindexing::augmenting_std::async_trait]
+impl OutboxDispatcher for Dispatcher {
+    async fn dispatch(&self, job: OutboxJob) -> Result<(), String> {
+        // Send job.payload to your webhook, queue, bridge, or notification provider.
+        Ok(())
+    }
+}
+
+# async fn dispatch() {
+let dispatched = dispatch_pending_outbox_jobs(
+    &std::env::var("DATABASE_URL").unwrap(),
+    &Dispatcher,
+    OutboxDispatchConfig::default(),
+)
+.await;
+# }
+```
+
 ## Design Goals & Features
 
 - 💸&nbsp;Free forever<br/>
