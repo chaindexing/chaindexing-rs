@@ -51,6 +51,46 @@ impl EventHandler for TransferHandler {
 
 A quick and effective way to get started is by exploring the comprehensive examples provided here: [https://github.com/chaindexing/chaindexing-examples/tree/main/rust](https://github.com/chaindexing/chaindexing-examples/tree/main/rust).
 
+Minimal runtime setup now looks like this:
+
+```rust
+use chaindexing::{Chain, ChainId, Contract, Indexer};
+
+# async fn start() -> Result<(), chaindexing::ChaindexingError> {
+let erc721 = Contract::new("ERC721")
+    .add_event_handler(TransferHandler)
+    .add_address(
+        "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+        &ChainId::Mainnet,
+        17_773_490,
+    );
+
+Indexer::new(&std::env::var("DATABASE_URL").unwrap())
+    .chain(Chain::mainnet(&std::env::var("MAINNET_JSON_RPC_URL").unwrap()))
+    .contract(erc721)
+    .run()
+    .await?;
+# Ok(())
+# }
+```
+
+## Guarantees
+
+Chaindexing's Postgres backend is being hardened around these guarantees:
+
+- Event ingestion is idempotent for the canonical event identity: `chain_id`, `contract_address`, `block_hash`, `transaction_hash`, and `log_index`.
+- Handler state is deterministic and replayable from persisted events.
+- Reorg repair is bounded by the configured confirmation depth and now records canonical block hashes for detected event-bearing blocks.
+- Ingestion and handler checkpoints are stored durably in Postgres and written transactionally with cursor updates.
+- Empty event batches are safe to retry.
+- Direct side-effect handlers are supported for compatibility, but durable exactly-once external side effects require the planned outbox API.
+
+Non-goals:
+
+- Chaindexing does not promise reorg safety beyond the configured confirmation window.
+- Chaindexing does not promise exactly-once network calls from direct side-effect handlers.
+- Postgres is the supported production backend while the core guarantees are being completed.
+
 ## Design Goals & Features
 
 - 💸&nbsp;Free forever<br/>

@@ -18,6 +18,7 @@ mod config;
 mod contracts;
 mod diesel;
 mod handlers;
+mod indexer;
 mod nodes;
 mod pruning;
 mod repos;
@@ -34,6 +35,7 @@ pub use handlers::{
     PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
     SideEffectHandlerContext as SideEffectContext,
 };
+pub use indexer::Indexer;
 pub use nodes::NodeHeartbeat as Heartbeat;
 
 pub use chaindexing_macros::state_migrations;
@@ -106,6 +108,7 @@ use crate::nodes::{NodeTask, NodeTasksRunner};
 pub(crate) type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 
 /// Errors from mis-configurations, database connections, internal errors, etc.
+#[derive(Debug)]
 pub enum ChaindexingError {
     Config(ConfigError),
 }
@@ -116,15 +119,17 @@ impl From<ConfigError> for ChaindexingError {
     }
 }
 
-impl Debug for ChaindexingError {
+impl std::fmt::Display for ChaindexingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChaindexingError::Config(config_error) => {
-                write!(f, "Config Error: {config_error:?}")
+                write!(f, "Config error: {config_error}")
             }
         }
     }
 }
+
+impl std::error::Error for ChaindexingError {}
 
 /// Starts processes for ingesting events and indexing states as configured.
 pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
@@ -237,6 +242,7 @@ pub mod prelude {
         PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
         SideEffectHandlerContext as SideEffectContext,
     };
+    pub use crate::indexer::Indexer;
     pub use crate::nodes::NodeHeartbeat as Heartbeat;
     pub use crate::states::{
         ChainState, ContractState, Filters, MultiChainState, StateMigrations, Updates,

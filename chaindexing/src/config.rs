@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use ethers::abi::HumanReadableParser;
 use tokio::sync::Mutex;
 
 use crate::chain_reorg::MinConfirmationCount;
@@ -8,12 +10,23 @@ use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
 use crate::{ChaindexingRepo, Contract};
 
+#[derive(Clone, Eq, PartialEq)]
 pub enum ConfigError {
     NoContract,
     NoChain,
+    DuplicateContractName(String),
+    DuplicateContractAddress {
+        chain_id: i64,
+        address: String,
+    },
+    InvalidEventAbi {
+        contract_name: String,
+        abi: String,
+        error: String,
+    },
 }
 
-impl std::fmt::Debug for ConfigError {
+impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConfigError::NoContract => {
@@ -22,9 +35,36 @@ impl std::fmt::Debug for ConfigError {
             ConfigError::NoChain => {
                 write!(f, "At least one chain is required")
             }
+            ConfigError::DuplicateContractName(name) => {
+                write!(f, "Duplicate contract name `{name}`")
+            }
+            ConfigError::DuplicateContractAddress { chain_id, address } => {
+                write!(
+                    f,
+                    "Duplicate contract address `{address}` on chain `{chain_id}`"
+                )
+            }
+            ConfigError::InvalidEventAbi {
+                contract_name,
+                abi,
+                error,
+            } => {
+                write!(
+                    f,
+                    "Invalid event ABI `{abi}` on contract `{contract_name}`: {error}"
+                )
+            }
         }
     }
 }
+
+impl std::fmt::Debug for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl std::error::Error for ConfigError {}
 
 /// Used to configure managing a chaindexing's node heartbeat
 /// to cut down JSON-RPC's (Alchemy, Infura, etc.) cost.
@@ -225,13 +265,108 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self.node_election_rate_ms.unwrap_or(self.ingestion_rate_ms)
     }
 
-    pub(super) fn validate(&self) -> Result<(), ConfigError> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         if self.contracts.is_empty() {
-            Err(ConfigError::NoContract)
-        } else if self.chains.is_empty() {
-            Err(ConfigError::NoChain)
-        } else {
-            Ok(())
+            return Err(ConfigError::NoContract);
         }
+
+        if self.chains.is_empty() {
+            return Err(ConfigError::NoChain);
+        }
+
+        let mut contract_names = HashSet::new();
+        let mut contract_addresses = HashSet::new();
+
+        for contract in &self.contracts {
+            if !contract_names.insert(contract.name.clone()) {
+                return Err(ConfigError::DuplicateContractName(contract.name.clone()));
+            }
+
+            for contract_address in &contract.addresses {
+                let key = (contract_address.chain_id, contract_address.address.clone());
+                if !contract_addresses.insert(key) {
+                    return Err(ConfigError::DuplicateContractAddress {
+                        chain_id: contract_address.chain_id,
+                        address: contract_address.address.clone(),
+                    });
+                }
+            }
+
+            for abi in contract.get_event_abis() {
+                if let Err(error) = HumanReadableParser::parse_event(abi) {
+                    return Err(ConfigError::InvalidEventAbi {
+                        contract_name: contract.name.clone(),
+                        abi: abi.to_string(),
+                        error: error.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handlers::PureHandlerContext;
+    use crate::{ChainId, EventHandler};
+
+    struct TestHandler(&'static str);
+
+    #[crate::augmenting_std::async_trait]
+    impl EventHandler for TestHandler {
+        fn abi(&self) -> &'static str {
+            self.0
+        }
+
+        async fn handle_event<'a, 'b>(&self, _context: PureHandlerContext<'a, 'b>) {}
+    }
+
+    fn repo() -> ChaindexingRepo {
+        ChaindexingRepo::new("postgres://localhost/chaindexing")
+    }
+
+    #[test]
+    fn rejects_duplicate_contract_names() {
+        let config = Config::new(repo())
+            .add_chain(Chain::mainnet("http://localhost:8545"))
+            .add_contract(Contract::<()>::new("ERC721"))
+            .add_contract(Contract::<()>::new("ERC721"));
+
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::DuplicateContractName("ERC721".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_contract_addresses_per_chain() {
+        let address = "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D";
+        let config = Config::new(repo())
+            .add_chain(Chain::mainnet("http://localhost:8545"))
+            .add_contract(Contract::<()>::new("ERC721").add_address(address, &ChainId::Mainnet, 1))
+            .add_contract(Contract::<()>::new("ERC20").add_address(address, &ChainId::Mainnet, 1));
+
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::DuplicateContractAddress {
+                chain_id: ChainId::Mainnet as i64,
+                address: address.to_lowercase(),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_event_abis() {
+        let config = Config::new(repo())
+            .add_chain(Chain::mainnet("http://localhost:8545"))
+            .add_contract(Contract::<()>::new("ERC721").add_event_handler(TestHandler("Transfer")));
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidEventAbi { .. })
+        ));
     }
 }

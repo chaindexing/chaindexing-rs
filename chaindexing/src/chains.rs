@@ -25,4 +25,19 @@ impl Chain {
             json_rpc_url: json_rpc_url.to_string(),
         }
     }
+
+    /// Builds a Mainnet chain config.
+    pub fn mainnet(json_rpc_url: &str) -> Self {
+        Self::new(ChainId::Mainnet, json_rpc_url)
+    }
+
+    /// Builds a Polygon chain config.
+    pub fn polygon(json_rpc_url: &str) -> Self {
+        Self::new(ChainId::Polygon, json_rpc_url)
+    }
+
+    /// Builds an Arbitrum chain config.
+    pub fn arbitrum(json_rpc_url: &str) -> Self {
+        Self::new(ChainId::Arbitrum, json_rpc_url)
+    }
 }
