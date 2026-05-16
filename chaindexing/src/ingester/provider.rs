@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,19 +23,21 @@ pub trait Provider: Clone + Sync + Send {
         &self,
         logs: &Vec<Log>,
     ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
-        let mut logs = logs.to_owned();
-        logs.dedup_by_key(|log| log.block_number);
+        let block_numbers: Vec<_> = logs
+            .iter()
+            .filter_map(|log| log.block_number)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
 
         const CHUNK_SIZE: usize = 4;
-        let chunked_logs: Vec<_> = logs.chunks(CHUNK_SIZE).collect();
+        let chunked_block_numbers: Vec<_> = block_numbers.chunks(CHUNK_SIZE).collect();
 
         let mut blocks = vec![];
-        for chunked_log in chunked_logs {
+        for chunked_block_number in chunked_block_numbers {
             blocks.extend(
                 try_join_all(
-                    chunked_log
-                        .iter()
-                        .map(|Log { block_number, .. }| self.get_block(block_number.unwrap())),
+                    chunked_block_number.iter().map(|block_number| self.get_block(*block_number)),
                 )
                 .await?,
             );

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use futures_util::FutureExt;
 use std::cmp::min;
 
+use crate::chain_blocks::{self, ChainBlock};
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::events::{self, Event};
 use crate::Config;
@@ -38,6 +39,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         let already_ingested_events = get_already_ingested_events(conn, &filters).await;
         let logs = provider::fetch_logs(provider, &filters).await;
         let blocks_by_number = provider::fetch_blocks_by_number(provider, &logs).await;
+        let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_number);
 
         let provider_events = events::get(
             &logs,
@@ -47,10 +49,11 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &blocks_by_number,
         );
 
-        if let Some(added_and_removed_events) =
-            get_provider_added_and_removed_events(&already_ingested_events, &provider_events)
-        {
-            handle_chain_reorg(conn, chain_id, added_and_removed_events).await?;
+        let added_and_removed_events =
+            get_provider_added_and_removed_events(&already_ingested_events, &provider_events);
+
+        if !chain_blocks.is_empty() || added_and_removed_events.is_some() {
+            handle_chain_reorg(conn, chain_id, chain_blocks, added_and_removed_events).await?;
         }
     }
 
@@ -78,17 +81,44 @@ async fn get_already_ingested_events<'a>(
 async fn handle_chain_reorg<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     chain_id: &ChainId,
-    (added_events, removed_events): (Vec<Event>, Vec<Event>),
+    chain_blocks: Vec<ChainBlock>,
+    added_and_removed_events: Option<(Vec<Event>, Vec<Event>)>,
 ) -> Result<(), IngesterError> {
-    let earliest_block_number = get_earliest_block_number((&added_events, &removed_events));
-    let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, chain_id);
+    let chain_id = *chain_id;
 
     ChaindexingRepo::run_in_transaction(conn, move |conn| {
         async move {
+            let block_reorg_number =
+                ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await;
+            let event_reorg_number =
+                added_and_removed_events.as_ref().map(|(added_events, removed_events)| {
+                    get_earliest_block_number((added_events, removed_events))
+                });
+
+            let earliest_block_number = match (block_reorg_number, event_reorg_number) {
+                (Some(block_reorg_number), Some(event_reorg_number)) => {
+                    min(block_reorg_number, event_reorg_number)
+                }
+                (Some(block_reorg_number), None) => block_reorg_number,
+                (None, Some(event_reorg_number)) => event_reorg_number,
+                (None, None) => return Ok(()),
+            };
+
+            let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, &chain_id);
             ChaindexingRepo::create_reorged_block(conn, &new_reorged_block).await;
 
-            let event_ids: Vec<_> = removed_events.iter().map(|e| e.id).collect();
-            ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
+            let (added_events, removed_events) = added_and_removed_events.unwrap_or_default();
+            if block_reorg_number.is_some() {
+                ChaindexingRepo::delete_events_from_block_number(
+                    conn,
+                    &chain_id,
+                    earliest_block_number,
+                )
+                .await;
+            } else {
+                let event_ids: Vec<_> = removed_events.iter().map(|e| e.id).collect();
+                ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
+            }
 
             ChaindexingRepo::create_events(conn, &added_events).await;
 

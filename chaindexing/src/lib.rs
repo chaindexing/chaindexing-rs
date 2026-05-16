@@ -10,6 +10,7 @@
 //! Index any EVM chain and query in SQL.
 //!
 //! View working examples here: <https://github.com/chaindexing/chaindexing-examples/tree/main/rust>.
+mod chain_blocks;
 mod chain_reorg;
 mod chains;
 mod checkpoints;

@@ -29,6 +29,13 @@ impl RepoMigrations for PostgresRepo {
         SQLikeMigrations::drop_reorged_blocks()
     }
 
+    fn create_blocks_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_blocks()
+    }
+    fn drop_blocks_migration() -> &'static [&'static str] {
+        SQLikeMigrations::drop_blocks()
+    }
+
     fn create_checkpoints_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_checkpoints()
     }

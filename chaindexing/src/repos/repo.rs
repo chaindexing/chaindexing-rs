@@ -178,6 +178,9 @@ pub trait RepoMigrations: Migratable {
     fn create_reorged_blocks_migration() -> &'static [&'static str];
     fn drop_reorged_blocks_migration() -> &'static [&'static str];
 
+    fn create_blocks_migration() -> &'static [&'static str];
+    fn drop_blocks_migration() -> &'static [&'static str];
+
     fn create_checkpoints_migration() -> &'static [&'static str];
     fn drop_checkpoints_migration() -> &'static [&'static str];
 
@@ -185,6 +188,7 @@ pub trait RepoMigrations: Migratable {
         [
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
+            Self::create_blocks_migration(),
             Self::create_checkpoints_migration(),
         ]
         .concat()
@@ -194,6 +198,7 @@ pub trait RepoMigrations: Migratable {
         [
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
+            Self::drop_blocks_migration(),
             Self::drop_checkpoints_migration(),
             Self::restart_ingest_and_handlers_next_block_numbers_migration(),
         ]
@@ -298,6 +303,28 @@ impl SQLikeMigrations {
     }
     pub fn drop_reorged_blocks() -> &'static [&'static str] {
         &["DROP TABLE IF EXISTS chaindexing_reorged_blocks"]
+    }
+
+    pub fn create_blocks() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_blocks (
+                id BIGSERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                block_number BIGINT NOT NULL,
+                block_hash VARCHAR NOT NULL,
+                parent_hash VARCHAR NOT NULL,
+                status VARCHAR NOT NULL,
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_blocks_identity
+            ON chaindexing_blocks(chain_id, block_number, block_hash)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_blocks_canonical_number
+            ON chaindexing_blocks(chain_id, block_number)
+            WHERE status = 'canonical'",
+        ]
+    }
+    pub fn drop_blocks() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_blocks"]
     }
 
     pub fn create_checkpoints() -> &'static [&'static str] {

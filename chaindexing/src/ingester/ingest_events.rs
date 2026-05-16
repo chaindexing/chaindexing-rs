@@ -7,7 +7,8 @@ use super::filters::{self, Filter};
 use super::provider::{self, Provider};
 use super::IngesterError;
 
-use crate::chain_reorg::Execution;
+use crate::chain_blocks;
+use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::Config;
 use crate::{events, ChainId};
 use crate::{
@@ -41,6 +42,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     if !filters.is_empty() {
         let logs = provider::fetch_logs(provider, &filters).await;
         let blocks_by_tx_hash = provider::fetch_blocks_by_number(provider, &logs).await;
+        let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);
         let events = events::get(
             &logs,
             contracts,
@@ -49,9 +51,19 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &blocks_by_tx_hash,
         );
         let contract_addresses = contract_addresses.clone();
+        let chain_id = *chain_id;
 
         ChaindexingRepo::run_in_transaction(conn, move |conn| {
             async move {
+                if let Some(block_number) =
+                    ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await
+                {
+                    let reorged_block = UnsavedReorgedBlock::new(block_number, &chain_id);
+                    ChaindexingRepo::create_reorged_block(conn, &reorged_block).await;
+                    ChaindexingRepo::delete_events_from_block_number(conn, &chain_id, block_number)
+                        .await;
+                }
+
                 ChaindexingRepo::create_events(conn, &events.clone()).await;
 
                 update_next_block_numbers_to_ingest_from(conn, &contract_addresses, &filters).await;

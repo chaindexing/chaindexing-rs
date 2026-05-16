@@ -3,8 +3,9 @@ mod raw_queries;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
 
+use crate::chain_blocks::{self, ChainBlock, ConflictingBlock};
 use crate::checkpoints::{self, CheckpointKind};
-use crate::{contracts::ContractAddress, events::Event, nodes::Node};
+use crate::{contracts::ContractAddress, events::Event, nodes::Node, ChainId};
 use diesel::sql_query;
 use diesel_async::RunQueryDsl;
 
@@ -53,6 +54,53 @@ impl PostgresRepo {
         Self {
             url: url.to_string(),
         }
+    }
+
+    pub(crate) async fn delete_events_from_block_number<'a>(
+        conn: &mut Conn<'a>,
+        event_chain_id: &ChainId,
+        reorged_block_number: i64,
+    ) {
+        use crate::diesel::schema::chaindexing_events::dsl::*;
+
+        delete(chaindexing_events)
+            .filter(chain_id.eq(*event_chain_id as i64))
+            .filter(block_number.ge(reorged_block_number))
+            .execute(conn)
+            .await
+            .unwrap();
+    }
+
+    pub(crate) async fn sync_blocks<'a>(
+        conn: &mut Conn<'a>,
+        event_chain_id: &ChainId,
+        blocks: &[ChainBlock],
+    ) -> Option<i64> {
+        let conflict = match chain_blocks::earliest_conflicting_block_query(blocks) {
+            Some(query) => sql_query(query)
+                .load::<ConflictingBlock>(conn)
+                .await
+                .unwrap()
+                .into_iter()
+                .next(),
+            None => None,
+        };
+
+        if let Some(conflicting_block) = &conflict {
+            sql_query(chain_blocks::mark_reorged_from_query(
+                *event_chain_id,
+                conflicting_block.block_number,
+            ))
+            .execute(conn)
+            .await
+            .unwrap();
+        }
+
+        if let Some(query) = chain_blocks::upsert_blocks_query(blocks) {
+            sql_query(query).execute(conn).await.unwrap();
+        }
+
+        conflict.map(|block| block.block_number)
     }
 }
 
