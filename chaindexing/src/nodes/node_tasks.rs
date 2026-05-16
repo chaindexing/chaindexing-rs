@@ -59,6 +59,10 @@ impl<'a> NodeTasks<'a> {
                 }
 
                 NodeTasksState::Active => {
+                    if self.record_task_errors().await {
+                        return;
+                    }
+
                     if let Some(OptimizationConfig {
                         node_heartbeat,
                         start_after_in_secs,
@@ -100,6 +104,26 @@ impl<'a> NodeTasks<'a> {
     async fn stop(&mut self) {
         for task in &self.tasks {
             task.stop().await;
+        }
+    }
+
+    async fn record_task_errors(&mut self) -> bool {
+        let mut errors = vec![];
+        for task in &self.tasks {
+            errors.extend(task.collect_errors().await);
+        }
+
+        if errors.is_empty() {
+            false
+        } else {
+            for error in &errors {
+                eprintln!("Chaindexing worker error: {error}");
+            }
+
+            self.errors.extend(errors);
+            self.stop().await;
+            self.state = NodeTasksState::Idle;
+            true
         }
     }
 

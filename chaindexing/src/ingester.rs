@@ -33,37 +33,40 @@ use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo};
 pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> NodeTask {
     let node_task = NodeTask::new();
 
-    for chains in get_chunked_chains(config) {
+    for (index, chains) in get_chunked_chains(config).into_iter().enumerate() {
         let config = config.clone();
 
         node_task
-            .add_subtask(tokio::spawn(async move {
-                let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
-                let mut last_pruned_at_per_chain_id = HashMap::new();
+            .add_named_subtask(
+                format!("ingester-chain-chunk-{index}"),
+                tokio::spawn(async move {
+                    let mut interval = interval(Duration::from_millis(config.ingestion_rate_ms));
+                    let mut last_pruned_at_per_chain_id = HashMap::new();
 
-                loop {
-                    for chain in chains.iter() {
-                        let provider = provider::get(&chain.json_rpc_url);
-                        let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
-                        let pool = config.repo.get_pool(1).await;
-                        let conn = ChaindexingRepo::get_conn(&pool).await;
-                        let conn = Arc::new(Mutex::new(conn));
+                    loop {
+                        for chain in chains.iter() {
+                            let provider = provider::get(&chain.json_rpc_url);
+                            let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
+                            let pool = config.repo.get_pool(1).await;
+                            let conn = ChaindexingRepo::get_conn(&pool).await;
+                            let conn = Arc::new(Mutex::new(conn));
 
-                        ingest_for_chain(
-                            &chain.id,
-                            provider,
-                            conn.clone(),
-                            &repo_client,
-                            &config,
-                            &mut last_pruned_at_per_chain_id,
-                        )
-                        .await
-                        .unwrap();
+                            ingest_for_chain(
+                                &chain.id,
+                                provider,
+                                conn.clone(),
+                                &repo_client,
+                                &config,
+                                &mut last_pruned_at_per_chain_id,
+                            )
+                            .await
+                            .unwrap();
+                        }
+
+                        interval.tick().await;
                     }
-
-                    interval.tick().await;
-                }
-            }))
+                }),
+            )
             .await;
     }
 
