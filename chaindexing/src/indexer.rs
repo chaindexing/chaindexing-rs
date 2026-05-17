@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 
-use crate::{index_states, Chain, ChaindexingError, Config, Contract, PostgresRepo};
+use crate::{
+    index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexingHandle,
+    PostgresRepo,
+};
 
 /// High-level builder for configuring and running a Postgres-backed indexer.
 #[derive(Clone, Debug)]
@@ -125,5 +128,10 @@ impl<SharedState: Sync + Send + Clone + Debug + 'static> Indexer<SharedState> {
     /// Starts the configured indexer workers.
     pub async fn run(self) -> Result<(), ChaindexingError> {
         index_states(&self.config).await
+    }
+
+    /// Starts the configured indexer workers and returns a lifecycle handle.
+    pub async fn start(self) -> Result<IndexingHandle, ChaindexingError> {
+        start_indexing(&self.config).await
     }
 }

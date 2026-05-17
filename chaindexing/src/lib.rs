@@ -102,6 +102,8 @@ pub use repos::PostgresRepoAsyncConnection as ChaindexingRepoAsyncConnection;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::watch;
+use tokio::task::JoinError;
 use tokio::time;
 
 use config::ConfigError;
@@ -115,6 +117,7 @@ pub(crate) type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 #[derive(Debug)]
 pub enum ChaindexingError {
     Config(ConfigError),
+    Runtime(String),
 }
 
 impl From<ConfigError> for ChaindexingError {
@@ -129,16 +132,58 @@ impl std::fmt::Display for ChaindexingError {
             ChaindexingError::Config(config_error) => {
                 write!(f, "Config error: {config_error}")
             }
+            ChaindexingError::Runtime(error) => {
+                write!(f, "Runtime error: {error}")
+            }
         }
     }
 }
 
 impl std::error::Error for ChaindexingError {}
 
+/// Handle for a running Chaindexing indexer.
+///
+/// Use this when embedding Chaindexing in a larger service that owns shutdown.
+pub struct IndexingHandle {
+    shutdown_tx: watch::Sender<bool>,
+    join_handle: tokio::task::JoinHandle<()>,
+}
+
+impl IndexingHandle {
+    /// Requests cooperative shutdown for the indexer and its workers.
+    pub fn shutdown(&self) {
+        let _ = self.shutdown_tx.send(true);
+    }
+
+    /// Waits until the indexer task exits.
+    pub async fn wait(self) -> Result<(), ChaindexingError> {
+        supervisor_result(self.join_handle.await)
+    }
+
+    /// Runs until Ctrl-C is received or the supervisor exits unexpectedly.
+    pub async fn wait_for_shutdown_signal(mut self) -> Result<(), ChaindexingError> {
+        tokio::select! {
+            result = &mut self.join_handle => supervisor_result(result),
+            signal = tokio::signal::ctrl_c() => {
+                signal.map_err(|error| ChaindexingError::Runtime(error.to_string()))?;
+                self.shutdown();
+                supervisor_result(self.join_handle.await)
+            }
+        }
+    }
+}
+
 /// Starts processes for ingesting events and indexing states as configured.
 pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     config: &Config<S>,
 ) -> Result<(), ChaindexingError> {
+    start_indexing(config).await?.wait_for_shutdown_signal().await
+}
+
+/// Starts indexing workers and returns a handle for lifecycle management.
+pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
+    config: &Config<S>,
+) -> Result<IndexingHandle, ChaindexingError> {
     config.validate()?;
 
     let client = config.repo.get_client().await;
@@ -149,7 +194,8 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
     booting::setup(config, &client).await?;
 
     let config = config.clone();
-    tokio::spawn(async move {
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    let join_handle = tokio::spawn(async move {
         let mut interval =
             time::interval(Duration::from_millis(config.get_node_election_rate_ms()));
 
@@ -160,6 +206,10 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
         let mut node_tasks = NodeTasks::new(&current_node);
 
         loop {
+            if *shutdown_rx.borrow() {
+                break;
+            }
+
             // Keep node active first to guarantee that at least this node is active before election
             ChaindexingRepo::keep_node_active(conn, &current_node).await;
             let is_leader = ChaindexingRepo::try_advisory_lock(conn, config.leader_lock_id).await;
@@ -172,11 +222,23 @@ pub async fn index_states<S: Send + Sync + Clone + Debug + 'static>(
                 )
                 .await;
 
-            interval.tick().await;
+            tokio::select! {
+                _ = interval.tick() => {}
+                changed = shutdown_rx.changed() => {
+                    if changed.is_err() || *shutdown_rx.borrow() {
+                        break;
+                    }
+                }
+            }
         }
+
+        node_tasks.stop().await;
     });
 
-    Ok(())
+    Ok(IndexingHandle {
+        shutdown_tx,
+        join_handle,
+    })
 }
 
 /// Includes runtime-discovered contract addresses for indexing.
@@ -235,6 +297,10 @@ fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
     ChaindexingNodeTasksRunner { config }
 }
 
+fn supervisor_result(result: Result<(), JoinError>) -> Result<(), ChaindexingError> {
+    result.map_err(|error| ChaindexingError::Runtime(error.to_string()))
+}
+
 pub mod prelude {
     pub use crate::augmenting_std::{async_trait, serde};
     pub use crate::chains::{Chain, ChainId};
@@ -255,6 +321,7 @@ pub mod prelude {
         ChainState, ContractState, Filters, MultiChainState, StateMigrations, Updates,
     };
     pub use crate::Address;
+    pub use crate::IndexingHandle;
     pub use chaindexing_macros::state_migrations;
     pub use ethers::types::{I256, U256};
 }

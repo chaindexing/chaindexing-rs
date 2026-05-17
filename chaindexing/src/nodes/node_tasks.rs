@@ -99,7 +99,7 @@ impl<'a> NodeTasks<'a> {
         self.stop().await;
         self.state = NodeTasksState::Aborted;
     }
-    async fn stop(&mut self) {
+    pub(crate) async fn stop(&mut self) {
         for task in &self.tasks {
             task.stop().await;
         }

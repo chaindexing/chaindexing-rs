@@ -74,6 +74,10 @@ Indexer::new(&std::env::var("DATABASE_URL").unwrap())
 # }
 ```
 
+`run()` owns the indexer lifecycle and waits until Ctrl-C before shutting workers down. Services
+that need to manage shutdown themselves can call `Indexer::start()` and keep the returned
+`IndexingHandle`.
+
 ## Guarantees
 
 Chaindexing's Postgres backend is being hardened around these guarantees:
