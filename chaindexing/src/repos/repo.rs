@@ -367,11 +367,14 @@ impl SQLikeMigrations {
                 last_error TEXT,
                 next_attempt_at TIMESTAMPTZ,
                 lease_expires_at TIMESTAMPTZ,
+                lease_token UUID,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
             "ALTER TABLE IF EXISTS chaindexing_outbox
              ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
+            "ALTER TABLE IF EXISTS chaindexing_outbox
+             ADD COLUMN IF NOT EXISTS lease_token UUID",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_outbox_idempotency_key
             ON chaindexing_outbox(idempotency_key)",
             "CREATE INDEX IF NOT EXISTS chaindexing_outbox_status_next_attempt_at

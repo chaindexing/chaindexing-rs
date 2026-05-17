@@ -16,6 +16,34 @@ pub struct OutboxJob {
     pub attempt_count: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+struct LeasedOutboxJob {
+    pub id: i64,
+    pub idempotency_key: String,
+    pub chain_id: i64,
+    pub contract_address: String,
+    pub event_id: uuid::Uuid,
+    pub handler_id: String,
+    pub payload: serde_json::Value,
+    pub attempt_count: i32,
+    pub lease_token: uuid::Uuid,
+}
+
+impl From<&LeasedOutboxJob> for OutboxJob {
+    fn from(job: &LeasedOutboxJob) -> Self {
+        Self {
+            id: job.id,
+            idempotency_key: job.idempotency_key.clone(),
+            chain_id: job.chain_id,
+            contract_address: job.contract_address.clone(),
+            event_id: job.event_id,
+            handler_id: job.handler_id.clone(),
+            payload: job.payload.clone(),
+            attempt_count: job.attempt_count,
+        }
+    }
+}
+
 /// Configuration for dispatching pending outbox jobs.
 #[derive(Debug, Clone, Copy)]
 pub struct OutboxDispatchConfig {
@@ -125,13 +153,18 @@ pub async fn dispatch_pending_outbox_jobs<Dispatcher: OutboxDispatcher + ?Sized>
 ) -> usize {
     let repo = PostgresRepo::new(postgres_url);
     let client = repo.get_client().await;
-    let jobs: Vec<OutboxJob> =
-        PostgresRepo::load_data_list(&client, &lease_pending_jobs_query(config)).await;
+    PostgresRepo::execute(&client, &dead_letter_expired_jobs_query(config)).await;
+
+    let lease_token = uuid::Uuid::new_v4();
+    let jobs: Vec<LeasedOutboxJob> =
+        PostgresRepo::load_data_list(&client, &lease_pending_jobs_query(config, lease_token)).await;
     let dispatched_count = jobs.len();
 
     for job in jobs {
-        match dispatcher.dispatch(job.clone()).await {
-            Ok(()) => PostgresRepo::execute(&client, &mark_delivered_query(job.id)).await,
+        let dispatcher_job = OutboxJob::from(&job);
+
+        match dispatcher.dispatch(dispatcher_job).await {
+            Ok(()) => PostgresRepo::execute(&client, &mark_delivered_query(&job)).await,
             Err(error) => {
                 PostgresRepo::execute(&client, &mark_failed_query(&job, &error, config)).await
             }
@@ -141,56 +174,82 @@ pub async fn dispatch_pending_outbox_jobs<Dispatcher: OutboxDispatcher + ?Sized>
     dispatched_count
 }
 
-fn lease_pending_jobs_query(config: OutboxDispatchConfig) -> String {
+fn lease_pending_jobs_query(config: OutboxDispatchConfig, lease_token: uuid::Uuid) -> String {
     let limit = config.batch_size;
+    let max_attempts = config.max_attempts.max(1);
     let lease_duration_secs = config.lease_duration_secs.max(1);
 
     format!(
         "UPDATE chaindexing_outbox
          SET status = 'dispatching',
+             attempt_count = attempt_count + 1,
+             lease_token = '{lease_token}',
              lease_expires_at = NOW() + INTERVAL '{lease_duration_secs} seconds',
              updated_at = NOW()
          WHERE id IN (
              SELECT id
              FROM chaindexing_outbox
-             WHERE (
+             WHERE attempt_count < {max_attempts}
+               AND (
+                 (
                     status = 'pending'
                     AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
-                )
-                OR (
+                 )
+                 OR (
                     status = 'dispatching'
                     AND lease_expires_at <= NOW()
+                 )
                 )
              ORDER BY id ASC
              LIMIT {limit}
              FOR UPDATE SKIP LOCKED
          )
-         RETURNING id, idempotency_key, chain_id, contract_address, event_id, handler_id, payload, attempt_count"
+         RETURNING id, idempotency_key, chain_id, contract_address, event_id, handler_id, payload, attempt_count, lease_token"
     )
 }
 
-fn mark_delivered_query(id: i64) -> String {
+fn dead_letter_expired_jobs_query(config: OutboxDispatchConfig) -> String {
+    let max_attempts = config.max_attempts.max(1);
+
+    format!(
+        "UPDATE chaindexing_outbox
+         SET status = 'dead',
+             last_error = COALESCE(last_error, 'dispatch lease expired after max attempts'),
+             next_attempt_at = NULL,
+             lease_expires_at = NULL,
+             lease_token = NULL,
+             updated_at = NOW()
+         WHERE status = 'dispatching'
+           AND lease_expires_at <= NOW()
+           AND attempt_count >= {max_attempts}"
+    )
+}
+
+fn mark_delivered_query(job: &LeasedOutboxJob) -> String {
     format!(
         "UPDATE chaindexing_outbox
          SET status = 'delivered',
              last_error = NULL,
              next_attempt_at = NULL,
              lease_expires_at = NULL,
+             lease_token = NULL,
              updated_at = NOW()
-         WHERE id = {id}"
+         WHERE id = {}
+           AND lease_token = '{}'",
+        job.id, job.lease_token
     )
 }
 
-fn mark_failed_query(job: &OutboxJob, error: &str, config: OutboxDispatchConfig) -> String {
-    let next_attempt_count = job.attempt_count + 1;
+fn mark_failed_query(job: &LeasedOutboxJob, error: &str, config: OutboxDispatchConfig) -> String {
+    let attempt_count = job.attempt_count;
     let max_attempts = config.max_attempts.max(1) as i32;
-    let status = if next_attempt_count >= max_attempts {
+    let status = if attempt_count >= max_attempts {
         "dead"
     } else {
         "pending"
     };
-    let retry_delay_secs = config.base_retry_delay_secs
-        * 2u64.pow((next_attempt_count as u32).saturating_sub(1).min(6));
+    let retry_delay_secs =
+        config.base_retry_delay_secs * 2u64.pow((attempt_count as u32).saturating_sub(1).min(6));
     let next_attempt_at = if status == "dead" {
         "NULL".to_string()
     } else {
@@ -200,14 +259,16 @@ fn mark_failed_query(job: &OutboxJob, error: &str, config: OutboxDispatchConfig)
     format!(
         "UPDATE chaindexing_outbox
          SET status = '{status}',
-             attempt_count = {next_attempt_count},
              last_error = '{}',
              next_attempt_at = {next_attempt_at},
              lease_expires_at = NULL,
+             lease_token = NULL,
              updated_at = NOW()
-         WHERE id = {}",
+         WHERE id = {}
+           AND lease_token = '{}'",
         escape_sql_literal(error),
-        job.id
+        job.id,
+        job.lease_token
     )
 }
 
@@ -235,29 +296,51 @@ mod tests {
 
     #[test]
     fn lease_pending_jobs_query_marks_jobs_as_dispatching() {
-        let query = lease_pending_jobs_query(OutboxDispatchConfig {
-            batch_size: 10,
-            lease_duration_secs: 30,
-            ..Default::default()
-        });
+        let lease_token = uuid::Uuid::nil();
+        let query = lease_pending_jobs_query(
+            OutboxDispatchConfig {
+                batch_size: 10,
+                max_attempts: 7,
+                lease_duration_secs: 30,
+                ..Default::default()
+            },
+            lease_token,
+        );
 
         assert!(query.contains("SET status = 'dispatching'"));
+        assert!(query.contains("attempt_count = attempt_count + 1"));
+        assert!(query.contains("lease_token = '00000000-0000-0000-0000-000000000000'"));
         assert!(query.contains("lease_expires_at = NOW() + INTERVAL '30 seconds'"));
+        assert!(query.contains("attempt_count < 7"));
         assert!(query.contains("FOR UPDATE SKIP LOCKED"));
         assert!(query.contains("LIMIT 10"));
+        assert!(query.contains("RETURNING id, idempotency_key, chain_id, contract_address, event_id, handler_id, payload, attempt_count, lease_token"));
     }
 
     #[test]
     fn lease_pending_jobs_query_recovers_expired_dispatching_jobs() {
-        let query = lease_pending_jobs_query(Default::default());
+        let query = lease_pending_jobs_query(Default::default(), uuid::Uuid::nil());
 
         assert!(query.contains("status = 'dispatching'"));
         assert!(query.contains("lease_expires_at <= NOW()"));
     }
 
     #[test]
+    fn dead_letter_expired_jobs_query_marks_exhausted_leases_dead() {
+        let query = dead_letter_expired_jobs_query(OutboxDispatchConfig {
+            max_attempts: 3,
+            ..Default::default()
+        });
+
+        assert!(query.contains("status = 'dead'"));
+        assert!(query.contains("lease_expires_at <= NOW()"));
+        assert!(query.contains("attempt_count >= 3"));
+        assert!(query.contains("lease_token = NULL"));
+    }
+
+    #[test]
     fn mark_failed_query_dead_letters_after_max_attempts() {
-        let job = OutboxJob {
+        let job = LeasedOutboxJob {
             id: 7,
             idempotency_key: "key".to_string(),
             chain_id: 1,
@@ -265,7 +348,8 @@ mod tests {
             event_id: uuid::Uuid::nil(),
             handler_id: "handler".to_string(),
             payload: serde_json::json!({}),
-            attempt_count: 2,
+            attempt_count: 3,
+            lease_token: uuid::Uuid::nil(),
         };
 
         let query = mark_failed_query(
@@ -278,9 +362,33 @@ mod tests {
         );
 
         assert!(query.contains("status = 'dead'"));
-        assert!(query.contains("attempt_count = 3"));
+        assert!(!query.contains("attempt_count ="));
         assert!(query.contains("provider''s API failed"));
         assert!(query.contains("next_attempt_at = NULL"));
         assert!(query.contains("lease_expires_at = NULL"));
+        assert!(query.contains("lease_token = NULL"));
+        assert!(query.contains("lease_token = '00000000-0000-0000-0000-000000000000'"));
+    }
+
+    #[test]
+    fn mark_delivered_query_requires_current_lease_token() {
+        let job = LeasedOutboxJob {
+            id: 7,
+            idempotency_key: "key".to_string(),
+            chain_id: 1,
+            contract_address: "0xabc".to_string(),
+            event_id: uuid::Uuid::nil(),
+            handler_id: "handler".to_string(),
+            payload: serde_json::json!({}),
+            attempt_count: 1,
+            lease_token: uuid::Uuid::nil(),
+        };
+
+        let query = mark_delivered_query(&job);
+
+        assert!(query.contains("status = 'delivered'"));
+        assert!(query.contains("lease_token = NULL"));
+        assert!(query.contains("WHERE id = 7"));
+        assert!(query.contains("lease_token = '00000000-0000-0000-0000-000000000000'"));
     }
 }
