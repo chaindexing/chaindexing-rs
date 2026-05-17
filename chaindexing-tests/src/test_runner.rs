@@ -8,6 +8,9 @@ use std::env;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
+const ALLOW_DB_TEST_SKIP_ENV: &str = "ALLOW_DB_TEST_SKIP";
+
 // Global counter for generating unique test data across all threads
 static GLOBAL_TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -18,16 +21,35 @@ pub async fn get_pool() -> ChaindexingRepoPool {
 pub fn has_test_database() -> bool {
     dotenv().ok();
 
-    env::var("TEST_DATABASE_URL").is_ok()
+    env::var(TEST_DATABASE_URL_ENV).is_ok()
 }
 
 pub fn skip_without_test_database() -> bool {
     if has_test_database() {
         false
-    } else {
-        eprintln!("skipping postgres-backed test; TEST_DATABASE_URL is not set");
+    } else if should_skip_missing_test_database(env::var("CI").is_ok(), allows_db_test_skip()) {
+        eprintln!(
+            "skipping postgres-backed test; {TEST_DATABASE_URL_ENV} is not set \
+             ({ALLOW_DB_TEST_SKIP_ENV}=1 can opt out explicitly in CI)"
+        );
         true
+    } else {
+        panic!(
+            "{TEST_DATABASE_URL_ENV} is not set. CI must provide a Postgres test database or set \
+             {ALLOW_DB_TEST_SKIP_ENV}=1 to intentionally skip postgres-backed tests."
+        );
     }
+}
+
+fn allows_db_test_skip() -> bool {
+    matches!(
+        env::var(ALLOW_DB_TEST_SKIP_ENV).as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE")
+    )
+}
+
+fn should_skip_missing_test_database(running_in_ci: bool, explicit_allow: bool) -> bool {
+    explicit_allow || !running_in_ci
 }
 
 /// Generate a unique test suffix for this test execution
@@ -129,4 +151,24 @@ fn should_setup_test_db() -> bool {
     dotenv().ok();
 
     env::var("SETUP_TEST_DB").is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_test_database_is_skipped_locally() {
+        assert!(should_skip_missing_test_database(false, false));
+    }
+
+    #[test]
+    fn missing_test_database_fails_ci_without_explicit_opt_out() {
+        assert!(!should_skip_missing_test_database(true, false));
+    }
+
+    #[test]
+    fn missing_test_database_can_be_explicitly_skipped_in_ci() {
+        assert!(should_skip_missing_test_database(true, true));
+    }
 }

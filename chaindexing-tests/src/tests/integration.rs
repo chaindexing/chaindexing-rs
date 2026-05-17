@@ -18,7 +18,11 @@ mod postgres_integration {
 
     async fn setup_postgres() -> Option<(String, chaindexing::ChaindexingRepoClient)> {
         dotenv().ok();
-        let database_url = env::var("TEST_DATABASE_URL").ok()?;
+        if test_runner::skip_without_test_database() {
+            return None;
+        }
+
+        let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set");
 
         db::setup();
         let repo = ChaindexingRepo::new(&database_url);
@@ -37,7 +41,6 @@ mod postgres_integration {
     #[tokio::test]
     async fn fresh_install_creates_internal_tables() {
         let Some((_database_url, repo_client)) = setup_postgres().await else {
-            eprintln!("skipping postgres integration test; TEST_DATABASE_URL is not set");
             return;
         };
 
@@ -70,7 +73,6 @@ mod postgres_integration {
     #[tokio::test]
     async fn event_inserts_are_idempotent() {
         let Some((_database_url, _repo_client)) = setup_postgres().await else {
-            eprintln!("skipping postgres integration test; TEST_DATABASE_URL is not set");
             return;
         };
 
@@ -112,7 +114,6 @@ mod postgres_integration {
     #[tokio::test]
     async fn checkpoint_updates_dual_write_and_stream_reads_checkpoint_first() {
         let Some((_database_url, mut repo_client)) = setup_postgres().await else {
-            eprintln!("skipping postgres integration test; TEST_DATABASE_URL is not set");
             return;
         };
         let suffix = test_runner::generate_unique_test_suffix();
@@ -212,7 +213,6 @@ mod postgres_integration {
     #[tokio::test]
     async fn outbox_dispatch_marks_jobs_delivered() {
         let Some((database_url, repo_client)) = setup_postgres().await else {
-            eprintln!("skipping postgres integration test; TEST_DATABASE_URL is not set");
             return;
         };
         let idempotency_key = format!("integration-{}", test_runner::generate_unique_test_suffix());
