@@ -104,21 +104,18 @@ mod tests {
         .await;
     }
 
-    // Remove ignore after refactoring EventingIngester to no use diesel
-    // Currently, it fails because we stream contract addresses
-    // outside the diesel transaction session
-    #[ignore]
     #[tokio::test]
     pub async fn updates_next_block_number_to_ingest_from_for_a_given_batch() {
         if test_runner::skip_without_test_database() {
             return;
         }
 
-        let pool = test_runner::get_pool().await;
+        test_runner::run_test_with_txn(|repo_client, suffix| async move {
+            let repo = test_runner::new_repo();
+            let pool = repo.get_pool(1).await;
+            let conn = ChaindexingRepo::get_conn(&pool).await;
 
-        test_runner::run_test(&pool, |conn| async move {
-            let repo_client = test_runner::new_repo().get_client().await;
-            let bayc_contract = bayc_contract("BoredApeYachtClub-8", "03");
+            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-8-{suffix}"), "03");
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
@@ -148,7 +145,7 @@ mod tests {
 
             let bayc_contract_address = find_contract_address_by_contract_name(
                 &repo_client,
-                "BoredApeYachtClub-8",
+                &format!("BoredApeYachtClub-8-{suffix}"),
                 &ChainId::Mainnet,
             )
             .await
@@ -163,9 +160,71 @@ mod tests {
         .await;
     }
 
-    // TODO:
     #[tokio::test]
-    pub async fn continues_from_next_block_number_to_ingest_from() {}
+    pub async fn continues_from_next_block_number_to_ingest_from() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
+        test_runner::run_test_with_txn(|repo_client, suffix| async move {
+            let repo = test_runner::new_repo();
+            let pool = repo.get_pool(1).await;
+            let conn = ChaindexingRepo::get_conn(&pool).await;
+
+            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-12-{suffix}"), "12");
+            let config =
+                Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
+
+            let contract_address = bayc_contract.addresses.first().cloned().unwrap();
+            let contract_address = &contract_address.address;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
+
+            static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 50;
+            const BLOCKS_PER_BATCH: u64 = 10;
+            const EXPECTED_NEXT_BLOCK: u64 =
+                BAYC_CONTRACT_START_BLOCK_NUMBER as u64 + BLOCKS_PER_BATCH + 1;
+            let first_provider =
+                Arc::new(provider_with_logs!(contract_address, CURRENT_BLOCK_NUMBER));
+            let conn = Arc::new(Mutex::new(conn));
+
+            let repo_client = Arc::new(Mutex::new(repo_client));
+            let config = config.with_blocks_per_batch(BLOCKS_PER_BATCH);
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                first_provider,
+                conn.clone(),
+                &repo_client,
+                &config,
+                &mut HashMap::new(),
+            )
+            .await
+            .unwrap();
+
+            let second_provider = Arc::new(provider_with_filter_stubber!(
+                contract_address,
+                CURRENT_BLOCK_NUMBER,
+                |filter: &Filter| {
+                    assert_eq!(
+                        filter.get_from_block().unwrap().as_u64(),
+                        EXPECTED_NEXT_BLOCK
+                    );
+                }
+            ));
+
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                second_provider,
+                conn.clone(),
+                &repo_client,
+                &config,
+                &mut HashMap::new(),
+            )
+            .await
+            .unwrap();
+        })
+        .await;
+    }
 
     #[tokio::test]
     pub async fn does_nothing_when_there_are_no_contracts() {
