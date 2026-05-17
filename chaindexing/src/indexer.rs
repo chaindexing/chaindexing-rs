@@ -125,12 +125,15 @@ impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
 }
 
 impl<SharedState: Sync + Send + Clone + Debug + 'static> Indexer<SharedState> {
-    /// Starts the configured indexer workers.
+    /// Starts the configured indexer workers and blocks until Ctrl-C triggers a graceful shutdown.
+    ///
+    /// Use [`Indexer::start`] instead when embedding Chaindexing in a service that owns its own
+    /// shutdown signal or lifecycle supervisor.
     pub async fn run(self) -> Result<(), ChaindexingError> {
         index_states(&self.config).await
     }
 
-    /// Starts the configured indexer workers and returns a lifecycle handle.
+    /// Starts the configured indexer workers and returns a lifecycle handle immediately.
     pub async fn start(self) -> Result<IndexingHandle, ChaindexingError> {
         start_indexing(&self.config).await
     }

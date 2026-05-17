@@ -163,7 +163,12 @@ impl IndexingHandle {
     /// Runs until Ctrl-C is received or the supervisor exits unexpectedly.
     pub async fn wait_for_shutdown_signal(mut self) -> Result<(), ChaindexingError> {
         tokio::select! {
-            result = &mut self.join_handle => supervisor_result(result),
+            result = &mut self.join_handle => {
+                supervisor_result(result)?;
+                Err(ChaindexingError::Runtime(
+                    "indexer supervisor exited before a shutdown signal".to_string()
+                ))
+            },
             signal = tokio::signal::ctrl_c() => {
                 signal.map_err(|error| ChaindexingError::Runtime(error.to_string()))?;
                 self.shutdown();
@@ -299,6 +304,24 @@ fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
 
 fn supervisor_result(result: Result<(), JoinError>) -> Result<(), ChaindexingError> {
     result.map_err(|error| ChaindexingError::Runtime(error.to_string()))
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn wait_for_shutdown_signal_errors_when_supervisor_exits_early() {
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+        let handle = IndexingHandle {
+            shutdown_tx,
+            join_handle: tokio::spawn(async {}),
+        };
+
+        let error = handle.wait_for_shutdown_signal().await.unwrap_err();
+
+        assert!(error.to_string().contains("indexer supervisor exited before a shutdown signal"));
+    }
 }
 
 pub mod prelude {
