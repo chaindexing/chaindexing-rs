@@ -249,22 +249,18 @@ impl LoadsDataWithRawQuery for PostgresRepo {
         chain_id: u64,
         contract_address: &str,
         from_block_number: u64,
-        limit: u64,
+        block_limit: u64,
     ) -> Vec<Event> {
-        let query = format!(
-            "SELECT * from chaindexing_events
-            WHERE chain_id = {chain_id} AND contract_address= {contract_address}
-            AND block_number >= {from_block_number} 
-            ORDER BY block_number ASC, transaction_index ASC, log_index ASC
-            LIMIT {limit}",
-            contract_address = sql_string_literal(contract_address),
-        );
-
-        Self::load_data_list(client, &query).await
+        Self::load_data_list(
+            client,
+            &load_events_query(chain_id, contract_address, from_block_number, block_limit),
+        )
+        .await
     }
 
     async fn load_latest_events(
         client: &Self::RawQueryClient,
+        chain_id: u64,
         addresses: &[String],
     ) -> Vec<PartialEvent> {
         if addresses.is_empty() {
@@ -279,6 +275,8 @@ impl LoadsDataWithRawQuery for PostgresRepo {
                 FROM
                     chaindexing_events
                 WHERE
+                chain_id = {chain_id}
+                AND
                 contract_address IN ({addresses})
             )
             SELECT
@@ -365,6 +363,33 @@ fn json_aggregate_query(query: &str) -> String {
     format!("WITH result AS ({query}) SELECT COALESCE(json_agg(result), '[]'::json) FROM result",)
 }
 
+fn load_events_query(
+    chain_id: u64,
+    contract_address: &str,
+    from_block_number: u64,
+    block_limit: u64,
+) -> String {
+    format!(
+        "WITH event_blocks AS (
+            SELECT DISTINCT block_number
+            FROM chaindexing_events
+            WHERE chain_id = {chain_id}
+              AND contract_address = {contract_address}
+              AND block_number >= {from_block_number}
+            ORDER BY block_number ASC
+            LIMIT {block_limit}
+        )
+        SELECT e.*
+        FROM chaindexing_events e
+        INNER JOIN event_blocks b
+            ON b.block_number = e.block_number
+        WHERE e.chain_id = {chain_id}
+          AND e.contract_address = {contract_address}
+        ORDER BY e.block_number ASC, e.transaction_index ASC, e.log_index ASC",
+        contract_address = sql_string_literal(contract_address),
+    )
+}
+
 fn join_numbers_with_comma(numbers: &[impl ToString]) -> String {
     numbers.iter().map(|n| n.to_string()).collect::<Vec<String>>().join(",")
 }
@@ -416,6 +441,16 @@ mod tests {
             join_strings_with_comma(&values),
             "'owner''s wallet','plain'"
         );
+    }
+
+    #[test]
+    fn load_events_query_limits_blocks_not_events() {
+        let query = load_events_query(1, "0xabc'def", 100, 10);
+
+        assert!(query.contains("SELECT DISTINCT block_number"));
+        assert!(query.contains("LIMIT 10"));
+        assert!(query.contains("contract_address = '0xabc''def'"));
+        assert!(!query.contains("SELECT e.*\n        FROM chaindexing_events e\n        WHERE"));
     }
 
     #[test]

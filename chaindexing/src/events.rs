@@ -29,10 +29,12 @@ pub fn get<S: Send + Sync + Clone>(
                 let contract_address =
                     contract_addresses_by_address.get(&(*address, *chain_id)).unwrap();
                 let block = blocks_by_number.get(&block_number.unwrap()).unwrap();
+                let contract_event_key =
+                    contracts::contract_event_key(&contract_address.contract_name, topics[0]);
 
                 Event::new(
                     log,
-                    events_by_topics.get(&topics[0]).unwrap(),
+                    events_by_topics.get(&contract_event_key).unwrap(),
                     chain_id,
                     &contract_address.contract_name,
                     block.timestamp.as_u64() as i64,

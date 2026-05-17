@@ -16,6 +16,19 @@ use ethers::{
 use serde::Deserialize;
 
 pub type ContractEventTopic = H256;
+pub(crate) type HandlerKey = (String, String);
+pub(crate) type ContractEventKey = (String, ContractEventTopic);
+
+pub(crate) fn handler_key(contract_name: &str, event_abi: &str) -> HandlerKey {
+    (contract_name.to_string(), event_abi.to_string())
+}
+
+pub(crate) fn contract_event_key(
+    contract_name: &str,
+    topic: ContractEventTopic,
+) -> ContractEventKey {
+    (contract_name.to_string(), topic)
+}
 
 #[derive(Debug, Clone)]
 pub struct ContractEvent {
@@ -132,10 +145,22 @@ impl<S: Send + Sync + Clone> Contract<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handlers::PureHandlerContext;
     use crate::handlers::SideEffectHandlerContext;
 
     const TRANSFER_ABI: &str =
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)";
+
+    struct TransferHandler;
+
+    #[crate::augmenting_std::async_trait]
+    impl PureHandler for TransferHandler {
+        fn abi(&self) -> &'static str {
+            TRANSFER_ABI
+        }
+
+        async fn handle_event<'a, 'b>(&self, _context: PureHandlerContext<'a, 'b>) {}
+    }
 
     struct TransferSideEffectHandler;
 
@@ -162,6 +187,35 @@ mod tests {
         assert_eq!(contract.get_event_abis(), vec![TRANSFER_ABI]);
         assert_eq!(contract.get_event_topics().len(), 1);
     }
+
+    #[test]
+    fn keeps_same_abi_handlers_separate_per_contract() {
+        let contracts = vec![
+            Contract::<()>::new("ERC721").add_event_handler(TransferHandler),
+            Contract::<()>::new("ERC20").add_event_handler(TransferHandler),
+        ];
+
+        let handlers = get_pure_handlers(&contracts);
+
+        assert_eq!(handlers.len(), 2);
+        assert!(handlers.contains_key(&handler_key("ERC721", TRANSFER_ABI)));
+        assert!(handlers.contains_key(&handler_key("ERC20", TRANSFER_ABI)));
+    }
+
+    #[test]
+    fn keeps_same_topic_events_separate_per_contract() {
+        let contracts = vec![
+            Contract::<()>::new("ERC721").add_event_handler(TransferHandler),
+            Contract::<()>::new("ERC20").add_event_handler(TransferHandler),
+        ];
+
+        let events = group_events_by_topics(&contracts);
+        let topic = ContractEvent::new(TRANSFER_ABI).value.signature();
+
+        assert_eq!(events.len(), 2);
+        assert!(events.contains_key(&contract_event_key("ERC721", topic)));
+        assert!(events.contains_key(&contract_event_key("ERC20", topic)));
+    }
 }
 
 impl<S: Send + Sync + Clone> Debug for Contract<S> {
@@ -181,23 +235,23 @@ pub fn get_state_migrations<S: Send + Sync + Clone>(
 
 pub fn get_pure_handlers<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
-) -> HashMap<EventAbi, Arc<dyn PureHandler>> {
-    contracts.iter().fold(HashMap::new(), |mut handlers_by_event_abi, contract| {
+) -> HashMap<HandlerKey, Arc<dyn PureHandler>> {
+    contracts.iter().fold(HashMap::new(), |mut handlers_by_event, contract| {
         contract.pure_handlers.iter().for_each(|(event_abi, handler)| {
-            handlers_by_event_abi.insert(event_abi, handler.clone());
+            handlers_by_event.insert(handler_key(&contract.name, event_abi), handler.clone());
         });
-        handlers_by_event_abi
+        handlers_by_event
     })
 }
 
 pub fn get_side_effect_handlers<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
-) -> HashMap<EventAbi, Arc<dyn SideEffectHandler<SharedState = S>>> {
-    contracts.iter().fold(HashMap::new(), |mut handlers_by_event_abi, contract| {
+) -> HashMap<HandlerKey, Arc<dyn SideEffectHandler<SharedState = S>>> {
+    contracts.iter().fold(HashMap::new(), |mut handlers_by_event, contract| {
         contract.side_effect_handlers.iter().for_each(|(event_abi, handler)| {
-            handlers_by_event_abi.insert(event_abi, handler.clone());
+            handlers_by_event.insert(handler_key(&contract.name, event_abi), handler.clone());
         });
-        handlers_by_event_abi
+        handlers_by_event
     })
 }
 
@@ -213,11 +267,17 @@ pub fn group_event_topics_by_names<S: Send + Sync + Clone>(
 
 pub fn group_events_by_topics<S: Send + Sync + Clone>(
     contracts: &[Contract<S>],
-) -> HashMap<ContractEventTopic, ContractEvent> {
+) -> HashMap<ContractEventKey, ContractEvent> {
     contracts
         .iter()
-        .flat_map(|c| c.build_events())
-        .map(|e| (e.value.signature(), e))
+        .flat_map(|contract| {
+            contract.build_events().into_iter().map(|event| {
+                (
+                    contract_event_key(&contract.name, event.value.signature()),
+                    event,
+                )
+            })
+        })
         .collect()
 }
 

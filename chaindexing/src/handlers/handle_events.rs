@@ -6,15 +6,18 @@ use tokio::sync::Mutex;
 
 use crate::deferred_futures::DeferredFutures;
 use crate::streams::ContractAddressesStream;
+use crate::{contracts, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery};
 use crate::{ChaindexingRepo, ChaindexingRepoClientMutex};
-use crate::{EventAbi, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery};
 
 use super::pure_handler::{PureHandler, PureHandlerContext};
 use super::side_effect_handler::{SideEffectHandler, SideEffectHandlerContext};
 
 pub async fn run<'a, S: Send + Sync + Clone + Debug>(
-    pure_handlers: &HashMap<EventAbi, Arc<dyn PureHandler>>,
-    side_effect_handlers: &HashMap<EventAbi, Arc<dyn SideEffectHandler<SharedState = S>>>,
+    pure_handlers: &HashMap<contracts::HandlerKey, Arc<dyn PureHandler>>,
+    side_effect_handlers: &HashMap<
+        contracts::HandlerKey,
+        Arc<dyn SideEffectHandler<SharedState = S>>,
+    >,
     (chain_ids, blocks_per_batch): (&[u64], u64),
     (repo_client, repo_client_for_mcs): (&ChaindexingRepoClientMutex, &ChaindexingRepoClientMutex),
     deferred_mutations_for_mcs: &DeferredFutures<'a>,
@@ -45,8 +48,10 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                 let txn_client = ChaindexingRepo::get_txn_client(&mut client).await;
 
                 for event in &events {
+                    let handler_key = contracts::handler_key(&event.contract_name, event.get_abi());
+
                     {
-                        if let Some(handler) = pure_handlers.get(event.get_abi()) {
+                        if let Some(handler) = pure_handlers.get(&handler_key) {
                             let handler_context = PureHandlerContext::new(
                                 event,
                                 &txn_client,
@@ -61,7 +66,7 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                     {
                         if event.block_number >= contract_address.next_block_number_for_side_effects
                         {
-                            if let Some(handler) = side_effect_handlers.get(event.get_abi()) {
+                            if let Some(handler) = side_effect_handlers.get(&handler_key) {
                                 let handler_context =
                                     SideEffectHandlerContext::new(event, &txn_client, shared_state);
 

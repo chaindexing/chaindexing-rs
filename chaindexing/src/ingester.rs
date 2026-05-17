@@ -54,13 +54,22 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                                 break;
                             }
 
-                            let provider = provider::get(&chain.json_rpc_url);
+                            let provider = match provider::get(&chain.json_rpc_url) {
+                                Ok(provider) => provider,
+                                Err(error) => {
+                                    eprintln!(
+                                        "Chaindexing ingester provider setup failed for chain {:?}: {error}",
+                                        chain.id
+                                    );
+                                    continue;
+                                }
+                            };
                             let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
                             let pool = config.repo.get_pool(1).await;
                             let conn = ChaindexingRepo::get_conn(&pool).await;
                             let conn = Arc::new(Mutex::new(conn));
 
-                            ingest_for_chain(
+                            if let Err(error) = ingest_for_chain(
                                 &chain.id,
                                 provider,
                                 conn.clone(),
@@ -69,7 +78,12 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                                 &mut last_pruned_at_per_chain_id,
                             )
                             .await
-                            .unwrap();
+                            {
+                                eprintln!(
+                                    "Chaindexing ingester failed for chain {:?}: {error}",
+                                    chain.id
+                                );
+                            }
                         }
 
                         tokio::select! {
@@ -104,7 +118,7 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
     }: &Config<S>,
     last_pruned_at_per_chain_id: &mut HashMap<u64, u64>,
 ) -> Result<(), IngesterError> {
-    let current_block_number = provider::fetch_current_block_number(&provider).await;
+    let current_block_number = provider::fetch_current_block_number(&provider).await?;
     let mut contract_addresses_stream =
         ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(5);
 

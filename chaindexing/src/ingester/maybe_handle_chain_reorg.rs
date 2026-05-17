@@ -36,15 +36,15 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     );
 
     if !filters.is_empty() {
-        let already_ingested_events = get_already_ingested_events(conn, &filters).await;
+        let already_ingested_events = get_already_ingested_events(conn, chain_id, &filters).await;
         let blocks_by_number = provider::fetch_blocks_for_filters(
             provider,
             &filters,
             current_block_number,
             min_confirmation_count.as_u64(),
         )
-        .await;
-        let logs = provider::fetch_logs(provider, &filters).await;
+        .await?;
+        let logs = provider::fetch_logs(provider, &filters).await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_number);
 
         let provider_events = events::get(
@@ -68,6 +68,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
 async fn get_already_ingested_events<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
+    chain_id: &ChainId,
     filters: &Vec<Filter>,
 ) -> Vec<Event> {
     let mut already_ingested_events = vec![];
@@ -75,9 +76,14 @@ async fn get_already_ingested_events<'a>(
         let from_block = filter.value.get_from_block().unwrap().as_u64();
         let to_block = filter.value.get_to_block().unwrap().as_u64();
 
-        let mut events =
-            ChaindexingRepo::get_events(conn, filter.address.to_owned(), from_block, to_block)
-                .await;
+        let mut events = ChaindexingRepo::get_events(
+            conn,
+            *chain_id as u64,
+            filter.address.to_owned(),
+            from_block,
+            to_block,
+        )
+        .await;
         already_ingested_events.append(&mut events);
     }
 

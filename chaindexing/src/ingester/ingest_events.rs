@@ -38,7 +38,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         &Execution::Main,
     );
 
-    let filters = remove_already_ingested_filters(&filters, &contract_addresses, repo_client).await;
+    let filters =
+        remove_already_ingested_filters(&filters, &contract_addresses, chain_id, repo_client).await;
 
     if !filters.is_empty() {
         let blocks_by_tx_hash = provider::fetch_blocks_for_filters(
@@ -47,8 +48,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             current_block_number,
             min_confirmation_count.as_u64(),
         )
-        .await;
-        let logs = provider::fetch_logs(provider, &filters).await;
+        .await?;
+        let logs = provider::fetch_logs(provider, &filters).await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);
         let events = events::get(
             &logs,
@@ -88,6 +89,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 async fn remove_already_ingested_filters(
     filters: &Vec<Filter>,
     contract_addresses: &[ContractAddress],
+    chain_id: &ChainId,
     repo_client: &ChaindexingRepoClient,
 ) -> Vec<Filter> {
     let current_block_filters: Vec<_> = filters
@@ -101,7 +103,7 @@ async fn remove_already_ingested_filters(
         let addresses: Vec<_> = contract_addresses.iter().map(|c| c.address.clone()).collect();
 
         let latest_ingested_events =
-            ChaindexingRepo::load_latest_events(repo_client, &addresses).await;
+            ChaindexingRepo::load_latest_events(repo_client, *chain_id as u64, &addresses).await;
         let latest_ingested_events =
             latest_ingested_events
                 .iter()

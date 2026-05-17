@@ -45,6 +45,7 @@ pub trait Repo:
     async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
     async fn get_events<'a>(
         conn: &mut Self::Conn<'a>,
+        chain_id: u64,
         address: String,
         from: u64,
         to: u64,
@@ -133,6 +134,7 @@ pub trait LoadsDataWithRawQuery: HasRawQueryClient {
     async fn load_last_root_state(client: &Self::RawQueryClient) -> Option<root::State>;
     async fn load_latest_events(
         client: &Self::RawQueryClient,
+        chain_id: u64,
         addresses: &[String],
     ) -> Vec<PartialEvent>;
     async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock>;

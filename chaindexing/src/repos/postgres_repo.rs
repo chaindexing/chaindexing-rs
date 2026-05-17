@@ -175,6 +175,7 @@ impl Repo for PostgresRepo {
     }
     async fn get_events<'a>(
         conn: &mut Self::Conn<'a>,
+        event_chain_id: u64,
         address: String,
         from: u64,
         to: u64,
@@ -182,6 +183,7 @@ impl Repo for PostgresRepo {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
         chaindexing_events
+            .filter(chain_id.eq(event_chain_id as i64))
             .filter(contract_address.eq(address.to_lowercase()))
             .filter(block_number.between(from as i64, to as i64))
             .load(conn)

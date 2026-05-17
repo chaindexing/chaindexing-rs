@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::collections::{BTreeSet, HashMap};
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +14,8 @@ use tokio::time::sleep;
 use super::filters::Filter;
 
 pub type ProviderError = EthersProviderError;
+const MAX_PROVIDER_ATTEMPTS: u32 = 5;
+const MAX_BACKOFF_SECS: u64 = 30;
 
 #[crate::augmenting_std::async_trait]
 pub trait Provider: Clone + Sync + Send {
@@ -86,56 +89,34 @@ impl Provider for EthersProvider<Http> {
     }
 
     async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
-        Ok(Middleware::get_block(&self, block_number).await?.unwrap())
+        Middleware::get_block(&self, block_number)
+            .await?
+            .ok_or_else(|| ProviderError::CustomError(format!("block {block_number} not found")))
     }
 }
 
-pub fn get(json_rpc_url: &str) -> Arc<impl Provider> {
-    Arc::new(EthersProvider::<Http>::try_from(json_rpc_url).unwrap())
+pub fn get(json_rpc_url: &str) -> Result<Arc<impl Provider>, ProviderError> {
+    EthersProvider::<Http>::try_from(json_rpc_url)
+        .map(Arc::new)
+        .map_err(|error| ProviderError::CustomError(format!("invalid JSON-RPC URL: {error}")))
 }
 
-pub async fn fetch_current_block_number(provider: &Arc<impl Provider>) -> u64 {
-    let mut maybe_current_block_number = None;
-    let mut retries_so_far = 0;
-
-    while maybe_current_block_number.is_none() {
-        match provider.get_block_number().await {
-            Ok(current_block_number) => {
-                maybe_current_block_number = Some(current_block_number.as_u64())
-            }
-            Err(provider_error) => {
-                eprintln!("Provider Error: {provider_error}");
-
-                backoff(retries_so_far).await;
-                retries_so_far += 1;
-            }
-        }
-    }
-
-    maybe_current_block_number.unwrap()
+pub async fn fetch_current_block_number(
+    provider: &Arc<impl Provider>,
+) -> Result<u64, ProviderError> {
+    retry_provider(|| async { provider.get_block_number().await.map(|block| block.as_u64()) }).await
 }
 
-pub async fn fetch_logs(provider: &Arc<impl Provider>, filters: &[Filter]) -> Vec<Log> {
-    let mut maybe_logs = None;
-    let mut retries_so_far = 0;
-
-    while maybe_logs.is_none() {
-        match try_join_all(filters.iter().map(|f| provider.get_logs(&f.value))).await {
-            Ok(logs_per_filter) => {
-                let logs = logs_per_filter.into_iter().flatten().collect();
-
-                maybe_logs = Some(logs)
-            }
-            Err(provider_error) => {
-                eprintln!("Provider Error: {provider_error}");
-
-                backoff(retries_so_far).await;
-                retries_so_far += 1;
-            }
-        }
-    }
-
-    maybe_logs.unwrap()
+pub async fn fetch_logs(
+    provider: &Arc<impl Provider>,
+    filters: &[Filter],
+) -> Result<Vec<Log>, ProviderError> {
+    retry_provider(|| async {
+        try_join_all(filters.iter().map(|f| provider.get_logs(&f.value)))
+            .await
+            .map(|logs_per_filter| logs_per_filter.into_iter().flatten().collect())
+    })
+    .await
 }
 
 pub async fn fetch_blocks_for_filters(
@@ -143,26 +124,13 @@ pub async fn fetch_blocks_for_filters(
     filters: &[Filter],
     current_block_number: u64,
     lookback_block_count: u64,
-) -> HashMap<U64, Block<TxHash>> {
-    let mut maybe_blocks_by_number = None;
-    let mut retries_so_far = 0;
-
-    while maybe_blocks_by_number.is_none() {
-        match provider
+) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+    retry_provider(|| async {
+        provider
             .get_blocks_for_filters(filters, current_block_number, lookback_block_count)
             .await
-        {
-            Ok(blocks_by_tx_hash) => maybe_blocks_by_number = Some(blocks_by_tx_hash),
-            Err(provider_error) => {
-                eprintln!("Provider Error: {provider_error}");
-
-                backoff(retries_so_far).await;
-                retries_so_far += 1;
-            }
-        }
-    }
-
-    maybe_blocks_by_number.unwrap()
+    })
+    .await
 }
 
 fn block_numbers_for_filters(
@@ -195,8 +163,28 @@ fn block_numbers_for_filters(
         .collect()
 }
 
+async fn retry_provider<T, F, Fut>(mut operation: F) -> Result<T, ProviderError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, ProviderError>>,
+{
+    let mut attempts = 0;
+
+    loop {
+        attempts += 1;
+
+        match operation().await {
+            Ok(value) => return Ok(value),
+            Err(error) if attempts >= MAX_PROVIDER_ATTEMPTS => return Err(error),
+            Err(_) => backoff(attempts - 1).await,
+        }
+    }
+}
+
 async fn backoff(retries_so_far: u32) {
-    sleep(Duration::from_secs(2u64.pow(retries_so_far))).await;
+    let delay_secs = 2u64.saturating_pow(retries_so_far).min(MAX_BACKOFF_SECS);
+
+    sleep(Duration::from_secs(delay_secs)).await;
 }
 
 #[cfg(test)]
