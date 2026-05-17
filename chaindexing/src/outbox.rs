@@ -22,6 +22,7 @@ pub struct OutboxDispatchConfig {
     pub batch_size: u64,
     pub max_attempts: u32,
     pub base_retry_delay_secs: u64,
+    pub lease_duration_secs: u64,
 }
 
 impl Default for OutboxDispatchConfig {
@@ -30,6 +31,7 @@ impl Default for OutboxDispatchConfig {
             batch_size: 100,
             max_attempts: 10,
             base_retry_delay_secs: 5,
+            lease_duration_secs: 300,
         }
     }
 }
@@ -124,7 +126,7 @@ pub async fn dispatch_pending_outbox_jobs<Dispatcher: OutboxDispatcher + ?Sized>
     let repo = PostgresRepo::new(postgres_url);
     let client = repo.get_client().await;
     let jobs: Vec<OutboxJob> =
-        PostgresRepo::load_data_list(&client, &lease_pending_jobs_query(config.batch_size)).await;
+        PostgresRepo::load_data_list(&client, &lease_pending_jobs_query(config)).await;
     let dispatched_count = jobs.len();
 
     for job in jobs {
@@ -139,15 +141,26 @@ pub async fn dispatch_pending_outbox_jobs<Dispatcher: OutboxDispatcher + ?Sized>
     dispatched_count
 }
 
-fn lease_pending_jobs_query(limit: u64) -> String {
+fn lease_pending_jobs_query(config: OutboxDispatchConfig) -> String {
+    let limit = config.batch_size;
+    let lease_duration_secs = config.lease_duration_secs.max(1);
+
     format!(
         "UPDATE chaindexing_outbox
-         SET status = 'dispatching', updated_at = NOW()
+         SET status = 'dispatching',
+             lease_expires_at = NOW() + INTERVAL '{lease_duration_secs} seconds',
+             updated_at = NOW()
          WHERE id IN (
              SELECT id
              FROM chaindexing_outbox
-             WHERE status = 'pending'
-               AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
+             WHERE (
+                    status = 'pending'
+                    AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
+                )
+                OR (
+                    status = 'dispatching'
+                    AND lease_expires_at <= NOW()
+                )
              ORDER BY id ASC
              LIMIT {limit}
              FOR UPDATE SKIP LOCKED
@@ -162,6 +175,7 @@ fn mark_delivered_query(id: i64) -> String {
          SET status = 'delivered',
              last_error = NULL,
              next_attempt_at = NULL,
+             lease_expires_at = NULL,
              updated_at = NOW()
          WHERE id = {id}"
     )
@@ -189,6 +203,7 @@ fn mark_failed_query(job: &OutboxJob, error: &str, config: OutboxDispatchConfig)
              attempt_count = {next_attempt_count},
              last_error = '{}',
              next_attempt_at = {next_attempt_at},
+             lease_expires_at = NULL,
              updated_at = NOW()
          WHERE id = {}",
         escape_sql_literal(error),
@@ -220,11 +235,24 @@ mod tests {
 
     #[test]
     fn lease_pending_jobs_query_marks_jobs_as_dispatching() {
-        let query = lease_pending_jobs_query(10);
+        let query = lease_pending_jobs_query(OutboxDispatchConfig {
+            batch_size: 10,
+            lease_duration_secs: 30,
+            ..Default::default()
+        });
 
         assert!(query.contains("SET status = 'dispatching'"));
+        assert!(query.contains("lease_expires_at = NOW() + INTERVAL '30 seconds'"));
         assert!(query.contains("FOR UPDATE SKIP LOCKED"));
         assert!(query.contains("LIMIT 10"));
+    }
+
+    #[test]
+    fn lease_pending_jobs_query_recovers_expired_dispatching_jobs() {
+        let query = lease_pending_jobs_query(Default::default());
+
+        assert!(query.contains("status = 'dispatching'"));
+        assert!(query.contains("lease_expires_at <= NOW()"));
     }
 
     #[test]
@@ -253,5 +281,6 @@ mod tests {
         assert!(query.contains("attempt_count = 3"));
         assert!(query.contains("provider''s API failed"));
         assert!(query.contains("next_attempt_at = NULL"));
+        assert!(query.contains("lease_expires_at = NULL"));
     }
 }

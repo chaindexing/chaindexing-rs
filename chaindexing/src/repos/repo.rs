@@ -366,13 +366,18 @@ impl SQLikeMigrations {
                 attempt_count INTEGER NOT NULL DEFAULT 0,
                 last_error TEXT,
                 next_attempt_at TIMESTAMPTZ,
+                lease_expires_at TIMESTAMPTZ,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+            "ALTER TABLE IF EXISTS chaindexing_outbox
+             ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_outbox_idempotency_key
             ON chaindexing_outbox(idempotency_key)",
             "CREATE INDEX IF NOT EXISTS chaindexing_outbox_status_next_attempt_at
             ON chaindexing_outbox(status, next_attempt_at)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_outbox_status_lease_expires_at
+            ON chaindexing_outbox(status, lease_expires_at)",
         ]
     }
 }
