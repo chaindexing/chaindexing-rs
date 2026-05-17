@@ -251,6 +251,6 @@ mod postgres_integration {
 
         assert_eq!(dispatched, 1);
         assert_eq!(status.status, "delivered");
-        assert_eq!(status.attempt_count, 0);
+        assert_eq!(status.attempt_count, 1);
     }
 }
