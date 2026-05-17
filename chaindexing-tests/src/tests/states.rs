@@ -34,6 +34,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn creates_state() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let bayc_contract =
             bayc_contract("BoredApeYachtClub-1", "09").add_state_migrations(NftMigrations);
         let mut repo_client = test_runner::new_repo().get_client().await;
@@ -59,6 +63,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn updates_state() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let bayc_contract =
             bayc_contract("BoredApeYachtClub-2", "07").add_state_migrations(NftMigrations);
         let mut repo_client = test_runner::new_repo().get_client().await;
@@ -112,6 +120,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn deletes_state() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let bayc_contract =
             bayc_contract("BoredApeYachtClub-3", "05").add_state_migrations(NftMigrations);
         let mut repo_client = test_runner::new_repo().get_client().await;

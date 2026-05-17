@@ -15,6 +15,21 @@ pub async fn get_pool() -> ChaindexingRepoPool {
     new_repo().get_pool(1).await
 }
 
+pub fn has_test_database() -> bool {
+    dotenv().ok();
+
+    env::var("TEST_DATABASE_URL").is_ok()
+}
+
+pub fn skip_without_test_database() -> bool {
+    if has_test_database() {
+        false
+    } else {
+        eprintln!("skipping postgres-backed test; TEST_DATABASE_URL is not set");
+        true
+    }
+}
+
 /// Generate a unique test suffix for this test execution
 /// Uses thread ID + global counter + timestamp to ensure uniqueness across parallel tests
 pub fn generate_unique_test_suffix() -> String {
@@ -39,6 +54,10 @@ where
     TestFn: Fn(ChaindexingRepoConn<'a>) -> Fut,
     Fut: Future<Output = ()>,
 {
+    if skip_without_test_database() {
+        return;
+    }
+
     let mut conn = ChaindexingRepo::get_conn(pool).await;
 
     if should_setup_test_db() {
@@ -60,6 +79,10 @@ where
     TestFn: Fn(ChaindexingRepoClient) -> Fut,
     Fut: Future<Output = ()>,
 {
+    if skip_without_test_database() {
+        return;
+    }
+
     let repo_client = new_repo().get_client().await;
 
     if should_setup_test_db() {
@@ -81,6 +104,10 @@ where
     TestFn: Fn(ChaindexingRepoClient, String) -> Fut,
     Fut: Future<Output = ()>,
 {
+    if skip_without_test_database() {
+        return;
+    }
+
     let repo_client = new_repo().get_client().await;
     let unique_suffix = generate_unique_test_suffix();
 

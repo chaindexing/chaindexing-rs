@@ -17,6 +17,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn creates_contract_events() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
@@ -60,6 +64,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn starts_from_start_block_number() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
@@ -102,6 +110,10 @@ mod tests {
     #[ignore]
     #[tokio::test]
     pub async fn updates_next_block_number_to_ingest_from_for_a_given_batch() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
@@ -157,6 +169,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn does_nothing_when_there_are_no_contracts() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
@@ -185,6 +201,10 @@ mod tests {
 
     #[tokio::test]
     pub async fn does_nothing_when_there_are_no_events_from_contracts() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
