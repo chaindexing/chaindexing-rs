@@ -10,7 +10,7 @@ Chaindexing is for teams that want indexed blockchain data in a database they ow
 SQL read paths, deterministic Rust handlers, bounded reorg repair, and production-facing controls
 for RPC pressure, finality, and external side effects.
 
-[Quickstart](#quickstart) | [Why Chaindexing](#why-chaindexing) | [Guarantees](#guarantees) | [Reorg Handling](docs/reorg-handling.md) | [Finality Policies](docs/finality-policies.md) | [Examples](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) | [Production Limits](#production-limits) | [Roadmap](#roadmap) | [Contributing](#contributing)
+[Quickstart](#quickstart) | [Why Chaindexing](#why-chaindexing) | [Guarantees](#guarantees) | [Reorg Handling](docs/reorg-handling.md) | [Finality Policies](docs/finality-policies.md) | [Indexed Data](docs/indexed-data.md) | [Examples](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) | [Production Limits](#production-limits) | [Roadmap](#roadmap) | [Contributing](#contributing)
 
 ## Quickstart
 
@@ -395,8 +395,10 @@ async fn read_nft() -> Option<Nft> {
 | Handler tail heuristic | Supported with `is_at_block_tail()` on pure and side-effect handler contexts. |
 | Reorg repair | Supported inside the configured confirmation/finality window. |
 | Durable side-effect dispatch | Supported through `chaindexing_outbox`; dispatch is intentionally at-least-once. |
-| Raw transactions and traces | Not supported yet. |
-| SQLite or non-Postgres backends | Not supported yet; Postgres is the production backend. |
+| Raw transactions | Supported as opt-in full JSON-RPC transaction payload indexing with `.raw_transactions()` or `Config::with_raw_transaction_indexing()`. |
+| Call traces | Supported as opt-in `debug_traceBlockByHash`/callTracer indexing with `.call_traces()` or `Config::with_call_trace_indexing()`, subject to RPC provider trace support. |
+| Inspection queries | Supported through `InspectionQueries` for canonical events, blocks, transactions, call traces, and recent reorgs. |
+| SQLite or non-Postgres backends | Not supported yet; Postgres is the production backend. Evaluation criteria are documented in [Local Backend Evaluation](docs/local-backends.md). |
 
 ## Production Limits
 
@@ -411,14 +413,14 @@ for these limits:
 - **Database bottlenecks:** `db_connections` bounds the pooled Postgres work used by ingestion and supervision, while handler raw clients scale with `max_handler_workers`. More connections only help if Postgres has spare CPU, IO, and lock capacity.
 - **RPC provider limits:** `max_in_flight`, `max_per_chain`, and optional `requests_per_second` express provider pressure. Public endpoints often cap block ranges and requests per second.
 - **Deep backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized. Prefer `RuntimeConfig::backfill()` with explicit limits, or start closer to the present block.
-- **Error reporting:** Some internal database and provider failures are still surfaced as opaque runtime errors. Improving typed errors and diagnostics is active roadmap work.
+- **Trace provider availability:** Call trace indexing depends on provider debug/trace APIs. Many hosted RPC endpoints disable `debug_traceBlockByHash` or rate-limit it separately from normal log/block calls.
+- **Typed diagnostics:** Provider setup, missing blocks, unsupported provider capabilities, and ingestion provider failures now carry typed errors. Some older repository paths still surface database failures through legacy panic paths and should continue moving toward `Result`-returning APIs.
 
 ## Roadmap
 
-- Support raw transaction and call trace indexing.
-- Improve error handling, messages, and reporting.
-- Add a minimal UI for inspecting events and indexed states.
-- Evaluate SQLite or other local backends after the Postgres guarantees are complete.
+- Convert remaining legacy repository panic paths into typed `Result` errors.
+- Add a packaged minimal UI on top of the read-only inspection queries.
+- Prototype SQLite or another local backend against the documented Postgres behavior guarantees.
 
 ## Contributing
 
