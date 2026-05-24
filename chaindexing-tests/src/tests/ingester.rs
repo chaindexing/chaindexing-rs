@@ -87,7 +87,13 @@ mod tests {
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
-            let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
+            static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 20;
+            let contract_address = bayc_contract.addresses.first().cloned().unwrap();
+            let contract_address = contract_address.address.to_lowercase();
+            let provider = Arc::new(provider_with_empty_logs!(
+                &contract_address,
+                CURRENT_BLOCK_NUMBER
+            ));
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
                 .await;
@@ -108,7 +114,11 @@ mod tests {
             let repo_client = repo_client.lock().await;
             let count: Count = ChaindexingRepo::load_data(
                 &repo_client,
-                "SELECT COUNT(*)::BIGINT AS count FROM chaindexing_block_scans",
+                &format!(
+                    "SELECT COUNT(*)::BIGINT AS count
+                     FROM chaindexing_block_scans
+                     WHERE contract_address = '{contract_address}'"
+                ),
             )
             .await
             .unwrap();

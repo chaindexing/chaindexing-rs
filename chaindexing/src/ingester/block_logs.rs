@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ethers::types::{Block, Log, TxHash, U64};
 
 use crate::chain_blocks::{self, BlockScan};
-use crate::ChainId;
+use crate::{ChainId, RpcPolicy};
 
 use super::filters::Filter;
 use super::{provider, IngesterError, Provider};
@@ -14,43 +14,38 @@ pub(crate) struct FetchedBlockLogs {
     pub scans: Vec<BlockScan>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FetchPolicy {
+    max_rpc_in_flight: usize,
+    requests_per_second: Option<u32>,
+    retry_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
+}
+
+impl FetchPolicy {
+    pub(crate) fn from_rpc_policy(rpc: &RpcPolicy) -> Self {
+        Self {
+            max_rpc_in_flight: rpc.max_per_chain_value() as usize,
+            requests_per_second: rpc.requests_per_second_value(),
+            retry_attempts: rpc.retry_attempts_value(),
+            base_backoff_ms: rpc.base_backoff_ms_value(),
+            max_backoff_ms: rpc.max_backoff_ms_value(),
+        }
+    }
+}
+
 pub(crate) async fn fetch(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
-    max_rpc_in_flight: usize,
-    rpc_requests_per_second: Option<u32>,
-    rpc_retry_attempts: u32,
-    rpc_base_backoff_ms: u64,
-    rpc_max_backoff_ms: u64,
+    policy: FetchPolicy,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     if provider.supports_block_hash_log_filters() {
-        fetch_by_block_hash(
-            provider,
-            filters,
-            chain_id,
-            blocks_by_number,
-            max_rpc_in_flight,
-            rpc_requests_per_second,
-            rpc_retry_attempts,
-            rpc_base_backoff_ms,
-            rpc_max_backoff_ms,
-        )
-        .await
+        fetch_by_block_hash(provider, filters, chain_id, blocks_by_number, policy).await
     } else {
-        fetch_by_range(
-            provider,
-            filters,
-            chain_id,
-            blocks_by_number,
-            max_rpc_in_flight,
-            rpc_requests_per_second,
-            rpc_retry_attempts,
-            rpc_base_backoff_ms,
-            rpc_max_backoff_ms,
-        )
-        .await
+        fetch_by_range(provider, filters, chain_id, blocks_by_number, policy).await
     }
 }
 
@@ -59,15 +54,11 @@ async fn fetch_by_block_hash(
     filters: &[Filter],
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
-    max_rpc_in_flight: usize,
-    rpc_requests_per_second: Option<u32>,
-    rpc_retry_attempts: u32,
-    rpc_base_backoff_ms: u64,
-    rpc_max_backoff_ms: u64,
+    policy: FetchPolicy,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     let mut logs = vec![];
     let mut scans = vec![];
-    let max_rpc_in_flight = max_rpc_in_flight.max(1);
+    let max_rpc_in_flight = policy.max_rpc_in_flight.max(1);
     let mut requests = vec![];
 
     for filter in filters {
@@ -82,7 +73,7 @@ async fn fetch_by_block_hash(
 
     for (index, request_chunk) in requests.chunks(max_rpc_in_flight).enumerate() {
         if index > 0 {
-            provider::throttle_requests(request_chunk.len(), rpc_requests_per_second).await;
+            provider::throttle_requests(request_chunk.len(), policy.requests_per_second).await;
         }
 
         let chunk_logs =
@@ -91,16 +82,14 @@ async fn fetch_by_block_hash(
                     provider,
                     filter,
                     *block_hash,
-                    rpc_retry_attempts,
-                    rpc_base_backoff_ms,
-                    rpc_max_backoff_ms,
+                    policy.retry_attempts,
+                    policy.base_backoff_ms,
+                    policy.max_backoff_ms,
                 )
             }))
             .await?;
 
-        for ((filter, block_hash), mut block_logs) in
-            request_chunk.iter().zip(chunk_logs.into_iter())
-        {
+        for ((filter, block_hash), mut block_logs) in request_chunk.iter().zip(chunk_logs) {
             block_logs.retain(|log| log.block_hash == Some(*block_hash));
 
             scans.push(BlockScan::new(
@@ -122,20 +111,16 @@ async fn fetch_by_range(
     filters: &[Filter],
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
-    max_rpc_in_flight: usize,
-    rpc_requests_per_second: Option<u32>,
-    rpc_retry_attempts: u32,
-    rpc_base_backoff_ms: u64,
-    rpc_max_backoff_ms: u64,
+    policy: FetchPolicy,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     let logs = provider::fetch_logs_with_policy(
         provider,
         filters,
-        max_rpc_in_flight,
-        rpc_requests_per_second,
-        rpc_retry_attempts,
-        rpc_base_backoff_ms,
-        rpc_max_backoff_ms,
+        policy.max_rpc_in_flight,
+        policy.requests_per_second,
+        policy.retry_attempts,
+        policy.base_backoff_ms,
+        policy.max_backoff_ms,
     )
     .await?;
     let mut scans = vec![];
@@ -261,11 +246,13 @@ mod tests {
             &filters,
             &ChainId::Mainnet,
             &blocks_by_number,
-            2,
-            None,
-            5,
-            1,
-            10,
+            FetchPolicy {
+                max_rpc_in_flight: 2,
+                requests_per_second: None,
+                retry_attempts: 5,
+                base_backoff_ms: 1,
+                max_backoff_ms: 10,
+            },
         )
         .await
         .unwrap();

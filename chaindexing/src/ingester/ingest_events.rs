@@ -59,11 +59,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &filters,
             chain_id,
             &blocks_by_tx_hash,
-            rpc.max_per_chain_value() as usize,
-            rpc.requests_per_second_value(),
-            rpc.retry_attempts_value(),
-            rpc.base_backoff_ms_value(),
-            rpc.max_backoff_ms_value(),
+            block_logs::FetchPolicy::from_rpc_policy(rpc),
         )
         .await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);

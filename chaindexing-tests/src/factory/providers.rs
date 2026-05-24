@@ -209,6 +209,11 @@ macro_rules! provider_with_filter_stubber {
 #[macro_export]
 macro_rules! provider_with_empty_logs {
     ($contract_address:expr) => {{
+        use $crate::provider_with_empty_logs;
+
+        provider_with_empty_logs!($contract_address, 3)
+    }};
+    ($contract_address:expr, $current_block_number:expr) => {{
         use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
@@ -219,7 +224,7 @@ macro_rules! provider_with_empty_logs {
         #[chaindexing::augmenting_std::async_trait]
         impl IngesterProvider for Provider {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
-                Ok(U64::from(3))
+                Ok(U64::from($current_block_number))
             }
 
             async fn get_logs(&self, _filter: &Filter) -> Result<Vec<Log>, ProviderError> {

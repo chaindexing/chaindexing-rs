@@ -54,6 +54,18 @@ impl ContractAddressesStream {
     }
 }
 
+fn next_chunk_bounds(from: i64, to: i64, chunk_size: i64) -> Option<(i64, i64, i64)> {
+    if from > to {
+        return None;
+    }
+
+    let chunk_size = chunk_size.max(1);
+    let chunk_to = from.saturating_add(chunk_size.saturating_sub(1)).min(to);
+    let next_from = chunk_to.saturating_add(1);
+
+    Some((from, chunk_to, next_from))
+}
+
 impl Stream for ContractAddressesStream {
     type Item = DataStream;
 
@@ -132,18 +144,14 @@ impl Stream for ContractAddressesStream {
                 let from = *from;
                 let to = *to;
 
-                if from > to {
-                    Poll::Ready(None)
-                } else {
-                    let chunk_limit = from + *this.chunk_size;
-
+                if let Some((chunk_from, chunk_to, next_from)) =
+                    next_chunk_bounds(from, to, *this.chunk_size)
+                {
                     let data_stream_future = async move {
                         let client = client.lock().await;
 
                         let query = checkpoints::contract_addresses_select_query(
-                            chain_id_,
-                            from,
-                            chunk_limit,
+                            chain_id_, chunk_from, chunk_to,
                         );
 
                         let addresses: Vec<ContractAddress> =
@@ -155,13 +163,15 @@ impl Stream for ContractAddressesStream {
 
                     *this.state = ContractAddressesStreamState::PollDataStreamFuture((
                         data_stream_future,
-                        chunk_limit,
+                        next_from,
                         to,
                     ));
 
                     cx.waker().wake_by_ref();
 
                     Poll::Pending
+                } else {
+                    Poll::Ready(None)
                 }
             }
             ContractAddressesStreamState::PollDataStreamFuture((
@@ -178,5 +188,23 @@ impl Stream for ContractAddressesStream {
                 Poll::Ready(Some(streamed_data))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::next_chunk_bounds;
+
+    #[test]
+    fn chunk_bounds_do_not_overlap_boundary_ids() {
+        assert_eq!(next_chunk_bounds(1, 12, 5), Some((1, 5, 6)));
+        assert_eq!(next_chunk_bounds(6, 12, 5), Some((6, 10, 11)));
+        assert_eq!(next_chunk_bounds(11, 12, 5), Some((11, 12, 13)));
+        assert_eq!(next_chunk_bounds(13, 12, 5), None);
+    }
+
+    #[test]
+    fn chunk_bounds_treat_non_positive_chunk_sizes_as_one() {
+        assert_eq!(next_chunk_bounds(7, 9, 0), Some((7, 7, 8)));
     }
 }
