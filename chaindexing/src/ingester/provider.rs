@@ -279,14 +279,18 @@ pub async fn fetch_blocks_for_filters_with_policy(
     filters: &[Filter],
     current_block_number: u64,
     lookback_block_count: u64,
+    max_in_flight: usize,
+    requests_per_second: Option<u32>,
     retry_attempts: u32,
     base_backoff_ms: u64,
     max_backoff_ms: u64,
 ) -> Result<HashMap<u64, Block>, ProviderError> {
     retry_provider_with_policy(
         || async {
-            provider
-                .get_blocks_for_filters(filters, current_block_number, lookback_block_count)
+            let block_numbers =
+                block_numbers_for_filters(filters, current_block_number, lookback_block_count);
+
+            fetch_blocks_with_policy(provider, &block_numbers, max_in_flight, requests_per_second)
                 .await
         },
         retry_attempts,
@@ -294,6 +298,31 @@ pub async fn fetch_blocks_for_filters_with_policy(
         max_backoff_ms,
     )
     .await
+}
+
+async fn fetch_blocks_with_policy(
+    provider: &Arc<impl Provider>,
+    block_numbers: &[u64],
+    max_in_flight: usize,
+    requests_per_second: Option<u32>,
+) -> Result<HashMap<u64, Block>, ProviderError> {
+    let max_in_flight = max_in_flight.max(1);
+    let mut blocks = vec![];
+
+    for (index, block_number_chunk) in block_numbers.chunks(max_in_flight).enumerate() {
+        if index > 0 {
+            throttle_requests(block_number_chunk.len(), requests_per_second).await;
+        }
+
+        blocks.extend(
+            try_join_all(
+                block_number_chunk.iter().map(|block_number| provider.get_block(*block_number)),
+            )
+            .await?,
+        );
+    }
+
+    Ok(blocks.into_iter().map(|block| (block.header.inner.number, block)).collect())
 }
 
 fn block_numbers_for_filters(
@@ -509,6 +538,12 @@ mod tests {
         }
 
         async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError> {
+            let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_observed.fetch_max(current, Ordering::SeqCst);
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+
             Ok(block(block_number))
         }
     }
@@ -530,6 +565,28 @@ mod tests {
 
         fetch_logs_with_policy(&provider, &filters, 2, None, 5, 1, 10).await.unwrap();
 
+        assert!(max_observed.load(Ordering::SeqCst) <= 2);
+    }
+
+    #[tokio::test]
+    async fn fetch_blocks_for_filters_with_policy_bounds_in_flight_requests() {
+        let max_observed = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(ConcurrencyTrackingProvider {
+            in_flight: Arc::new(AtomicUsize::new(0)),
+            max_observed: max_observed.clone(),
+        });
+        let filters = vec![Filter {
+            contract_address_id: 1,
+            address: "0x1".to_string(),
+            value: RpcFilter::new().from_block(1).to_block(5),
+        }];
+
+        let blocks =
+            fetch_blocks_for_filters_with_policy(&provider, &filters, 5, 0, 2, None, 5, 1, 10)
+                .await
+                .unwrap();
+
+        assert_eq!(blocks.len(), 5);
         assert!(max_observed.load(Ordering::SeqCst) <= 2);
     }
 }

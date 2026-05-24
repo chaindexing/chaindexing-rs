@@ -49,6 +49,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &filters,
             current_block_number,
             min_confirmation_count.as_u64(),
+            rpc.max_per_chain_value() as usize,
+            rpc.requests_per_second_value(),
             rpc.retry_attempts_value(),
             rpc.base_backoff_ms_value(),
             rpc.max_backoff_ms_value(),
