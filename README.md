@@ -24,6 +24,16 @@ tokio = { version = "1", features = ["full"] }
 
 Chaindexing currently requires Rust 1.91 or newer.
 
+### Ethereum types
+
+Chaindexing uses Alloy for Ethereum primitives, ABI parsing, and JSON-RPC provider types. Most
+applications can stay on Chaindexing's public API and use the reexported `Address`, `I256`, and
+`U256` types from `chaindexing` or `chaindexing::prelude`.
+
+Applications that implement a custom `IngesterProvider` should use Alloy RPC types in the trait
+methods, including `alloy::rpc::types::{Block, Filter, Log}`. `ProviderError::CustomError(String)`
+remains available for custom provider failures.
+
 A minimal NFT ownership indexer has three pieces: a Postgres state table, a deterministic event
 handler, and an indexer runtime.
 
