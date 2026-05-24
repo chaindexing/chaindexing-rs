@@ -22,6 +22,8 @@ chaindexing = "0.1.81"
 tokio = { version = "1", features = ["full"] }
 ```
 
+Chaindexing currently requires Rust 1.91 or newer.
+
 A minimal NFT ownership indexer has three pieces: a Postgres state table, a deterministic event
 handler, and an indexer runtime.
 
