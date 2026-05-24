@@ -156,11 +156,8 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
         let contract_addresses =
             filter_uningested_contract_addresses(&contract_addresses, target_block_number);
 
-        let mut conn = conn.lock().await;
-        let repo_client = &*repo_client.lock().await;
-
         ingest_events::run(
-            &mut conn,
+            &conn,
             repo_client,
             contract_addresses.clone(),
             &provider,
@@ -171,7 +168,7 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
         .await?;
 
         maybe_handle_chain_reorg::run(
-            &mut conn,
+            &conn,
             contract_addresses,
             &provider,
             chain_id,

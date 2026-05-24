@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use futures_util::FutureExt;
 use std::cmp::min;
+use tokio::sync::Mutex;
 
 use crate::chain_blocks::{self, ChainBlock};
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
@@ -16,7 +17,7 @@ use super::Provider;
 use super::{provider, IngesterError};
 
 pub async fn run<'a, S: Send + Sync + Clone>(
-    conn: &mut ChaindexingRepoConn<'a>,
+    conn: &Arc<Mutex<ChaindexingRepoConn<'a>>>,
     contract_addresses: Vec<ContractAddress>,
     provider: &Arc<impl Provider>,
     chain_id: &ChainId,
@@ -37,7 +38,10 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     );
 
     if !filters.is_empty() {
-        let already_ingested_events = get_already_ingested_events(conn, chain_id, &filters).await;
+        let already_ingested_events = {
+            let mut conn = conn.lock().await;
+            get_already_ingested_events(&mut conn, chain_id, &filters).await
+        };
         let rpc = config.runtime_config.rpc_ref();
         let blocks_by_number = provider::fetch_blocks_for_filters_with_policy(
             provider,
@@ -73,8 +77,9 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             get_provider_added_and_removed_events(&already_ingested_events, &provider_events);
 
         if !chain_blocks.is_empty() || added_and_removed_events.is_some() {
+            let mut conn = conn.lock().await;
             handle_chain_reorg(
-                conn,
+                &mut conn,
                 chain_id,
                 chain_blocks,
                 block_logs.scans,

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::FutureExt;
+use tokio::sync::Mutex;
 
 use super::block_logs;
 use super::filters::{self, Filter};
@@ -18,8 +19,8 @@ use crate::{
 };
 
 pub async fn run<'a, S: Send + Sync + Clone>(
-    conn: &mut ChaindexingRepoConn<'a>,
-    repo_client: &ChaindexingRepoClient,
+    conn: &Arc<Mutex<ChaindexingRepoConn<'a>>>,
+    repo_client: &Arc<Mutex<ChaindexingRepoClient>>,
     contract_addresses: Vec<ContractAddress>,
     provider: &Arc<impl Provider>,
     chain_id: &ChainId,
@@ -39,8 +40,10 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         &Execution::Main,
     );
 
-    let filters =
-        remove_already_ingested_filters(&filters, &contract_addresses, chain_id, repo_client).await;
+    let filters = {
+        let repo_client = repo_client.lock().await;
+        remove_already_ingested_filters(&filters, &contract_addresses, chain_id, &repo_client).await
+    };
 
     if !filters.is_empty() {
         let rpc = config.runtime_config.rpc_ref();
@@ -76,7 +79,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         let contract_addresses = contract_addresses.clone();
         let chain_id = *chain_id;
 
-        ChaindexingRepo::run_in_transaction(conn, move |conn| {
+        let mut conn = conn.lock().await;
+        ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
             async move {
                 if let Some(block_number) =
                     ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await
