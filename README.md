@@ -54,7 +54,7 @@ A quick and effective way to get started is by exploring the comprehensive examp
 Minimal runtime setup now looks like this:
 
 ```rust
-use chaindexing::{Chain, ChainId, Contract, Indexer, ReorgMode};
+use chaindexing::{Chain, ChainId, Contract, Indexer, ReorgMode, RuntimeConfig};
 
 # async fn start() -> Result<(), chaindexing::ChaindexingError> {
 let erc721 = Contract::new("ERC721")
@@ -68,6 +68,7 @@ let erc721 = Contract::new("ERC721")
 Indexer::new(&std::env::var("DATABASE_URL").unwrap())
     .chain(Chain::mainnet(&std::env::var("MAINNET_JSON_RPC_URL").unwrap()))
     .contract(erc721)
+    .runtime(RuntimeConfig::realtime())
     .reorg_mode(ReorgMode::Balanced)
     .run()
     .await?;
@@ -123,6 +124,68 @@ Indexer::new(&database_url)
 
 See [Reorg Handling](docs/reorg-handling.md), [Finality Policies](docs/finality-policies.md),
 and [Side Effects and Reorgs](docs/side-effects-and-reorgs.md) for the operational model.
+
+## Runtime profiles and limits
+
+Use runtime profiles to describe workload behavior, then override concrete resource limits only
+when you know your database or RPC budget. Presets are not named after environments because a
+library cannot reliably know whether a laptop, CI runner, staging box, or production node is
+resource-constrained.
+
+```rust
+use chaindexing::{RpcPolicy, RuntimeConfig, RuntimeLimits};
+
+// Low-latency indexing for app feeds and dashboards.
+Indexer::new(&database_url)
+    .runtime(RuntimeConfig::realtime());
+
+// Historical catch-up with explicit resource/RPC limits.
+Indexer::new(&database_url)
+    .runtime(
+        RuntimeConfig::backfill()
+            .limits(
+                RuntimeLimits::throughput()
+                    .db_connections(16)
+                    .max_ingester_workers(8)
+                    .max_handler_workers(8),
+            )
+            .rpc(RpcPolicy::throughput().max_in_flight(64).max_per_chain(16))
+    );
+
+// Cheap or rate-limited providers.
+Indexer::new(&database_url)
+    .runtime(
+        RuntimeConfig::rpc_constrained()
+            .rpc(RpcPolicy::limited().max_in_flight(4).max_per_chain(2).requests_per_second(5)),
+    );
+
+// Deterministic single-worker behavior for tests and reproducible debugging.
+Indexer::new(&database_url)
+    .runtime(RuntimeConfig::deterministic());
+
+// Existing leader election still controls multi-process ownership. Runtime profiles
+// tune the active node's work budget instead of guessing from environment names.
+```
+
+Important runtime knobs:
+
+| Setting | What it controls |
+| --- | --- |
+| `db_connections` | Postgres pool size for pooled ingestion/supervisor work; handler raw clients are bounded by handler workers. |
+| `max_ingester_workers` | Maximum ingestion worker count; capped by available chains. |
+| `max_handler_workers` | Maximum handler worker count; effective parallelism still respects state ordering. |
+| `max_in_flight` | Global JSON-RPC in-flight request budget; also caps effective ingestion workers. |
+| `max_per_chain` | Per-chain JSON-RPC in-flight cap, preventing one chain from starving others. |
+| `requests_per_second` | Optional provider rate-limit hint for RPC-constrained workloads. |
+| `retry_attempts`, `base_backoff_ms`, `max_backoff_ms` | Provider retry and capped exponential backoff policy. |
+| `blocks_per_batch` | Block-range size for ingestion and handler batches. |
+
+See [Runtime Profiles](docs/runtime-profiles.md) for profile selection, policy axes, and ordering
+guarantees.
+
+Compatibility setters like `.blocks_per_batch(...)`, `.ingestion_rate_ms(...)`,
+`.handler_rate_ms(...)`, and `.chain_concurrency(...)` still work. New applications should prefer
+`.runtime(...)` because it keeps workload, resource limits, RPC policy, and polling cadence explicit.
 
 Example side-effect outbox usage:
 
@@ -234,15 +297,17 @@ let nft = Nft::read_one_from_postgres(
 
 ## Performance Considerations & Limitations
 
-Chaindexing is still young and optimized for ergonomics rather than raw throughput. The default configuration works well for real-time indexing of a few contracts, but historical backfills or very high-volume workloads may expose the following constraints:
+Chaindexing is still young and optimized for ergonomics first. The runtime profile API makes the
+main scaling tradeoffs explicit, but historical backfills or very high-volume workloads may still
+need careful tuning:
 
-- 🐢 **Historical Throughput:** Each chain ingester pulls **`blocks_per_batch`** blocks every **`ingestion_rate_ms`** milliseconds. With the defaults (450 blocks / 20 000 ms) this translates to roughly **22 blocks / s per chain**. Tune these knobs to trade throughput for RPC cost.
-- 🔗 **Chain Concurrency:** Only `chain_concurrency` chains are ingested in parallel (default **4**). Additional chains are processed sequentially.
-- ⚙️ **Handler Cadence:** Event handlers execute every `handler_rate_ms` (default **4 000 ms**). If a contract emits thousands of events per block this cycle can lag behind ingestion.
+- 🐢 **Historical Throughput:** `RuntimeConfig::backfill()` increases worker, RPC, and batch defaults for catch-up. Override `blocks_per_batch`, `max_ingester_workers`, and `max_in_flight` based on your provider and Postgres capacity.
+- 🔗 **Worker Caps:** `max_ingester_workers` and `max_handler_workers` are caps, not promises. They are capped by available chains and by state-ordering partitions.
+- ⚙️ **Handler Ordering:** `ContractState` and `ChainState` handlers stay ordered within their logical partition. More handler workers help independent chains/contracts, but not a single hot ordered partition.
 - 📦 **Handler Batch Shape:** Handler loading is block-bounded, not event-bounded. A batch includes every matching event in the selected blocks so cursors never skip logs inside a block. Lower `blocks_per_batch` to reduce multi-block batches; a single extremely hot block still has to fit in memory and one handler transaction.
-- 🗄️ **Database Bottlenecks:** Chaindexing currently supports **Postgres** only. Inserts are batched inside transactions over a limited connection pool—disk or network latency can throttle the pipeline.
-- 🌐 **RPC Provider Limits:** Latency and rate-limits of your JSON-RPC provider (e.g. Alchemy, Infura) directly affect indexing speed. Public endpoints often cap block ranges and requests per second.
-- ⏳ **Deep Backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized and may require substantial time and memory. Consider chunked backfills or starting closer to the present block.
+- 🗄️ **Database Bottlenecks:** `db_connections` bounds the pooled Postgres work used by ingestion and supervision, while handler raw clients scale with `max_handler_workers`. More connections only help if Postgres has spare CPU, IO, and lock capacity.
+- 🌐 **RPC Provider Limits:** `max_in_flight`, `max_per_chain`, and optional `requests_per_second` express provider pressure. Public endpoints often cap block ranges and requests per second.
+- ⏳ **Deep Backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized. Prefer `RuntimeConfig::backfill()` with explicit limits, or start closer to the present block.
 
 These limitations are passively being addressed; community benchmarks and pull requests are highly appreciated!
 
