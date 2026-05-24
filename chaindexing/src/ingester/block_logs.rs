@@ -17,11 +17,11 @@ pub(crate) struct FetchedBlockLogs {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FetchPolicy {
-    max_rpc_in_flight: usize,
-    requests_per_second: Option<u32>,
-    retry_attempts: u32,
-    base_backoff_ms: u64,
-    max_backoff_ms: u64,
+    pub(crate) max_rpc_in_flight: usize,
+    pub(crate) requests_per_second: Option<u32>,
+    pub(crate) retry_attempts: u32,
+    pub(crate) base_backoff_ms: u64,
+    pub(crate) max_backoff_ms: u64,
 }
 
 impl FetchPolicy {

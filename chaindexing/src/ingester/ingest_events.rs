@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 
 use super::block_logs;
 use super::filters::{self, Filter};
+use super::indexed_data_capture;
 use super::provider::{self, Provider};
 use super::IngesterError;
 
@@ -47,18 +48,34 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let rpc = config.runtime_config.rpc_ref();
-        let blocks_by_tx_hash = provider::fetch_blocks_for_filters_with_policy(
-            provider,
-            &filters,
-            current_block_number,
-            min_confirmation_count.as_u64(),
-            rpc.max_per_chain_value() as usize,
-            rpc.requests_per_second_value(),
-            rpc.retry_attempts_value(),
-            rpc.base_backoff_ms_value(),
-            rpc.max_backoff_ms_value(),
-        )
-        .await?;
+        let blocks_by_tx_hash = if config.indexed_data_config.requires_full_blocks() {
+            provider::fetch_full_blocks_for_filters_with_policy(
+                provider,
+                &filters,
+                current_block_number,
+                min_confirmation_count.as_u64(),
+                rpc.max_per_chain_value() as usize,
+                rpc.requests_per_second_value(),
+                rpc.retry_attempts_value(),
+                rpc.base_backoff_ms_value(),
+                rpc.max_backoff_ms_value(),
+            )
+            .await?
+        } else {
+            provider::fetch_blocks_for_filters_with_policy(
+                provider,
+                &filters,
+                current_block_number,
+                min_confirmation_count.as_u64(),
+                rpc.max_per_chain_value() as usize,
+                rpc.requests_per_second_value(),
+                rpc.retry_attempts_value(),
+                rpc.base_backoff_ms_value(),
+                rpc.max_backoff_ms_value(),
+            )
+            .await?
+        };
+        let indexed_blocks = indexed_data_capture::blocks_for_filters(&filters, &blocks_by_tx_hash);
         let block_logs = block_logs::fetch(
             provider,
             &filters,
@@ -75,6 +92,14 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             chain_id,
             &blocks_by_tx_hash,
         );
+        let indexed_data = indexed_data_capture::fetch_for_blocks(
+            provider,
+            chain_id,
+            &indexed_blocks,
+            &config.indexed_data_config,
+            block_logs::FetchPolicy::from_rpc_policy(rpc),
+        )
+        .await?;
         let block_scans = block_logs.scans;
         let contract_addresses = contract_addresses.clone();
         let chain_id = *chain_id;
@@ -100,6 +125,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
                 }
 
                 ChaindexingRepo::create_block_scans(conn, &block_scans).await;
+                ChaindexingRepo::create_transactions(conn, &indexed_data.transactions).await;
+                ChaindexingRepo::create_call_traces(conn, &indexed_data.call_traces).await;
                 ChaindexingRepo::create_events(conn, &events.clone()).await;
 
                 update_next_block_numbers_to_ingest_from(conn, &contract_addresses, &filters).await;

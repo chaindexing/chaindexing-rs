@@ -5,7 +5,7 @@ use super::provider::ProviderError;
 #[derive(Debug)]
 pub enum IngesterError {
     RepoConnectionError,
-    ProviderError(String),
+    ProviderError(ProviderError),
     GenericError(String),
 }
 
@@ -20,7 +20,7 @@ impl From<RepoError> for IngesterError {
 
 impl From<ProviderError> for IngesterError {
     fn from(value: ProviderError) -> Self {
-        IngesterError::ProviderError(value.to_string())
+        IngesterError::ProviderError(value)
     }
 }
 
@@ -34,4 +34,11 @@ impl std::fmt::Display for IngesterError {
     }
 }
 
-impl std::error::Error for IngesterError {}
+impl std::error::Error for IngesterError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            IngesterError::ProviderError(error) => Some(error),
+            _ => None,
+        }
+    }
+}

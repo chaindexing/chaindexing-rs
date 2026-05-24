@@ -11,7 +11,10 @@ mod tests {
         find_contract_address_by_contract_name, provider_with_empty_logs,
         provider_with_filter_stubber, provider_with_logs, test_runner,
     };
-    use alloy::rpc::types::{Block, Filter, Log};
+    use alloy::consensus::{transaction::Recovered, Signed, TxEnvelope, TxLegacy};
+    use alloy::network::primitives::BlockTransactions;
+    use alloy::primitives::{Address, Signature, U256};
+    use alloy::rpc::types::{Block, Filter, Log, Transaction as RpcTransaction};
     use chaindexing::{
         augmenting_std::serde::Deserialize, ingester, ChainId, ChaindexingRepo, Config,
         ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo, Repo,
@@ -120,6 +123,200 @@ mod tests {
                      FROM chaindexing_block_scans
                      WHERE contract_address = '{contract_address}'"
                 ),
+            )
+            .await
+            .unwrap();
+
+            assert!(count.count > 0);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    pub async fn indexes_raw_transactions_when_enabled() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
+        test_runner::run_test_with_txn(|repo_client, suffix| async move {
+            #[derive(Clone)]
+            struct Provider {
+                current_block_number: u64,
+            }
+
+            #[chaindexing::augmenting_std::async_trait]
+            impl chaindexing::IngesterProvider for Provider {
+                async fn get_block_number(&self) -> Result<u64, ingester::ProviderError> {
+                    Ok(self.current_block_number)
+                }
+
+                async fn get_logs(
+                    &self,
+                    _filter: &Filter,
+                ) -> Result<Vec<Log>, ingester::ProviderError> {
+                    Ok(vec![])
+                }
+
+                async fn get_block(
+                    &self,
+                    block_number: u64,
+                ) -> Result<Block, ingester::ProviderError> {
+                    Ok(crate::factory::block_for_number(block_number))
+                }
+
+                async fn get_block_with_transactions(
+                    &self,
+                    block_number: u64,
+                ) -> Result<Block, ingester::ProviderError> {
+                    let mut block = crate::factory::block_for_number(block_number);
+                    let block_hash = block.header.hash;
+                    block.transactions = BlockTransactions::Full(vec![RpcTransaction {
+                        inner: Recovered::new_unchecked(
+                            TxEnvelope::from(Signed::new_unchecked(
+                                TxLegacy::default(),
+                                Signature::new(U256::from(1), U256::from(1), false),
+                                block_hash,
+                            )),
+                            Address::ZERO,
+                        ),
+                        block_hash: Some(block_hash),
+                        block_number: Some(block_number),
+                        transaction_index: Some(0),
+                        effective_gas_price: Some(0),
+                        block_timestamp: Some(block_number),
+                    }]);
+
+                    Ok(block)
+                }
+            }
+
+            let repo = test_runner::new_repo();
+            let pool = repo.get_pool(1).await;
+            let conn = ChaindexingRepo::get_conn(&pool).await;
+            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-raw-tx-{suffix}"), "91");
+            let config = Config::new(PostgresRepo::new(&database_url()))
+                .add_contract(bayc_contract.clone())
+                .with_min_confirmation_count(0)
+                .with_blocks_per_batch(1)
+                .with_raw_transaction_indexing();
+
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
+
+            let conn = Arc::new(Mutex::new(conn));
+            let repo_client = Arc::new(Mutex::new(repo_client));
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                Arc::new(Provider {
+                    current_block_number: BAYC_CONTRACT_START_BLOCK_NUMBER as u64 + 1,
+                }),
+                conn,
+                &repo_client,
+                &config,
+                &mut HashMap::new(),
+            )
+            .await
+            .unwrap();
+
+            let repo_client = repo_client.lock().await;
+            let count: Count = ChaindexingRepo::load_data(
+                &repo_client,
+                "SELECT COUNT(*)::BIGINT AS count
+                 FROM chaindexing_transactions
+                 WHERE chain_id = 1
+                   AND status = 'canonical'",
+            )
+            .await
+            .unwrap();
+
+            assert!(count.count > 0);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    pub async fn indexes_call_traces_when_enabled() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
+        test_runner::run_test_with_txn(|repo_client, suffix| async move {
+            #[derive(Clone)]
+            struct Provider {
+                current_block_number: u64,
+            }
+
+            #[chaindexing::augmenting_std::async_trait]
+            impl chaindexing::IngesterProvider for Provider {
+                async fn get_block_number(&self) -> Result<u64, ingester::ProviderError> {
+                    Ok(self.current_block_number)
+                }
+
+                async fn get_logs(
+                    &self,
+                    _filter: &Filter,
+                ) -> Result<Vec<Log>, ingester::ProviderError> {
+                    Ok(vec![])
+                }
+
+                async fn get_block(
+                    &self,
+                    block_number: u64,
+                ) -> Result<Block, ingester::ProviderError> {
+                    Ok(crate::factory::block_for_number(block_number))
+                }
+
+                async fn get_call_traces_by_block_hash(
+                    &self,
+                    _block_hash: alloy::primitives::B256,
+                ) -> Result<Vec<serde_json::Value>, ingester::ProviderError> {
+                    Ok(vec![serde_json::json!({
+                        "txHash": "0xTRACE",
+                        "traceAddress": [0],
+                        "type": "CALL",
+                        "from": "0xFROM",
+                        "to": "0xTO"
+                    })])
+                }
+            }
+
+            let repo = test_runner::new_repo();
+            let pool = repo.get_pool(1).await;
+            let conn = ChaindexingRepo::get_conn(&pool).await;
+            let bayc_contract =
+                bayc_contract(&format!("BoredApeYachtClub-call-trace-{suffix}"), "92");
+            let config = Config::new(PostgresRepo::new(&database_url()))
+                .add_contract(bayc_contract.clone())
+                .with_min_confirmation_count(0)
+                .with_blocks_per_batch(1)
+                .with_call_trace_indexing();
+
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
+
+            let conn = Arc::new(Mutex::new(conn));
+            let repo_client = Arc::new(Mutex::new(repo_client));
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                Arc::new(Provider {
+                    current_block_number: BAYC_CONTRACT_START_BLOCK_NUMBER as u64 + 1,
+                }),
+                conn,
+                &repo_client,
+                &config,
+                &mut HashMap::new(),
+            )
+            .await
+            .unwrap();
+
+            let repo_client = repo_client.lock().await;
+            let count: Count = ChaindexingRepo::load_data(
+                &repo_client,
+                "SELECT COUNT(*)::BIGINT AS count
+                 FROM chaindexing_call_traces
+                 WHERE chain_id = 1
+                   AND transaction_hash = '0xtrace'
+                   AND status = 'canonical'",
             )
             .await
             .unwrap();

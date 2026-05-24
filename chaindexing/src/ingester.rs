@@ -1,6 +1,7 @@
 mod block_logs;
 mod error;
 mod filters;
+mod indexed_data_capture;
 mod ingest_events;
 mod maybe_handle_chain_reorg;
 mod provider;

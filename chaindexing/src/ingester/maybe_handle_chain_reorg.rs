@@ -1,6 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use alloy::rpc::types::Block;
 use futures_util::FutureExt;
 use std::cmp::min;
 use tokio::sync::Mutex;
@@ -9,10 +10,14 @@ use crate::chain_blocks::{self, ChainBlock};
 use crate::chain_reorg::{Execution, UnsavedReorgedBlock};
 use crate::events::{self, Event};
 use crate::Config;
-use crate::{ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, Repo};
+use crate::{
+    ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, IndexedDataConfig, Repo,
+    RpcPolicy,
+};
 
 use super::block_logs;
 use super::filters::{self, Filter};
+use super::indexed_data_capture::{self, FetchedIndexedData};
 use super::Provider;
 use super::{provider, IngesterError};
 
@@ -76,6 +81,29 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         let added_and_removed_events =
             get_provider_added_and_removed_events(&already_ingested_events, &provider_events);
 
+        let block_fork_point = if config.indexed_data_config.enabled() && !chain_blocks.is_empty() {
+            let mut conn = conn.lock().await;
+            ChaindexingRepo::find_fork_point(&mut conn, &chain_blocks).await
+        } else {
+            None
+        };
+        let indexed_data = if let Some(fork_point) = block_fork_point {
+            fetch_indexed_data_for_replacement_blocks(
+                provider,
+                chain_id,
+                &filters,
+                current_block_number,
+                min_confirmation_count.as_u64(),
+                &blocks_by_number,
+                fork_point,
+                &config.indexed_data_config,
+                rpc,
+            )
+            .await?
+        } else {
+            FetchedIndexedData::empty()
+        };
+
         if !chain_blocks.is_empty() || added_and_removed_events.is_some() {
             let mut conn = conn.lock().await;
             handle_chain_reorg(
@@ -84,6 +112,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
                 chain_blocks,
                 block_logs.scans,
                 added_and_removed_events,
+                indexed_data,
             )
             .await?;
         }
@@ -122,6 +151,7 @@ async fn handle_chain_reorg<'a>(
     chain_blocks: Vec<ChainBlock>,
     block_scans: Vec<chain_blocks::BlockScan>,
     added_and_removed_events: Option<(Vec<Event>, Vec<Event>)>,
+    indexed_data: FetchedIndexedData,
 ) -> Result<(), IngesterError> {
     let chain_id = *chain_id;
 
@@ -160,6 +190,8 @@ async fn handle_chain_reorg<'a>(
             }
 
             ChaindexingRepo::create_block_scans(conn, &block_scans).await;
+            ChaindexingRepo::create_transactions(conn, &indexed_data.transactions).await;
+            ChaindexingRepo::create_call_traces(conn, &indexed_data.call_traces).await;
             ChaindexingRepo::create_events(conn, &added_events).await;
 
             Ok(())
@@ -195,6 +227,56 @@ fn get_provider_added_and_removed_events(
     } else {
         Some((added_events, removed_events))
     }
+}
+
+async fn fetch_indexed_data_for_replacement_blocks(
+    provider: &Arc<impl Provider>,
+    chain_id: &ChainId,
+    filters: &[Filter],
+    current_block_number: u64,
+    lookback_block_count: u64,
+    blocks_by_number: &HashMap<u64, Block>,
+    fork_point: i64,
+    indexed_data_config: &IndexedDataConfig,
+    rpc: &RpcPolicy,
+) -> Result<FetchedIndexedData, IngesterError> {
+    if indexed_data_config.requires_full_blocks() {
+        let full_blocks_by_number = provider::fetch_full_blocks_for_filters_with_policy(
+            provider,
+            filters,
+            current_block_number,
+            lookback_block_count,
+            rpc.max_per_chain_value() as usize,
+            rpc.requests_per_second_value(),
+            rpc.retry_attempts_value(),
+            rpc.base_backoff_ms_value(),
+            rpc.max_backoff_ms_value(),
+        )
+        .await?;
+        let replacement_blocks =
+            indexed_data_capture::blocks_from_fork_point(&full_blocks_by_number, fork_point);
+
+        return indexed_data_capture::fetch_for_blocks(
+            provider,
+            chain_id,
+            &replacement_blocks,
+            indexed_data_config,
+            block_logs::FetchPolicy::from_rpc_policy(rpc),
+        )
+        .await;
+    }
+
+    let replacement_blocks =
+        indexed_data_capture::blocks_from_fork_point(blocks_by_number, fork_point);
+
+    indexed_data_capture::fetch_for_blocks(
+        provider,
+        chain_id,
+        &replacement_blocks,
+        indexed_data_config,
+        block_logs::FetchPolicy::from_rpc_policy(rpc),
+    )
+    .await
 }
 
 fn get_earliest_block_number(added_events: &[Event], removed_events: &[Event]) -> i64 {

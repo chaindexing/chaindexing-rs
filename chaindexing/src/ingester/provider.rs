@@ -23,11 +23,24 @@ pub enum ProviderError {
     /// internally.
     CustomError(String),
     TransportError(String),
+    Unsupported(&'static str),
+    MissingBlock {
+        block_number: u64,
+    },
+    InvalidUrl(String),
 }
 
 impl ProviderError {
     pub fn custom(message: impl Into<String>) -> Self {
         Self::CustomError(message.into())
+    }
+
+    pub fn unsupported(capability: &'static str) -> Self {
+        Self::Unsupported(capability)
+    }
+
+    fn is_retryable(&self) -> bool {
+        !matches!(self, Self::Unsupported(_))
     }
 }
 
@@ -36,6 +49,15 @@ impl std::fmt::Display for ProviderError {
         match self {
             ProviderError::CustomError(message) | ProviderError::TransportError(message) => {
                 message.fmt(f)
+            }
+            ProviderError::Unsupported(capability) => {
+                write!(f, "provider does not support {capability}")
+            }
+            ProviderError::MissingBlock { block_number } => {
+                write!(f, "block {block_number} not found")
+            }
+            ProviderError::InvalidUrl(error) => {
+                write!(f, "invalid JSON-RPC URL: {error}")
             }
         }
     }
@@ -58,6 +80,10 @@ pub trait Provider: Clone + Sync + Send {
     async fn get_logs(&self, filter: &RpcFilter) -> Result<Vec<Log>, ProviderError>;
 
     async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError>;
+
+    async fn get_block_with_transactions(&self, block_number: u64) -> Result<Block, ProviderError> {
+        self.get_block(block_number).await
+    }
 
     async fn get_block_by_tag(
         &self,
@@ -101,6 +127,40 @@ pub trait Provider: Clone + Sync + Send {
         }
 
         Ok(blocks_by_number)
+    }
+
+    async fn get_blocks_with_transactions(
+        &self,
+        block_numbers: &[u64],
+    ) -> Result<HashMap<u64, Block>, ProviderError> {
+        const CHUNK_SIZE: usize = 8;
+        let chunked_block_numbers: Vec<_> = block_numbers.chunks(CHUNK_SIZE).collect();
+
+        let mut blocks = vec![];
+        for chunked_block_number in chunked_block_numbers {
+            blocks.extend(
+                try_join_all(
+                    chunked_block_number
+                        .iter()
+                        .map(|block_number| self.get_block_with_transactions(*block_number)),
+                )
+                .await?,
+            );
+        }
+
+        let mut blocks_by_number = HashMap::new();
+        for block in blocks {
+            blocks_by_number.insert(block.header.inner.number, block);
+        }
+
+        Ok(blocks_by_number)
+    }
+
+    async fn get_call_traces_by_block_hash(
+        &self,
+        _block_hash: B256,
+    ) -> Result<Vec<serde_json::Value>, ProviderError> {
+        Err(ProviderError::unsupported("call trace indexing"))
     }
 
     async fn get_blocks_by_number(
@@ -147,7 +207,15 @@ where
         AlloyProvider::get_block_by_number(self, BlockNumberOrTag::Number(block_number))
             .await
             .map_err(ProviderError::from)?
-            .ok_or_else(|| ProviderError::custom(format!("block {block_number} not found")))
+            .ok_or(ProviderError::MissingBlock { block_number })
+    }
+
+    async fn get_block_with_transactions(&self, block_number: u64) -> Result<Block, ProviderError> {
+        AlloyProvider::get_block_by_number(self, BlockNumberOrTag::Number(block_number))
+            .full()
+            .await
+            .map_err(ProviderError::from)?
+            .ok_or(ProviderError::MissingBlock { block_number })
     }
 
     async fn get_block_by_tag(
@@ -158,12 +226,24 @@ where
             .await
             .map_err(ProviderError::from)
     }
+
+    async fn get_call_traces_by_block_hash(
+        &self,
+        block_hash: B256,
+    ) -> Result<Vec<serde_json::Value>, ProviderError> {
+        AlloyProvider::client(self)
+            .request(
+                "debug_traceBlockByHash",
+                (block_hash, serde_json::json!({ "tracer": "callTracer" })),
+            )
+            .await
+            .map_err(ProviderError::from)
+    }
 }
 
 pub fn get(json_rpc_url: &str) -> Result<Arc<impl Provider>, ProviderError> {
-    let url = json_rpc_url
-        .parse()
-        .map_err(|error| ProviderError::custom(format!("invalid JSON-RPC URL: {error}")))?;
+    let url = alloy::transports::http::reqwest::Url::parse(json_rpc_url)
+        .map_err(|error| ProviderError::InvalidUrl(error.to_string()))?;
 
     Ok(Arc::new(ProviderBuilder::new().connect_http(url)))
 }
@@ -274,6 +354,45 @@ pub async fn fetch_logs_by_block_hash_with_policy(
     .await
 }
 
+pub async fn fetch_call_traces_by_block_hashes_with_policy(
+    provider: &Arc<impl Provider>,
+    block_hashes: &[B256],
+    max_in_flight: usize,
+    requests_per_second: Option<u32>,
+    retry_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
+) -> Result<Vec<(B256, Vec<serde_json::Value>)>, ProviderError> {
+    let max_in_flight = max_in_flight.max(1);
+
+    retry_provider_with_policy(
+        || async {
+            let mut traces_by_block_hash = vec![];
+
+            for (index, block_hash_chunk) in block_hashes.chunks(max_in_flight).enumerate() {
+                if index > 0 {
+                    throttle_requests(block_hash_chunk.len(), requests_per_second).await;
+                }
+
+                let traces = try_join_all(
+                    block_hash_chunk
+                        .iter()
+                        .map(|block_hash| provider.get_call_traces_by_block_hash(*block_hash)),
+                )
+                .await?;
+
+                traces_by_block_hash.extend(block_hash_chunk.iter().copied().zip(traces));
+            }
+
+            Ok(traces_by_block_hash)
+        },
+        retry_attempts,
+        base_backoff_ms,
+        max_backoff_ms,
+    )
+    .await
+}
+
 pub async fn fetch_blocks_for_filters_with_policy(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
@@ -300,6 +419,37 @@ pub async fn fetch_blocks_for_filters_with_policy(
     .await
 }
 
+pub async fn fetch_full_blocks_for_filters_with_policy(
+    provider: &Arc<impl Provider>,
+    filters: &[Filter],
+    current_block_number: u64,
+    lookback_block_count: u64,
+    max_in_flight: usize,
+    requests_per_second: Option<u32>,
+    retry_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
+) -> Result<HashMap<u64, Block>, ProviderError> {
+    retry_provider_with_policy(
+        || async {
+            let block_numbers =
+                block_numbers_for_filters(filters, current_block_number, lookback_block_count);
+
+            fetch_full_blocks_with_policy(
+                provider,
+                &block_numbers,
+                max_in_flight,
+                requests_per_second,
+            )
+            .await
+        },
+        retry_attempts,
+        base_backoff_ms,
+        max_backoff_ms,
+    )
+    .await
+}
+
 async fn fetch_blocks_with_policy(
     provider: &Arc<impl Provider>,
     block_numbers: &[u64],
@@ -317,6 +467,33 @@ async fn fetch_blocks_with_policy(
         blocks.extend(
             try_join_all(
                 block_number_chunk.iter().map(|block_number| provider.get_block(*block_number)),
+            )
+            .await?,
+        );
+    }
+
+    Ok(blocks.into_iter().map(|block| (block.header.inner.number, block)).collect())
+}
+
+async fn fetch_full_blocks_with_policy(
+    provider: &Arc<impl Provider>,
+    block_numbers: &[u64],
+    max_in_flight: usize,
+    requests_per_second: Option<u32>,
+) -> Result<HashMap<u64, Block>, ProviderError> {
+    let max_in_flight = max_in_flight.max(1);
+    let mut blocks = vec![];
+
+    for (index, block_number_chunk) in block_numbers.chunks(max_in_flight).enumerate() {
+        if index > 0 {
+            throttle_requests(block_number_chunk.len(), requests_per_second).await;
+        }
+
+        blocks.extend(
+            try_join_all(
+                block_number_chunk
+                    .iter()
+                    .map(|block_number| provider.get_block_with_transactions(*block_number)),
             )
             .await?,
         );
@@ -381,6 +558,7 @@ where
 
         match operation().await {
             Ok(value) => return Ok(value),
+            Err(error) if !error.is_retryable() => return Err(error),
             Err(error) if attempts >= max_attempts => return Err(error),
             Err(_) => backoff(attempts - 1, base_backoff_ms, max_backoff_ms).await,
         }
@@ -421,6 +599,22 @@ mod tests {
 
         assert_eq!(error.to_string(), "provider failed");
         assert_eq!(ProviderError::custom("provider failed"), error);
+    }
+
+    #[test]
+    fn provider_error_variants_are_actionable() {
+        assert_eq!(
+            ProviderError::unsupported("call trace indexing").to_string(),
+            "provider does not support call trace indexing"
+        );
+        assert_eq!(
+            ProviderError::MissingBlock { block_number: 12 }.to_string(),
+            "block 12 not found"
+        );
+        assert_eq!(
+            ProviderError::InvalidUrl("empty host".to_string()).to_string(),
+            "invalid JSON-RPC URL: empty host"
+        );
     }
 
     #[test]
@@ -546,6 +740,19 @@ mod tests {
 
             Ok(block(block_number))
         }
+
+        async fn get_call_traces_by_block_hash(
+            &self,
+            _block_hash: B256,
+        ) -> Result<Vec<serde_json::Value>, ProviderError> {
+            let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_observed.fetch_max(current, Ordering::SeqCst);
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+
+            Ok(vec![])
+        }
     }
 
     #[tokio::test]
@@ -588,5 +795,123 @@ mod tests {
 
         assert_eq!(blocks.len(), 5);
         assert!(max_observed.load(Ordering::SeqCst) <= 2);
+    }
+
+    #[tokio::test]
+    async fn fetch_full_blocks_for_filters_with_policy_uses_same_rpc_budget() {
+        let max_observed = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(ConcurrencyTrackingProvider {
+            in_flight: Arc::new(AtomicUsize::new(0)),
+            max_observed: max_observed.clone(),
+        });
+        let filters = vec![Filter {
+            contract_address_id: 1,
+            address: "0x1".to_string(),
+            value: RpcFilter::new().from_block(1).to_block(5),
+        }];
+
+        let blocks =
+            fetch_full_blocks_for_filters_with_policy(&provider, &filters, 5, 0, 2, None, 5, 1, 10)
+                .await
+                .unwrap();
+
+        assert_eq!(blocks.len(), 5);
+        assert!(max_observed.load(Ordering::SeqCst) <= 2);
+    }
+
+    #[tokio::test]
+    async fn fetch_call_traces_by_block_hashes_with_policy_bounds_in_flight_requests() {
+        let max_observed = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(ConcurrencyTrackingProvider {
+            in_flight: Arc::new(AtomicUsize::new(0)),
+            max_observed: max_observed.clone(),
+        });
+        let block_hashes = (1..=5).map(|number| block(number).header.hash).collect::<Vec<_>>();
+
+        let traces = fetch_call_traces_by_block_hashes_with_policy(
+            &provider,
+            &block_hashes,
+            2,
+            None,
+            5,
+            1,
+            10,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(traces.len(), 5);
+        assert!(max_observed.load(Ordering::SeqCst) <= 2);
+    }
+
+    #[tokio::test]
+    async fn custom_providers_do_not_claim_trace_support_by_default() {
+        let provider = Arc::new(TaggedProvider);
+
+        let error = fetch_call_traces_by_block_hashes_with_policy(
+            &provider,
+            &[B256::ZERO],
+            1,
+            None,
+            1,
+            1,
+            1,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, ProviderError::unsupported("call trace indexing"));
+    }
+
+    #[derive(Clone)]
+    struct UnsupportedTraceProvider {
+        attempts: Arc<AtomicUsize>,
+    }
+
+    #[crate::augmenting_std::async_trait]
+    impl Provider for UnsupportedTraceProvider {
+        async fn get_block_number(&self) -> Result<u64, ProviderError> {
+            Ok(100)
+        }
+
+        async fn get_logs(&self, _filter: &RpcFilter) -> Result<Vec<Log>, ProviderError> {
+            Ok(vec![])
+        }
+
+        async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError> {
+            Ok(block(block_number))
+        }
+
+        async fn get_call_traces_by_block_hash(
+            &self,
+            _block_hash: B256,
+        ) -> Result<Vec<serde_json::Value>, ProviderError> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+
+            Err(ProviderError::unsupported("call trace indexing"))
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_provider_capabilities_are_not_retried() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(UnsupportedTraceProvider {
+            attempts: attempts.clone(),
+        });
+
+        let error = fetch_call_traces_by_block_hashes_with_policy(
+            &provider,
+            &[B256::ZERO],
+            1,
+            None,
+            5,
+            1,
+            1,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, ProviderError::unsupported("call trace indexing"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 }
