@@ -39,6 +39,7 @@ pub struct SideEffectHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub(crate) repo_client: &'a ChaindexingRepoTxnClient<'a>,
     shared_state: Option<Arc<Mutex<SharedState>>>,
     side_effect_finality: SideEffectFinality,
+    is_at_block_tail: bool,
 }
 
 impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedState> {
@@ -53,6 +54,7 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
             repo_client,
             shared_state: shared_state.clone(),
             side_effect_finality,
+            is_at_block_tail: false,
         }
     }
 
@@ -64,6 +66,21 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
 
     pub fn get_event_params(&self) -> EventParam {
         self.event.get_params()
+    }
+
+    /// Returns true when this event is at the latest block already ingested for
+    /// its contract address.
+    ///
+    /// This is an application heuristic for distinguishing catch-up/backfill
+    /// handling from the indexed tail. It is not a global chain-head or finality
+    /// guarantee.
+    pub fn is_at_block_tail(&self) -> bool {
+        self.is_at_block_tail
+    }
+
+    pub(crate) fn with_is_at_block_tail(mut self, is_at_block_tail: bool) -> Self {
+        self.is_at_block_tail = is_at_block_tail;
+        self
     }
 
     /// Enqueues a durable, idempotent outbox job for the current event.

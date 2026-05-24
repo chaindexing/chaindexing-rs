@@ -51,6 +51,10 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
 
                 for event in &events {
                     let handler_key = contracts::handler_key(&event.contract_name, event.get_abi());
+                    let is_at_block_tail = event_is_at_block_tail(
+                        event.get_block_number(),
+                        contract_address.next_block_number_to_ingest_from,
+                    );
 
                     {
                         if let Some(handler) = pure_handlers.get(&handler_key) {
@@ -59,7 +63,8 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                                 &txn_client,
                                 repo_client_for_mcs,
                                 deferred_mutations_for_mcs,
-                            );
+                            )
+                            .with_is_at_block_tail(is_at_block_tail);
 
                             handler.handle_event(handler_context).await;
                         }
@@ -74,7 +79,8 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                                     &txn_client,
                                     shared_state,
                                     side_effect_finality,
-                                );
+                                )
+                                .with_is_at_block_tail(is_at_block_tail);
 
                                 handler.handle_event(handler_context).await;
                             }
@@ -109,5 +115,31 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                 ChaindexingRepo::commit_txns(txn_client).await;
             }
         }
+    }
+}
+
+fn event_is_at_block_tail(event_block_number: u64, next_block_number_to_ingest_from: i64) -> bool {
+    let next_block_number_to_ingest_from = next_block_number_to_ingest_from.max(0) as u64;
+
+    event_block_number.saturating_add(1) >= next_block_number_to_ingest_from
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_before_ingested_tail_is_not_at_block_tail() {
+        assert!(!event_is_at_block_tail(10, 12));
+    }
+
+    #[test]
+    fn event_at_latest_ingested_block_is_at_block_tail() {
+        assert!(event_is_at_block_tail(11, 12));
+    }
+
+    #[test]
+    fn event_past_cursor_is_treated_as_tail_after_rewinds() {
+        assert!(event_is_at_block_tail(12, 12));
     }
 }

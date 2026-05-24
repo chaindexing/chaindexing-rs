@@ -147,6 +147,7 @@ Full working examples live in
 | External side effects | Direct side-effect handlers exist for compatibility, while durable webhooks, notifications, queues, and bridge jobs should go through the Postgres outbox. |
 | Runtime control | Workload profiles expose batch size, worker limits, RPC in-flight budgets, retry/backoff, and polling cadence without YAML or a separate indexing service. |
 | Dynamic contracts | Handlers can include newly discovered contract addresses at runtime, useful for factory patterns such as Uniswap pools. |
+| Tail-aware handlers | `EventContext::is_at_block_tail()` and `SideEffectContext::is_at_block_tail()` let handlers distinguish historical catch-up from the latest block already ingested for that contract address. |
 
 ## Guarantees
 
@@ -356,6 +357,7 @@ async fn read_nft() -> Option<Nft> {
 | Postgres state materialization | Supported. Chaindexing owns internal tables and writes your declared state tables. |
 | Multi-chain indexing | Supported through multiple `Chain` configs. |
 | Runtime-discovered contracts | Supported with `chaindexing::include_contract(...)`. |
+| Handler tail heuristic | Supported with `is_at_block_tail()` on pure and side-effect handler contexts. |
 | Reorg repair | Supported inside the configured confirmation/finality window. |
 | Durable side-effect dispatch | Supported through `chaindexing_outbox`; dispatch is intentionally at-least-once. |
 | Raw transactions and traces | Not supported yet. |
@@ -379,7 +381,6 @@ for these limits:
 
 ## Roadmap
 
-- Expose an `is_at_block_tail` signal for application operational heuristics.
 - Add TLS-enabled Postgres connections.
 - Support raw transaction and call trace indexing.
 - Improve error handling, messages, and reporting.
