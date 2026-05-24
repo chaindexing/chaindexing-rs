@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use ethers::abi::HumanReadableParser;
+use alloy::json_abi::Event as AbiEvent;
 use tokio::sync::Mutex;
 
 use crate::chain_reorg::{IndexingFinality, MinConfirmationCount, ReorgMode, SideEffectFinality};
@@ -425,7 +425,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             }
 
             for abi in contract.get_event_abis() {
-                if let Err(error) = HumanReadableParser::parse_event(abi) {
+                if let Err(error) = AbiEvent::parse(abi) {
                     return Err(ConfigError::InvalidEventAbi {
                         contract_name: contract.name.clone(),
                         abi: abi.to_string(),

@@ -139,8 +139,7 @@ async fn remove_already_ingested_filters(
             .iter()
             .filter(|filter| match latest_ingested_events.get(&filter.address) {
                 Some(latest_event) => {
-                    latest_event.block_number as u64
-                        == filter.value.get_to_block().unwrap().as_u64()
+                    latest_event.block_number as u64 == filter.value.get_to_block().unwrap()
                 }
                 None => false,
             })
@@ -190,7 +189,7 @@ async fn update_next_block_numbers_to_ingest_from<'a>(
             ChaindexingRepo::update_next_block_number_to_ingest_from(
                 conn,
                 contract_address,
-                next_block_number_to_ingest_from.as_u64() as i64,
+                next_block_number_to_ingest_from as i64,
             )
             .await
         }

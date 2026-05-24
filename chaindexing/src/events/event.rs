@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 
 use crate::diesel::schema::chaindexing_events;
+use alloy::dyn_abi::{DecodedEvent, DynSolValue, EventExt};
+use alloy::primitives::{utils::format_ether, Address, I256, U256};
+use alloy::rpc::types::Log;
 use diesel::{Insertable, Queryable};
-use ethers::abi::{LogParam, Token};
-use ethers::types::{Address, Log, I256, U256, U64};
-use ethers::utils::format_ether;
+use serde_json::{json, Value};
 
 use crate::{ChainId, ContractEvent};
 use uuid::Uuid;
@@ -80,24 +82,24 @@ impl Event {
         contract_name: &str,
         block_timestamp: i64,
     ) -> Self {
-        let log_params = event.value.parse_log(log.clone().into()).unwrap().params;
-        let parameters = Self::log_params_to_parameters(&log_params);
+        let decoded_log = event.value.decode_log(log.data()).unwrap();
+        let parameters = Self::decoded_log_to_parameters(event, decoded_log);
 
         Self {
             id: uuid::Uuid::new_v4(),
             chain_id: *chain_id as i64,
-            contract_address: utils::address_to_string(&log.address).to_lowercase(),
+            contract_address: utils::address_to_string(&log.address()).to_lowercase(),
             contract_name: contract_name.to_owned(),
             abi: event.abi.clone(),
-            parameters: serde_json::to_value(parameters).unwrap(),
-            topics: serde_json::to_value(&log.topics).unwrap(),
+            parameters: parameters_to_json(&parameters),
+            topics: serde_json::to_value(log.topics()).unwrap(),
             block_hash: hashes::h256_to_string(&log.block_hash.unwrap()).to_lowercase(),
-            block_number: log.block_number.unwrap().as_u64() as i64,
+            block_number: log.block_number.unwrap() as i64,
             block_timestamp,
             transaction_hash: hashes::h256_to_string(&log.transaction_hash.unwrap()).to_lowercase(),
-            transaction_index: log.transaction_index.unwrap().as_u32() as i32,
-            log_index: log.log_index.unwrap().as_u32() as i32,
-            removed: log.removed.unwrap(),
+            transaction_index: log.transaction_index.unwrap() as i32,
+            log_index: log.log_index.unwrap() as i32,
+            removed: log.removed,
             status: "canonical".to_string(),
             reorg_id: None,
         }
@@ -131,30 +133,241 @@ impl Event {
 
     /// Returns the event's chain id
     pub fn get_chain_id(&self) -> ChainId {
-        U64::from(self.chain_id).try_into().unwrap()
+        ChainId::try_from(self.chain_id as u64).unwrap()
     }
 
-    fn log_params_to_parameters(log_params: &[LogParam]) -> HashMap<String, Token> {
-        log_params.iter().fold(HashMap::new(), |mut parameters, log_param| {
-            parameters.insert(log_param.name.to_string(), log_param.value.clone());
+    fn decoded_log_to_parameters(
+        event: &ContractEvent,
+        decoded_log: DecodedEvent,
+    ) -> HashMap<String, EventParamValue> {
+        let mut indexed = decoded_log.indexed.into_iter();
+        let mut body = decoded_log.body.into_iter();
 
+        event.value.inputs.iter().fold(HashMap::new(), |mut parameters, input| {
+            let value = if input.indexed {
+                indexed.next()
+            } else {
+                body.next()
+            }
+            .unwrap();
+
+            parameters.insert(input.name.to_string(), EventParamValue::from(value));
             parameters
         })
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum EventParamValue {
+    Address(Address),
+    Uint(U256),
+    Int(I256),
+    Bool(bool),
+    String(String),
+    Bytes(Vec<u8>),
+    FixedBytes(Vec<u8>),
+    Array(Vec<EventParamValue>),
+    FixedArray(Vec<EventParamValue>),
+    Tuple(Vec<EventParamValue>),
+}
+
+impl EventParamValue {
+    fn to_json(&self) -> Value {
+        match self {
+            EventParamValue::Address(value) => {
+                json!({ "Address": utils::address_to_string(value) })
+            }
+            EventParamValue::Uint(value) => json!({ "Uint": u256_to_hex(*value) }),
+            EventParamValue::Int(value) => json!({ "Int": u256_to_hex(value.into_raw()) }),
+            EventParamValue::Bool(value) => json!({ "Bool": value }),
+            EventParamValue::String(value) => json!({ "String": value }),
+            EventParamValue::Bytes(value) => json!({ "Bytes": value }),
+            EventParamValue::FixedBytes(value) => json!({ "FixedBytes": value }),
+            EventParamValue::Array(values) => {
+                json!({ "Array": values.iter().map(EventParamValue::to_json).collect::<Vec<_>>() })
+            }
+            EventParamValue::FixedArray(values) => {
+                json!({ "FixedArray": values.iter().map(EventParamValue::to_json).collect::<Vec<_>>() })
+            }
+            EventParamValue::Tuple(values) => {
+                json!({ "Tuple": values.iter().map(EventParamValue::to_json).collect::<Vec<_>>() })
+            }
+        }
+    }
+
+    fn from_json(value: &Value) -> Self {
+        let object = value.as_object().expect("event parameter value must be an object");
+        let (kind, value) = object.iter().next().expect("event parameter value must be tagged");
+
+        match kind.as_str() {
+            "Address" => {
+                EventParamValue::Address(Address::from_str(value.as_str().unwrap()).unwrap())
+            }
+            "Uint" => EventParamValue::Uint(parse_u256(value)),
+            "Int" => EventParamValue::Int(parse_i256(value)),
+            "Bool" => EventParamValue::Bool(value.as_bool().unwrap()),
+            "String" => EventParamValue::String(value.as_str().unwrap().to_string()),
+            "Bytes" => EventParamValue::Bytes(parse_bytes(value)),
+            "FixedBytes" => EventParamValue::FixedBytes(parse_bytes(value)),
+            "Array" => EventParamValue::Array(parse_values(value)),
+            "FixedArray" => EventParamValue::FixedArray(parse_values(value)),
+            "Tuple" => EventParamValue::Tuple(parse_values(value)),
+            _ => panic!("unsupported event parameter type: {kind}"),
+        }
+    }
+
+    fn into_uint(self) -> U256 {
+        match self {
+            EventParamValue::Uint(value) => value,
+            _ => panic!("event parameter is not a uint"),
+        }
+    }
+
+    fn into_int(self) -> I256 {
+        match self {
+            EventParamValue::Int(value) => value,
+            _ => panic!("event parameter is not an int"),
+        }
+    }
+
+    fn into_address(self) -> Address {
+        match self {
+            EventParamValue::Address(value) => value,
+            _ => panic!("event parameter is not an address"),
+        }
+    }
+}
+
+impl From<DynSolValue> for EventParamValue {
+    fn from(value: DynSolValue) -> Self {
+        match value {
+            DynSolValue::Bool(value) => EventParamValue::Bool(value),
+            DynSolValue::Int(value, _) => EventParamValue::Int(value),
+            DynSolValue::Uint(value, _) => EventParamValue::Uint(value),
+            DynSolValue::FixedBytes(value, size) => {
+                EventParamValue::FixedBytes(value[..size.min(32)].to_vec())
+            }
+            DynSolValue::Address(value) => EventParamValue::Address(value),
+            DynSolValue::Function(value) => {
+                EventParamValue::FixedBytes(value.into_word()[..24].to_vec())
+            }
+            DynSolValue::Bytes(value) => EventParamValue::Bytes(value),
+            DynSolValue::String(value) => EventParamValue::String(value),
+            DynSolValue::Array(values) => {
+                EventParamValue::Array(values.into_iter().map(EventParamValue::from).collect())
+            }
+            DynSolValue::FixedArray(values) => {
+                EventParamValue::FixedArray(values.into_iter().map(EventParamValue::from).collect())
+            }
+            DynSolValue::Tuple(values) => {
+                EventParamValue::Tuple(values.into_iter().map(EventParamValue::from).collect())
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for EventParamValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventParamValue::Address(value) => {
+                let address = utils::address_to_string(value);
+                write!(f, "{}", address.strip_prefix("0x").unwrap_or(&address))
+            }
+            EventParamValue::Uint(value) => write!(f, "{value:x}"),
+            EventParamValue::Int(value) => write!(f, "{:x}", value.into_raw()),
+            EventParamValue::Bool(value) => write!(f, "{value}"),
+            EventParamValue::String(value) => value.fmt(f),
+            EventParamValue::Bytes(value) | EventParamValue::FixedBytes(value) => {
+                write!(f, "{}", alloy::hex::encode(value))
+            }
+            EventParamValue::Array(values) | EventParamValue::FixedArray(values) => write!(
+                f,
+                "[{}]",
+                values.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
+            ),
+            EventParamValue::Tuple(values) => write!(
+                f,
+                "({})",
+                values.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")
+            ),
+        }
+    }
+}
+
+fn parameters_to_json(parameters: &HashMap<String, EventParamValue>) -> Value {
+    let mut object = serde_json::Map::new();
+    for (key, value) in parameters {
+        object.insert(key.clone(), value.to_json());
+    }
+    Value::Object(object)
+}
+
+fn parse_values(value: &Value) -> Vec<EventParamValue> {
+    value.as_array().unwrap().iter().map(EventParamValue::from_json).collect()
+}
+
+fn parse_bytes(value: &Value) -> Vec<u8> {
+    if let Some(hex) = value.as_str() {
+        return alloy::hex::decode(hex.strip_prefix("0x").unwrap_or(hex)).unwrap();
+    }
+
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|byte| byte.as_u64().unwrap() as u8)
+        .collect()
+}
+
+fn parse_u256(value: &Value) -> U256 {
+    if let Some(number) = value.as_u64() {
+        return U256::from(number);
+    }
+
+    let value = value.as_str().unwrap();
+    if let Some(hex) = value.strip_prefix("0x") {
+        U256::from_str_radix(hex, 16).unwrap()
+    } else {
+        U256::from_str_radix(value, 10).unwrap()
+    }
+}
+
+fn parse_i256(value: &Value) -> I256 {
+    if let Some(number) = value.as_i64() {
+        return I256::try_from(number).unwrap();
+    }
+
+    let value = value.as_str().unwrap();
+    if let Some(hex) = value.strip_prefix("0x") {
+        I256::from_raw(U256::from_str_radix(hex, 16).unwrap())
+    } else if value.starts_with('-') {
+        I256::from_dec_str(value).unwrap()
+    } else {
+        I256::from_raw(U256::from_str_radix(value, 10).unwrap())
+    }
+}
+
+fn u256_to_hex(value: U256) -> String {
+    format!("{value:#x}")
 }
 
 /// Represents the parameters parsed from an event/log.
 /// Contains convenient parsers to convert or transform into useful primitives
 /// as needed.
 pub struct EventParam {
-    value: HashMap<String, Token>,
+    value: HashMap<String, EventParamValue>,
 }
 
 impl EventParam {
     pub(crate) fn new(parameters: &serde_json::Value) -> EventParam {
-        EventParam {
-            value: serde_json::from_value(parameters.clone()).unwrap(),
-        }
+        let value = parameters
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), EventParamValue::from_json(value)))
+            .collect();
+
+        EventParam { value }
     }
 
     /// N/B: This function is UNSAFE.
@@ -169,7 +382,10 @@ impl EventParam {
     pub fn get_bytes(&self, key: &str) -> Vec<u8> {
         let token = self.get_token(key);
 
-        token.clone().into_fixed_bytes().or(token.into_bytes()).unwrap()
+        match token {
+            EventParamValue::Bytes(value) | EventParamValue::FixedBytes(value) => value,
+            _ => panic!("event parameter is not bytes"),
+        }
     }
 
     pub fn get_i8_array(&self, key: &str) -> Vec<i8> {
@@ -182,26 +398,26 @@ impl EventParam {
         self.get_array_and_transform(key, |token| token_to_int(token).as_i64())
     }
     pub fn get_i128_array(&self, key: &str) -> Vec<i128> {
-        self.get_array_and_transform(key, |token| token_to_int(token).as_i128())
+        self.get_array_and_transform(key, |token| i128::try_from(token_to_int(token)).unwrap())
     }
 
     pub fn get_u8_array(&self, key: &str) -> Vec<u8> {
-        self.get_array_and_transform(key, |token| token_to_uint(token).as_usize() as u8)
+        self.get_array_and_transform(key, |token| token_to_uint(token).to::<usize>() as u8)
     }
     pub fn get_u32_array(&self, key: &str) -> Vec<u32> {
-        self.get_array_and_transform(key, |token| token_to_uint(token).as_u32())
+        self.get_array_and_transform(key, |token| token_to_uint(token).to::<u32>())
     }
     pub fn get_u64_array(&self, key: &str) -> Vec<u64> {
-        self.get_array_and_transform(key, |token| token_to_uint(token).as_u64())
+        self.get_array_and_transform(key, |token| token_to_uint(token).to::<u64>())
     }
     pub fn get_u128_array(&self, key: &str) -> Vec<u128> {
-        self.get_array_and_transform(key, |token| token_to_uint(token).as_u128())
+        self.get_array_and_transform(key, |token| token_to_uint(token).to::<u128>())
     }
     pub fn get_uint_array(&self, key: &str) -> Vec<U256> {
         self.get_array_and_transform(key, token_to_uint)
     }
     pub fn get_int_array(&self, key: &str) -> Vec<I256> {
-        self.get_array_and_transform(key, |token| I256::from_raw(token.into_int().unwrap()))
+        self.get_array_and_transform(key, token_to_int)
     }
 
     pub fn get_address_array(&self, key: &str) -> Vec<Address> {
@@ -217,14 +433,17 @@ impl EventParam {
         token_transformer: TokenTransformer,
     ) -> Vec<Output>
     where
-        TokenTransformer: Fn(Token) -> Output,
+        TokenTransformer: Fn(EventParamValue) -> Output,
     {
         self.get_array(key).into_iter().map(token_transformer).collect()
     }
-    fn get_array(&self, key: &str) -> Vec<Token> {
+    fn get_array(&self, key: &str) -> Vec<EventParamValue> {
         let token = self.get_token(key);
 
-        token.clone().into_fixed_array().or(token.into_array()).unwrap()
+        match token {
+            EventParamValue::Array(values) | EventParamValue::FixedArray(values) => values,
+            _ => panic!("event parameter is not an array"),
+        }
     }
 
     pub fn get_int_gwei(&self, key: &str) -> f64 {
@@ -251,23 +470,23 @@ impl EventParam {
         self.get_int(key).as_i64()
     }
     pub fn get_i128(&self, key: &str) -> i128 {
-        self.get_int(key).as_i128()
+        i128::try_from(self.get_int(key)).unwrap()
     }
 
     pub fn get_u8(&self, key: &str) -> u8 {
         self.get_usize(key) as u8
     }
     pub fn get_usize(&self, key: &str) -> usize {
-        self.get_uint(key).as_usize()
+        self.get_uint(key).to::<usize>()
     }
     pub fn get_u32(&self, key: &str) -> u32 {
-        self.get_uint(key).as_u32()
+        self.get_uint(key).to::<u32>()
     }
     pub fn get_u64(&self, key: &str) -> u64 {
-        self.get_uint(key).as_u64()
+        self.get_uint(key).to::<u64>()
     }
     pub fn get_u128(&self, key: &str) -> u128 {
-        self.get_uint(key).as_u128()
+        self.get_uint(key).to::<u128>()
     }
     /// Same as get_u256
     pub fn get_uint(&self, key: &str) -> U256 {
@@ -283,47 +502,41 @@ impl EventParam {
         token_to_address(self.get_token(key))
     }
 
-    fn get_token(&self, key: &str) -> Token {
+    fn get_token(&self, key: &str) -> EventParamValue {
         self.value.get(key).unwrap().clone()
     }
 }
 
-fn token_to_address_string(token: Token) -> String {
+fn token_to_address_string(token: EventParamValue) -> String {
     utils::address_to_string(&token_to_address(token)).to_lowercase()
 }
 
-fn token_to_address(token: Token) -> Address {
-    token.into_address().unwrap()
+fn token_to_address(token: EventParamValue) -> Address {
+    token.into_address()
 }
 
-fn token_to_uint(token: Token) -> U256 {
-    token.into_uint().unwrap()
+fn token_to_uint(token: EventParamValue) -> U256 {
+    token.into_uint()
 }
-fn token_to_int(token: Token) -> I256 {
-    I256::from_raw(token.into_int().unwrap())
+fn token_to_int(token: EventParamValue) -> I256 {
+    token.into_int()
 }
 
 const GWEI: f64 = 1_000_000_000.0;
 
 mod hashes {
-    use ethers::types::{H160, H256};
+    use alloy::primitives::B256;
 
-    pub fn h160_to_string(h160: &H160) -> String {
-        serde_json::to_value(h160).unwrap().as_str().unwrap().to_string()
-    }
-
-    pub fn h256_to_string(h256: &H256) -> String {
-        serde_json::to_value(h256).unwrap().as_str().unwrap().to_string()
+    pub fn h256_to_string(h256: &B256) -> String {
+        h256.to_string()
     }
 }
 
 mod utils {
-    use ethers::types::H160;
+    use alloy::primitives::Address;
 
-    use super::hashes;
-
-    pub fn address_to_string(address: &H160) -> String {
-        hashes::h160_to_string(address)
+    pub fn address_to_string(address: &Address) -> String {
+        format!("{address:?}")
     }
 }
 
@@ -331,7 +544,7 @@ mod utils {
 mod event_param_tests {
     use std::collections::HashSet;
 
-    use ethers::types::I256;
+    use alloy::primitives::{Bytes, Log as PrimitiveLog, LogData, B256};
     use serde_json::json;
 
     use super::*;
@@ -342,7 +555,7 @@ mod event_param_tests {
             EventParam::new(&json!({"sqrtPriceX96":{"Uint":"0x1ca2dce57b617d43d62181e8"}}));
         assert_eq!(
             event_param.get_uint("sqrtPriceX96"),
-            U256::from_dec_str("8862469411596380921745474024").unwrap()
+            U256::from_str_radix("8862469411596380921745474024", 10).unwrap()
         );
     }
 
@@ -355,6 +568,101 @@ mod event_param_tests {
             event_param.get_int("amount0"),
             I256::from_dec_str("-26311681626831253271").unwrap()
         );
+    }
+
+    #[test]
+    fn address_params_serialize_as_lowercase_raw_hex() {
+        let contract_event = ContractEvent::new("event OwnerChanged(address indexed owner)");
+        let owner = Address::from_str("0xd8da6bf26964af9d7eed9e03e53415d37aa96045").unwrap();
+        let log = Log {
+            inner: PrimitiveLog {
+                address: Address::from_str("0x0000000000000000000000000000000000000003").unwrap(),
+                data: LogData::new_unchecked(
+                    vec![contract_event.value.selector(), owner.into_word()],
+                    Bytes::new(),
+                ),
+            },
+            block_hash: Some(B256::from(U256::from(10).to_be_bytes::<32>())),
+            block_number: Some(10),
+            transaction_hash: Some(B256::from(U256::from(20).to_be_bytes::<32>())),
+            transaction_index: Some(1),
+            log_index: Some(2),
+            removed: false,
+            ..Default::default()
+        };
+
+        let event = Event::new(&log, &contract_event, &ChainId::Mainnet, "Registry", 123);
+        let params = event.get_params();
+
+        assert_eq!(
+            event.parameters["owner"]["Address"],
+            "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+        );
+        assert_eq!(
+            params.get_address_string("owner"),
+            "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+        );
+        assert_eq!(
+            params.get_string_unsafely("owner"),
+            "d8da6bf26964af9d7eed9e03e53415d37aa96045"
+        );
+    }
+
+    #[test]
+    fn string_unsafely_keeps_legacy_non_string_token_formatting() {
+        let event_param = EventParam::new(&json!({
+            "amount": {"Uint": "0xff"},
+            "raw_amount": {"Int": "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0"},
+            "data": {"FixedBytes": [222, 173, 190, 239]},
+            "values": {"Array": [{"Uint": "0x1"}, {"Uint": "0x2"}]},
+            "tuple": {"Tuple": [{"Bool": true}, {"String": "ok"}]}
+        }));
+
+        assert_eq!(event_param.get_string_unsafely("amount"), "ff");
+        assert_eq!(
+            event_param.get_string_unsafely("raw_amount"),
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0"
+        );
+        assert_eq!(event_param.get_string_unsafely("data"), "deadbeef");
+        assert_eq!(event_param.get_string_unsafely("values"), "[1,2]");
+        assert_eq!(event_param.get_string_unsafely("tuple"), "(true,ok)");
+    }
+
+    #[test]
+    fn event_new_decodes_alloy_logs_into_event_params() {
+        let contract_event = ContractEvent::new(
+            "event Transfer(address indexed from, address indexed to, uint256 value)",
+        );
+        let from = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+        let to = Address::from_str("0x0000000000000000000000000000000000000002").unwrap();
+        let value = B256::from(U256::from(100).to_be_bytes::<32>());
+        let log = Log {
+            inner: PrimitiveLog {
+                address: Address::from_str("0x0000000000000000000000000000000000000003").unwrap(),
+                data: LogData::new_unchecked(
+                    vec![
+                        contract_event.value.selector(),
+                        from.into_word(),
+                        to.into_word(),
+                    ],
+                    Bytes::copy_from_slice(value.as_slice()),
+                ),
+            },
+            block_hash: Some(B256::from(U256::from(10).to_be_bytes::<32>())),
+            block_number: Some(10),
+            transaction_hash: Some(B256::from(U256::from(20).to_be_bytes::<32>())),
+            transaction_index: Some(1),
+            log_index: Some(2),
+            removed: false,
+            ..Default::default()
+        };
+
+        let event = Event::new(&log, &contract_event, &ChainId::Mainnet, "ERC20", 123);
+        let params = event.get_params();
+
+        assert_eq!(params.get_address("from"), from);
+        assert_eq!(params.get_address("to"), to);
+        assert_eq!(params.get_uint("value"), U256::from(100));
     }
 
     fn event_with_identity(transaction_hash: &str, log_index: i32) -> Event {

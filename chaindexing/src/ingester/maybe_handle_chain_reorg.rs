@@ -92,8 +92,8 @@ async fn get_already_ingested_events<'a>(
 ) -> Vec<Event> {
     let mut already_ingested_events = vec![];
     for filter in filters {
-        let from_block = filter.value.get_from_block().unwrap().as_u64();
-        let to_block = filter.value.get_to_block().unwrap().as_u64();
+        let from_block = filter.value.get_from_block().unwrap();
+        let to_block = filter.value.get_to_block().unwrap();
 
         let mut events = ChaindexingRepo::get_events(
             conn,

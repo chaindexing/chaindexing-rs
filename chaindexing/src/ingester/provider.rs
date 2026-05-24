@@ -4,31 +4,65 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ethers::prelude::Middleware;
-use ethers::prelude::*;
-use ethers::providers::{Http, Provider as EthersProvider, ProviderError as EthersProviderError};
-use ethers::types::{BlockNumber, Filter as EthersFilter, Log, H256};
+use alloy::network::Ethereum;
+use alloy::primitives::B256;
+use alloy::providers::{Provider as AlloyProvider, ProviderBuilder};
+use alloy::rpc::types::{Block, BlockNumberOrTag, Filter as RpcFilter, Log};
 use futures_util::future::try_join_all;
 use tokio::time::sleep;
 
 use super::filters::Filter;
 use crate::chain_reorg::IndexingFinality;
 
-pub type ProviderError = EthersProviderError;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderError {
+    /// Error variant for custom provider implementations.
+    ///
+    /// This keeps the old ethers-era construction pattern available for
+    /// custom `IngesterProvider` implementations while Chaindexing uses Alloy
+    /// internally.
+    CustomError(String),
+    TransportError(String),
+}
+
+impl ProviderError {
+    pub fn custom(message: impl Into<String>) -> Self {
+        Self::CustomError(message.into())
+    }
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProviderError::CustomError(message) | ProviderError::TransportError(message) => {
+                message.fmt(f)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ProviderError {}
+
+impl From<alloy::transports::TransportError> for ProviderError {
+    fn from(value: alloy::transports::TransportError) -> Self {
+        Self::TransportError(value.to_string())
+    }
+}
+
 const MAX_PROVIDER_ATTEMPTS: u32 = 5;
 const MAX_BACKOFF_SECS: u64 = 30;
 
 #[crate::augmenting_std::async_trait]
 pub trait Provider: Clone + Sync + Send {
-    async fn get_block_number(&self) -> Result<U64, ProviderError>;
-    async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
+    async fn get_block_number(&self) -> Result<u64, ProviderError>;
+    async fn get_logs(&self, filter: &RpcFilter) -> Result<Vec<Log>, ProviderError>;
 
-    async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError>;
+    async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError>;
 
     async fn get_block_by_tag(
         &self,
-        _block_number: BlockNumber,
-    ) -> Result<Option<Block<TxHash>>, ProviderError> {
+        _block_number: BlockNumberOrTag,
+    ) -> Result<Option<Block>, ProviderError> {
         Ok(None)
     }
 
@@ -38,16 +72,16 @@ pub trait Provider: Clone + Sync + Send {
 
     async fn get_logs_by_block_hash(
         &self,
-        filter: &EthersFilter,
-        block_hash: H256,
+        filter: &RpcFilter,
+        block_hash: B256,
     ) -> Result<Vec<Log>, ProviderError> {
         self.get_logs(&filter.clone().at_block_hash(block_hash)).await
     }
 
     async fn get_blocks(
         &self,
-        block_numbers: &[U64],
-    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+        block_numbers: &[u64],
+    ) -> Result<HashMap<u64, Block>, ProviderError> {
         const CHUNK_SIZE: usize = 8;
         let chunked_block_numbers: Vec<_> = block_numbers.chunks(CHUNK_SIZE).collect();
 
@@ -62,10 +96,8 @@ pub trait Provider: Clone + Sync + Send {
         }
 
         let mut blocks_by_number = HashMap::new();
-        for block @ Block { number, .. } in blocks {
-            if let Some(number) = number {
-                blocks_by_number.insert(number, block);
-            }
+        for block in blocks {
+            blocks_by_number.insert(block.header.inner.number, block);
         }
 
         Ok(blocks_by_number)
@@ -74,7 +106,7 @@ pub trait Provider: Clone + Sync + Send {
     async fn get_blocks_by_number(
         &self,
         logs: &[Log],
-    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+    ) -> Result<HashMap<u64, Block>, ProviderError> {
         let block_numbers: Vec<_> = logs
             .iter()
             .filter_map(|log| log.block_number)
@@ -90,7 +122,7 @@ pub trait Provider: Clone + Sync + Send {
         filters: &[Filter],
         current_block_number: u64,
         lookback_block_count: u64,
-    ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+    ) -> Result<HashMap<u64, Block>, ProviderError> {
         let block_numbers =
             block_numbers_for_filters(filters, current_block_number, lookback_block_count);
 
@@ -99,39 +131,47 @@ pub trait Provider: Clone + Sync + Send {
 }
 
 #[crate::augmenting_std::async_trait]
-impl Provider for EthersProvider<Http> {
-    async fn get_block_number(&self) -> Result<U64, ProviderError> {
-        Middleware::get_block_number(&self).await
+impl<P> Provider for P
+where
+    P: AlloyProvider<Ethereum> + Clone + Send + Sync,
+{
+    async fn get_block_number(&self) -> Result<u64, ProviderError> {
+        AlloyProvider::get_block_number(self).await.map_err(ProviderError::from)
     }
 
-    async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
-        Middleware::get_logs(&self, filter).await
+    async fn get_logs(&self, filter: &RpcFilter) -> Result<Vec<Log>, ProviderError> {
+        AlloyProvider::get_logs(self, filter).await.map_err(ProviderError::from)
     }
 
-    async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
-        Middleware::get_block(&self, block_number)
-            .await?
-            .ok_or_else(|| ProviderError::CustomError(format!("block {block_number} not found")))
+    async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError> {
+        AlloyProvider::get_block_by_number(self, BlockNumberOrTag::Number(block_number))
+            .await
+            .map_err(ProviderError::from)?
+            .ok_or_else(|| ProviderError::custom(format!("block {block_number} not found")))
     }
 
     async fn get_block_by_tag(
         &self,
-        block_number: BlockNumber,
-    ) -> Result<Option<Block<TxHash>>, ProviderError> {
-        Middleware::get_block(&self, block_number).await
+        block_number: BlockNumberOrTag,
+    ) -> Result<Option<Block>, ProviderError> {
+        AlloyProvider::get_block_by_number(self, block_number)
+            .await
+            .map_err(ProviderError::from)
     }
 }
 
 pub fn get(json_rpc_url: &str) -> Result<Arc<impl Provider>, ProviderError> {
-    EthersProvider::<Http>::try_from(json_rpc_url)
-        .map(Arc::new)
-        .map_err(|error| ProviderError::CustomError(format!("invalid JSON-RPC URL: {error}")))
+    let url = json_rpc_url
+        .parse()
+        .map_err(|error| ProviderError::custom(format!("invalid JSON-RPC URL: {error}")))?;
+
+    Ok(Arc::new(ProviderBuilder::new().connect_http(url)))
 }
 
 pub async fn fetch_current_block_number(
     provider: &Arc<impl Provider>,
 ) -> Result<u64, ProviderError> {
-    retry_provider(|| async { provider.get_block_number().await.map(|block| block.as_u64()) }).await
+    retry_provider(|| async { provider.get_block_number().await }).await
 }
 
 pub async fn fetch_target_block_number(
@@ -143,24 +183,26 @@ pub async fn fetch_target_block_number(
         IndexingFinality::LatestWithConfirmations(confirmations) => {
             Ok(current_block_number.saturating_sub(confirmations))
         }
-        IndexingFinality::Safe => fetch_tagged_block_number(provider, BlockNumber::Safe)
+        IndexingFinality::Safe => fetch_tagged_block_number(provider, BlockNumberOrTag::Safe)
             .await
             .map(|block| block.unwrap_or(current_block_number)),
-        IndexingFinality::Finalized => fetch_tagged_block_number(provider, BlockNumber::Finalized)
-            .await
-            .map(|block| block.unwrap_or(current_block_number)),
+        IndexingFinality::Finalized => {
+            fetch_tagged_block_number(provider, BlockNumberOrTag::Finalized)
+                .await
+                .map(|block| block.unwrap_or(current_block_number))
+        }
     }
 }
 
 async fn fetch_tagged_block_number(
     provider: &Arc<impl Provider>,
-    tag: BlockNumber,
+    tag: BlockNumberOrTag,
 ) -> Result<Option<u64>, ProviderError> {
     retry_provider(|| async {
         provider
             .get_block_by_tag(tag)
             .await
-            .map(|block| block.and_then(|block| block.number).map(|number| number.as_u64()))
+            .map(|block| block.map(|block| block.header.inner.number))
     })
     .await
 }
@@ -218,7 +260,7 @@ pub(crate) async fn throttle_requests(request_count: usize, requests_per_second:
 pub async fn fetch_logs_by_block_hash_with_policy(
     provider: &Arc<impl Provider>,
     filter: &Filter,
-    block_hash: H256,
+    block_hash: B256,
     retry_attempts: u32,
     base_backoff_ms: u64,
     max_backoff_ms: u64,
@@ -240,7 +282,7 @@ pub async fn fetch_blocks_for_filters_with_policy(
     retry_attempts: u32,
     base_backoff_ms: u64,
     max_backoff_ms: u64,
-) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
+) -> Result<HashMap<u64, Block>, ProviderError> {
     retry_provider_with_policy(
         || async {
             provider
@@ -258,25 +300,17 @@ fn block_numbers_for_filters(
     filters: &[Filter],
     current_block_number: u64,
     lookback_block_count: u64,
-) -> Vec<U64> {
+) -> Vec<u64> {
     filters
         .iter()
         .flat_map(|filter| {
-            let from = filter
-                .value
-                .get_from_block()
-                .unwrap()
-                .as_u64()
-                .saturating_sub(lookback_block_count);
-            let to = min(
-                filter.value.get_to_block().unwrap().as_u64(),
-                current_block_number,
-            );
+            let from = filter.value.get_from_block().unwrap().saturating_sub(lookback_block_count);
+            let to = min(filter.value.get_to_block().unwrap(), current_block_number);
 
             if from > to {
                 vec![]
             } else {
-                (from..=to).map(U64::from).collect()
+                (from..=to).collect()
             }
         })
         .collect::<BTreeSet<_>>()
@@ -335,8 +369,30 @@ async fn backoff(retries_so_far: u32, base_backoff_ms: u64, max_backoff_ms: u64)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ethers::types::Filter as EthersFilter;
+    use alloy::consensus::Header as ConsensusHeader;
+    use alloy::rpc::types::{Filter as RpcFilter, Header as RpcHeader};
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn block(number: u64) -> Block {
+        Block {
+            header: RpcHeader {
+                inner: ConsensusHeader {
+                    number,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn provider_error_custom_error_variant_keeps_legacy_construction_shape() {
+        let error = ProviderError::CustomError("provider failed".to_string());
+
+        assert_eq!(error.to_string(), "provider failed");
+        assert_eq!(ProviderError::custom("provider failed"), error);
+    }
 
     #[test]
     fn block_numbers_for_filters_deduplicates_and_clamps_to_current_block() {
@@ -344,18 +400,18 @@ mod tests {
             Filter {
                 contract_address_id: 1,
                 address: "0x1".to_string(),
-                value: EthersFilter::new().from_block(10).to_block(12),
+                value: RpcFilter::new().from_block(10).to_block(12),
             },
             Filter {
                 contract_address_id: 2,
                 address: "0x2".to_string(),
-                value: EthersFilter::new().from_block(11).to_block(20),
+                value: RpcFilter::new().from_block(11).to_block(20),
             },
         ];
 
         assert_eq!(
             block_numbers_for_filters(&filters, 13, 0),
-            vec![U64::from(10), U64::from(11), U64::from(12), U64::from(13)]
+            vec![10, 11, 12, 13]
         );
     }
 
@@ -364,18 +420,12 @@ mod tests {
         let filters = vec![Filter {
             contract_address_id: 1,
             address: "0x1".to_string(),
-            value: EthersFilter::new().from_block(10).to_block(12),
+            value: RpcFilter::new().from_block(10).to_block(12),
         }];
 
         assert_eq!(
             block_numbers_for_filters(&filters, 12, 2),
-            vec![
-                U64::from(8),
-                U64::from(9),
-                U64::from(10),
-                U64::from(11),
-                U64::from(12)
-            ]
+            vec![8, 9, 10, 11, 12]
         );
     }
 
@@ -384,35 +434,29 @@ mod tests {
 
     #[crate::augmenting_std::async_trait]
     impl Provider for TaggedProvider {
-        async fn get_block_number(&self) -> Result<U64, ProviderError> {
-            Ok(U64::from(100))
+        async fn get_block_number(&self) -> Result<u64, ProviderError> {
+            Ok(100)
         }
 
-        async fn get_logs(&self, _filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
+        async fn get_logs(&self, _filter: &RpcFilter) -> Result<Vec<Log>, ProviderError> {
             Ok(vec![])
         }
 
-        async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
-            Ok(Block {
-                number: Some(block_number),
-                ..Default::default()
-            })
+        async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError> {
+            Ok(block(block_number))
         }
 
         async fn get_block_by_tag(
             &self,
-            block_number: BlockNumber,
-        ) -> Result<Option<Block<TxHash>>, ProviderError> {
+            block_number: BlockNumberOrTag,
+        ) -> Result<Option<Block>, ProviderError> {
             let number = match block_number {
-                BlockNumber::Safe => 90,
-                BlockNumber::Finalized => 80,
+                BlockNumberOrTag::Safe => 90,
+                BlockNumberOrTag::Finalized => 80,
                 _ => 100,
             };
 
-            Ok(Some(Block {
-                number: Some(U64::from(number)),
-                ..Default::default()
-            }))
+            Ok(Some(block(number)))
         }
     }
 
@@ -450,11 +494,11 @@ mod tests {
 
     #[crate::augmenting_std::async_trait]
     impl Provider for ConcurrencyTrackingProvider {
-        async fn get_block_number(&self) -> Result<U64, ProviderError> {
-            Ok(U64::from(100))
+        async fn get_block_number(&self) -> Result<u64, ProviderError> {
+            Ok(100)
         }
 
-        async fn get_logs(&self, _filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
+        async fn get_logs(&self, _filter: &RpcFilter) -> Result<Vec<Log>, ProviderError> {
             let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.max_observed.fetch_max(current, Ordering::SeqCst);
 
@@ -464,11 +508,8 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
-            Ok(Block {
-                number: Some(block_number),
-                ..Default::default()
-            })
+        async fn get_block(&self, block_number: u64) -> Result<Block, ProviderError> {
+            Ok(block(block_number))
         }
     }
 
@@ -483,7 +524,7 @@ mod tests {
             .map(|_| Filter {
                 contract_address_id: 1,
                 address: "0x1".to_string(),
-                value: EthersFilter::new(),
+                value: RpcFilter::new(),
             })
             .collect::<Vec<_>>();
 

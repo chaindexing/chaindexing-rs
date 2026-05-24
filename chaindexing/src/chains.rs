@@ -1,6 +1,6 @@
 /// Represents the network ID for an EVM Chain
 /// For example, `ChainId::Mainnet`, `ChainId::Polygon`, etc.
-pub type ChainId = ethers::types::Chain;
+pub type ChainId = alloy_chains::NamedChain;
 
 /// Represents an EVM chain network
 #[derive(Clone, Debug)]

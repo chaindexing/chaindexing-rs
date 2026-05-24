@@ -11,6 +11,7 @@ mod tests {
         find_contract_address_by_contract_name, provider_with_empty_logs,
         provider_with_filter_stubber, provider_with_logs, test_runner,
     };
+    use alloy::rpc::types::{Block, Filter, Log};
     use chaindexing::{
         augmenting_std::serde::Deserialize, ingester, ChainId, ChaindexingRepo, Config,
         ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo, Repo,
@@ -148,7 +149,7 @@ mod tests {
                 BAYC_CONTRACT_ADDRESS,
                 |filter: &Filter| {
                     assert_eq!(
-                        filter.get_from_block().unwrap().as_u32(),
+                        filter.get_from_block().unwrap() as u32,
                         BAYC_CONTRACT_START_BLOCK_NUMBER
                     );
                 }
@@ -273,7 +274,7 @@ mod tests {
                 contract_address,
                 CURRENT_BLOCK_NUMBER,
                 move |filter: &Filter| {
-                    if filter.get_from_block().unwrap().as_u64() == EXPECTED_NEXT_BLOCK {
+                    if filter.get_from_block().unwrap() == EXPECTED_NEXT_BLOCK {
                         saw_expected_filter_in_stub.store(true, Ordering::SeqCst);
                     }
                 }
@@ -312,27 +313,21 @@ mod tests {
 
             #[chaindexing::augmenting_std::async_trait]
             impl chaindexing::IngesterProvider for Provider {
-                async fn get_block_number(
-                    &self,
-                ) -> Result<ethers::types::U64, ethers::providers::ProviderError> {
-                    Ok(ethers::types::U64::from(0))
+                async fn get_block_number(&self) -> Result<u64, ingester::ProviderError> {
+                    Ok(0)
                 }
 
                 async fn get_logs(
                     &self,
-                    _filter: &ethers::types::Filter,
-                ) -> Result<Vec<ethers::types::Log>, ethers::providers::ProviderError>
-                {
+                    _filter: &Filter,
+                ) -> Result<Vec<Log>, ingester::ProviderError> {
                     panic!("no-contract ingestion must not fetch logs")
                 }
 
                 async fn get_block(
                     &self,
-                    _block_number: ethers::types::U64,
-                ) -> Result<
-                    ethers::types::Block<ethers::types::TxHash>,
-                    ethers::providers::ProviderError,
-                > {
+                    _block_number: u64,
+                ) -> Result<Block, ingester::ProviderError> {
                     panic!("no-contract ingestion must not fetch blocks")
                 }
             }

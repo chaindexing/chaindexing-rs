@@ -46,15 +46,13 @@ pub use outbox::{
 };
 pub use runtime_config::{RpcPolicy, RuntimeConfig, RuntimeLimits, RuntimeWorkload};
 
+pub use alloy::primitives::{Address, I256, U256};
 pub use chaindexing_macros::state_migrations;
-pub use ethers::types::{I256, U256};
 use tokio::sync::Mutex;
 
 /// Houses traits and structs for implementing states that can be indexed.
 pub mod states;
 
-/// Hexadecimal representation of addresses (such as contract addresses)
-pub type Address = ethers::types::Address;
 /// Represents bytes
 pub type Bytes = Vec<u8>;
 #[cfg(feature = "postgres")]
@@ -359,6 +357,6 @@ pub mod prelude {
     };
     pub use crate::Address;
     pub use crate::IndexingHandle;
+    pub use alloy::primitives::{I256, U256};
     pub use chaindexing_macros::state_migrations;
-    pub use ethers::types::{I256, U256};
 }

@@ -6,16 +6,12 @@ use crate::handlers::PureHandler;
 use crate::states::StateMigrations;
 use crate::ChainId;
 use crate::{EventHandler, SideEffectHandler};
+use alloy::json_abi::Event;
+use alloy::primitives::{Address, B256};
 use diesel::{Identifiable, Insertable, Queryable};
-
-use ethers::types::U64;
-use ethers::{
-    abi::{Address, Event, HumanReadableParser},
-    types::H256,
-};
 use serde::Deserialize;
 
-pub type ContractEventTopic = H256;
+pub type ContractEventTopic = B256;
 pub(crate) type HandlerKey = (String, String);
 pub(crate) type ContractEventKey = (String, ContractEventTopic);
 
@@ -40,7 +36,7 @@ impl ContractEvent {
     pub fn new(abi: &str) -> Self {
         Self {
             abi: abi.to_string(),
-            value: HumanReadableParser::parse_event(abi).unwrap(),
+            value: Event::parse(abi).unwrap(),
         }
     }
 }
@@ -133,7 +129,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
     pub(crate) fn get_event_topics(&self) -> Vec<ContractEventTopic> {
         self.get_event_abis()
             .iter()
-            .map(|abi| HumanReadableParser::parse_event(abi).unwrap().signature())
+            .map(|abi| Event::parse(abi).unwrap().selector())
             .collect()
     }
 
@@ -210,7 +206,7 @@ mod tests {
         ];
 
         let events = group_events_by_topics(&contracts);
-        let topic = ContractEvent::new(TRANSFER_ABI).value.signature();
+        let topic = ContractEvent::new(TRANSFER_ABI).value.selector();
 
         assert_eq!(events.len(), 2);
         assert!(events.contains_key(&contract_event_key("ERC721", topic)));
@@ -273,7 +269,7 @@ pub fn group_events_by_topics<S: Send + Sync + Clone>(
         .flat_map(|contract| {
             contract.build_events().into_iter().map(|event| {
                 (
-                    contract_event_key(&contract.name, event.value.signature()),
+                    contract_event_key(&contract.name, event.value.selector()),
                     event,
                 )
             })
@@ -328,7 +324,7 @@ pub struct ContractAddress {
 
 impl ContractAddress {
     fn get_chain_id(&self) -> ChainId {
-        U64::from(self.chain_id).try_into().unwrap()
+        ChainId::try_from(self.chain_id as u64).unwrap()
     }
 
     pub fn group_contract_addresses_by_address_and_chain_id(

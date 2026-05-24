@@ -2,8 +2,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use alloy::primitives::B256;
+use alloy::rpc::types::Block;
 use diesel::QueryableByName;
-use ethers::types::{Block, TxHash, H256, U64};
 
 use crate::ChainId;
 
@@ -26,20 +27,23 @@ pub(crate) struct CanonicalBlock {
 
 pub(crate) fn from_provider_blocks(
     chain_id: &ChainId,
-    blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    blocks_by_number: &HashMap<u64, Block>,
 ) -> Vec<ChainBlock> {
     let mut blocks: Vec<_> = blocks_by_number
         .values()
         .filter_map(|block| {
-            let block_number = block.number?;
-            let block_hash = block.hash?;
+            let block_number = block.header.inner.number;
+            let block_hash = block.header.hash;
+            if block_hash == B256::ZERO {
+                return None;
+            }
 
             Some(ChainBlock {
                 chain_id: *chain_id as i64,
-                block_number: block_number.as_u64() as i64,
+                block_number: block_number as i64,
                 block_hash: h256_to_string(&block_hash),
-                parent_hash: h256_to_string(&block.parent_hash),
-                block_timestamp: block.timestamp.as_u64() as i64,
+                parent_hash: h256_to_string(&block.header.inner.parent_hash),
+                block_timestamp: block.header.inner.timestamp as i64,
             })
         })
         .collect();
@@ -120,7 +124,7 @@ pub(crate) fn mark_reorged_from_query(chain_id: ChainId, block_number: i64) -> S
          WHERE chain_id = {}
            AND block_number >= {}
            AND status = 'canonical'",
-        chain_id, block_number
+        chain_id as i64, block_number
     )
 }
 
@@ -153,7 +157,7 @@ pub(crate) fn create_reorg_query(
             (chain_id, common_ancestor_number, common_ancestor_hash, fork_block_number,
              old_tip_number, new_tip_number, depth, status)
          VALUES ({}, {}, '{}', {}, {}, {}, {}, 'repaired')",
-        chain_id,
+        chain_id as i64,
         common_ancestor_number,
         escape_sql_literal(common_ancestor_hash),
         fork_block_number,
@@ -173,7 +177,7 @@ pub(crate) fn mark_scans_reorged_from_query(chain_id: ChainId, block_number: i64
            AND scan.chain_id = {}
            AND block.block_number >= {}
            AND scan.status = 'canonical'",
-        chain_id, block_number
+        chain_id as i64, block_number
     )
 }
 
@@ -278,8 +282,8 @@ fn topic_set_hash(topic_key: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-pub(crate) fn h256_to_string(h256: &H256) -> String {
-    serde_json::to_value(h256).unwrap().as_str().unwrap().to_lowercase()
+pub(crate) fn h256_to_string(h256: &B256) -> String {
+    h256.to_string().to_lowercase()
 }
 
 fn escape_sql_literal(value: &str) -> String {
@@ -289,9 +293,29 @@ fn escape_sql_literal(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::consensus::Header as ConsensusHeader;
+    use alloy::rpc::types::Header as RpcHeader;
 
-    fn h256(value: u64) -> H256 {
-        H256::from_low_u64_be(value)
+    fn h256(value: u64) -> B256 {
+        let mut bytes = [0_u8; 32];
+        bytes[24..].copy_from_slice(&value.to_be_bytes());
+        B256::from(bytes)
+    }
+
+    fn block(number: u64, hash: B256, parent_hash: B256, timestamp: u64) -> Block {
+        Block {
+            header: RpcHeader {
+                hash,
+                inner: ConsensusHeader {
+                    number,
+                    parent_hash,
+                    timestamp,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -351,6 +375,18 @@ mod tests {
         assert!(query.contains("INSERT INTO chaindexing_reorgs"));
         assert!(query.contains("0xold10"));
         assert!(query.contains("'repaired'"));
+        assert!(query.contains("VALUES (1, 10"));
+    }
+
+    #[test]
+    fn reorg_status_queries_use_numeric_chain_ids() {
+        let blocks_query = mark_reorged_from_query(ChainId::Mainnet, 42);
+        let scans_query = mark_scans_reorged_from_query(ChainId::Mainnet, 42);
+
+        assert!(blocks_query.contains("chain_id = 1"));
+        assert!(scans_query.contains("scan.chain_id = 1"));
+        assert!(!blocks_query.contains("mainnet"));
+        assert!(!scans_query.contains("mainnet"));
     }
 
     #[test]
@@ -466,15 +502,7 @@ mod tests {
     #[test]
     fn extracts_provider_blocks_with_hashes() {
         let mut blocks_by_number = HashMap::new();
-        blocks_by_number.insert(
-            U64::from(10),
-            Block {
-                number: Some(U64::from(10)),
-                hash: Some(h256(2)),
-                parent_hash: h256(1),
-                ..Default::default()
-            },
-        );
+        blocks_by_number.insert(10, block(10, h256(2), h256(1), 0));
 
         let blocks = from_provider_blocks(&ChainId::Mainnet, &blocks_by_number);
 
@@ -495,13 +523,7 @@ mod tests {
     #[test]
     fn skips_provider_blocks_without_hashes() {
         let mut blocks_by_number = HashMap::new();
-        blocks_by_number.insert(
-            U64::from(10),
-            Block {
-                number: Some(U64::from(10)),
-                ..Default::default()
-            },
-        );
+        blocks_by_number.insert(10, block(10, B256::ZERO, h256(1), 0));
 
         assert!(from_provider_blocks(&ChainId::Mainnet, &blocks_by_number).is_empty());
     }

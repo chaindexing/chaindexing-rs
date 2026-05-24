@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ethers::types::{Block, Log, TxHash, U64};
+use alloy::primitives::B256;
+use alloy::rpc::types::{Block, Log};
 
 use crate::chain_blocks::{self, BlockScan};
 use crate::{ChainId, RpcPolicy};
@@ -39,7 +40,7 @@ pub(crate) async fn fetch(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
     chain_id: &ChainId,
-    blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    blocks_by_number: &HashMap<u64, Block>,
     policy: FetchPolicy,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     if provider.supports_block_hash_log_filters() {
@@ -53,7 +54,7 @@ async fn fetch_by_block_hash(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
     chain_id: &ChainId,
-    blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    blocks_by_number: &HashMap<u64, Block>,
     policy: FetchPolicy,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     let mut logs = vec![];
@@ -63,9 +64,10 @@ async fn fetch_by_block_hash(
 
     for filter in filters {
         for block in blocks_for_filter(filter, blocks_by_number) {
-            let Some(block_hash) = block.hash else {
+            let block_hash = block.header.hash;
+            if block_hash == B256::ZERO {
                 continue;
-            };
+            }
 
             requests.push((filter, block_hash));
         }
@@ -110,7 +112,7 @@ async fn fetch_by_range(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
     chain_id: &ChainId,
-    blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    blocks_by_number: &HashMap<u64, Block>,
     policy: FetchPolicy,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     let logs = provider::fetch_logs_with_policy(
@@ -127,9 +129,10 @@ async fn fetch_by_range(
 
     for filter in filters {
         for block in blocks_for_filter(filter, blocks_by_number) {
-            let Some(block_hash) = block.hash else {
+            let block_hash = block.header.hash;
+            if block_hash == B256::ZERO {
                 continue;
-            };
+            }
             let block_hash_string = chain_blocks::h256_to_string(&block_hash);
             let log_count = logs.iter().filter(|log| log.block_hash == Some(block_hash)).count();
 
@@ -148,9 +151,9 @@ async fn fetch_by_range(
 
 fn blocks_for_filter<'a>(
     filter: &Filter,
-    blocks_by_number: &'a HashMap<U64, Block<TxHash>>,
-) -> Vec<&'a Block<TxHash>> {
-    let from = filter.value.get_from_block().unwrap_or_else(|| U64::from(0));
+    blocks_by_number: &'a HashMap<u64, Block>,
+) -> Vec<&'a Block> {
+    let from = filter.value.get_from_block().unwrap_or(0);
     let to = filter.value.get_to_block().unwrap_or(from);
 
     let mut blocks: Vec<_> = blocks_by_number
@@ -159,15 +162,37 @@ fn blocks_for_filter<'a>(
         .map(|(_, block)| block)
         .collect();
 
-    blocks.sort_by_key(|block| block.number);
+    blocks.sort_by_key(|block| block.header.inner.number);
     blocks
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ethers::types::{Filter as EthersFilter, H160, H256};
+    use alloy::consensus::Header as ConsensusHeader;
+    use alloy::primitives::Address;
+    use alloy::rpc::types::{Filter as RpcFilter, Header as RpcHeader};
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn h256(value: u64) -> B256 {
+        let mut bytes = [0_u8; 32];
+        bytes[24..].copy_from_slice(&value.to_be_bytes());
+        B256::from(bytes)
+    }
+
+    fn block(number: u64) -> Block {
+        Block {
+            header: RpcHeader {
+                hash: h256(number),
+                inner: ConsensusHeader {
+                    number,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
 
     #[derive(Clone)]
     struct ConcurrencyTrackingProvider {
@@ -177,39 +202,30 @@ mod tests {
 
     #[crate::augmenting_std::async_trait]
     impl Provider for ConcurrencyTrackingProvider {
-        async fn get_block_number(&self) -> Result<U64, provider::ProviderError> {
-            Ok(U64::from(100))
+        async fn get_block_number(&self) -> Result<u64, provider::ProviderError> {
+            Ok(100)
         }
 
-        async fn get_logs(
-            &self,
-            _filter: &EthersFilter,
-        ) -> Result<Vec<ethers::types::Log>, provider::ProviderError> {
+        async fn get_logs(&self, _filter: &RpcFilter) -> Result<Vec<Log>, provider::ProviderError> {
             Ok(vec![])
         }
 
-        async fn get_block(
-            &self,
-            block_number: U64,
-        ) -> Result<Block<TxHash>, provider::ProviderError> {
-            Ok(Block {
-                number: Some(block_number),
-                ..Default::default()
-            })
+        async fn get_block(&self, block_number: u64) -> Result<Block, provider::ProviderError> {
+            Ok(block(block_number))
         }
 
         async fn get_logs_by_block_hash(
             &self,
-            _filter: &EthersFilter,
-            block_hash: H256,
-        ) -> Result<Vec<ethers::types::Log>, provider::ProviderError> {
+            _filter: &RpcFilter,
+            block_hash: B256,
+        ) -> Result<Vec<Log>, provider::ProviderError> {
             let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.max_observed.fetch_max(current, Ordering::SeqCst);
 
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             self.in_flight.fetch_sub(1, Ordering::SeqCst);
 
-            Ok(vec![ethers::types::Log {
+            Ok(vec![Log {
                 block_hash: Some(block_hash),
                 ..Default::default()
             }])
@@ -225,21 +241,11 @@ mod tests {
         });
         let filters = vec![Filter {
             contract_address_id: 1,
-            address: H160::zero().to_string(),
-            value: EthersFilter::new().from_block(1).to_block(3),
+            address: Address::ZERO.to_string(),
+            value: RpcFilter::new().from_block(1).to_block(3),
         }];
-        let blocks_by_number = (1..=3)
-            .map(|number| {
-                (
-                    U64::from(number),
-                    Block {
-                        number: Some(U64::from(number)),
-                        hash: Some(H256::from_low_u64_be(number)),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>();
+        let blocks_by_number =
+            (1..=3).map(|number| (number, block(number))).collect::<HashMap<_, _>>();
 
         let fetched = fetch_by_block_hash(
             &provider,

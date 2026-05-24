@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use ethers::types::{Address, Filter as EthersFilter};
+use alloy::primitives::Address;
+use alloy::rpc::types::Filter as RpcFilter;
 use std::cmp::min;
 
 use crate::chain_reorg::Execution;
@@ -67,7 +68,7 @@ pub fn get_latest(filters: &[Filter]) -> Option<Filter> {
 pub struct Filter {
     pub contract_address_id: i64,
     pub address: String,
-    pub value: EthersFilter,
+    pub value: RpcFilter,
 }
 
 impl Filter {
@@ -121,9 +122,9 @@ impl Filter {
         .map(|(from_block_number, to_block_number)| Filter {
             contract_address_id: *contract_address_id,
             address: address.to_string(),
-            value: EthersFilter::new()
+            value: RpcFilter::new()
                 .address(address.parse::<Address>().unwrap())
-                .topic0(topics.to_vec())
+                .event_signature(topics.to_vec())
                 .from_block(from_block_number)
                 .to_block(to_block_number),
         })
