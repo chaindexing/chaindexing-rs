@@ -1,5 +1,6 @@
 mod migrations;
 mod raw_queries;
+mod tls;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
 
@@ -13,11 +14,16 @@ use diesel::{
     result::{DatabaseErrorKind, Error as DieselError},
     ExpressionMethods, QueryDsl,
 };
-use diesel_async::{pooled_connection::AsyncDieselConnectionManager, AsyncPgConnection};
+use diesel_async::{
+    pooled_connection::{AsyncDieselConnectionManager, ManagerConfig},
+    AsyncPgConnection,
+};
 use futures_core::future::BoxFuture;
+use futures_util::FutureExt;
 use uuid::Uuid;
 
 use super::repo::{Repo, RepoError};
+pub use tls::{PostgresTlsConfig, PostgresTlsMode};
 
 pub type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
 pub type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
@@ -41,6 +47,7 @@ impl From<DieselError> for RepoError {
 #[derive(Clone, Debug)]
 pub struct PostgresRepo {
     url: String,
+    tls_config: PostgresTlsConfig,
 }
 
 type PgPooledConn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
@@ -55,7 +62,19 @@ impl PostgresRepo {
     pub fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
+            tls_config: PostgresTlsConfig::from_database_url(url),
         }
+    }
+
+    pub fn new_with_tls(url: &str, tls_config: PostgresTlsConfig) -> Self {
+        Self {
+            url: url.to_string(),
+            tls_config,
+        }
+    }
+
+    pub(crate) fn tls_config(&self) -> &PostgresTlsConfig {
+        &self.tls_config
     }
 
     pub(crate) async fn delete_events_from_block_number<'a>(
@@ -147,7 +166,17 @@ impl Repo for PostgresRepo {
     type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
 
     async fn get_pool(&self, max_size: u32) -> Pool {
-        let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(&self.url);
+        let tls_config = self.tls_config.clone();
+        let mut manager_config = ManagerConfig::<AsyncPgConnection>::default();
+        manager_config.custom_setup = Box::new(move |database_url| {
+            let tls_config = tls_config.clone();
+            async move { tls::connect_diesel(database_url, &tls_config).await }.boxed()
+        });
+
+        let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new_with_config(
+            &self.url,
+            manager_config,
+        );
 
         bb8::Pool::builder().max_size(max_size).build(manager).await.unwrap()
     }

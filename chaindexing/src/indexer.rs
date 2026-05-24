@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::{
     index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexingFinality,
-    IndexingHandle, PostgresRepo, ReorgMode, RuntimeConfig, SideEffectFinality,
+    IndexingHandle, PostgresRepo, PostgresTlsConfig, ReorgMode, RuntimeConfig, SideEffectFinality,
 };
 
 /// High-level builder for configuring and running a Postgres-backed indexer.
@@ -16,6 +16,11 @@ impl Indexer<()> {
     pub fn new(postgres_url: &str) -> Self {
         Self::postgres(postgres_url)
     }
+
+    /// Creates an indexer backed by Postgres with explicit TLS configuration.
+    pub fn new_with_tls(postgres_url: &str, tls_config: PostgresTlsConfig) -> Self {
+        Self::postgres_with_tls(postgres_url, tls_config)
+    }
 }
 
 impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
@@ -26,9 +31,25 @@ impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
         }
     }
 
+    /// Creates a typed indexer backed by Postgres with explicit TLS configuration.
+    pub fn postgres_with_tls(postgres_url: &str, tls_config: PostgresTlsConfig) -> Self {
+        Self {
+            config: Config::new(PostgresRepo::new_with_tls(postgres_url, tls_config)),
+        }
+    }
+
     /// Creates a typed indexer backed by Postgres with shared state for side-effect handlers.
     pub fn new_with_shared_state(postgres_url: &str, initial_state: SharedState) -> Self {
         Self::postgres(postgres_url).initial_state(initial_state)
+    }
+
+    /// Creates a typed indexer backed by Postgres with shared state and explicit TLS configuration.
+    pub fn new_with_shared_state_and_tls(
+        postgres_url: &str,
+        initial_state: SharedState,
+        tls_config: PostgresTlsConfig,
+    ) -> Self {
+        Self::postgres_with_tls(postgres_url, tls_config).initial_state(initial_state)
     }
 
     /// Wraps an existing advanced `Config`.

@@ -138,6 +138,28 @@ WHERE token_id = 42;
 Full working examples live in
 [chaindexing-examples/rust](https://github.com/chaindexing/chaindexing-examples/tree/main/rust).
 
+### Postgres TLS
+
+For managed Postgres, set `sslmode=require` or `sslmode=verify-full` in `DATABASE_URL`.
+Chaindexing uses the same TLS policy for Diesel pool connections and raw `tokio-postgres`
+connections, and verifies server certificates with platform roots plus any custom CA bundle you
+provide. Standard `sslrootcert=/path/to/ca.pem` connection parameters are supported for CA
+bundles. A missing `sslmode` stays non-TLS for local development compatibility.
+
+Private CA bundles can be supplied explicitly:
+
+```rust
+use chaindexing::{Indexer, PostgresTlsConfig};
+
+let database_url = std::env::var("DATABASE_URL").unwrap();
+let ca_bundle = std::fs::read("postgres-ca.pem").unwrap();
+
+Indexer::new_with_tls(
+    &database_url,
+    PostgresTlsConfig::require().with_ca_cert_pem(ca_bundle),
+);
+```
+
 ## Why Chaindexing
 
 | Serious indexing concern | Chaindexing's answer |
@@ -355,6 +377,7 @@ async fn read_nft() -> Option<Nft> {
 | --- | --- |
 | EVM log indexing | Supported for any EVM chain available through an HTTP JSON-RPC provider. |
 | Postgres state materialization | Supported. Chaindexing owns internal tables and writes your declared state tables. |
+| Postgres TLS | Supported for pooled and raw clients through rustls; use `sslmode=require` or `sslmode=verify-full`, with custom CAs through `sslrootcert` or `PostgresTlsConfig`. |
 | Multi-chain indexing | Supported through multiple `Chain` configs. |
 | Runtime-discovered contracts | Supported with `chaindexing::include_contract(...)`. |
 | Handler tail heuristic | Supported with `is_at_block_tail()` on pure and side-effect handler contexts. |
@@ -369,7 +392,6 @@ Chaindexing is still young and optimized for Rust ergonomics plus Postgres owner
 profile API makes the main scaling tradeoffs explicit, but production deployments should account
 for these limits:
 
-- **Postgres TLS:** Raw Postgres clients currently use `NoTls`. Use a trusted network, proxy, or tunnel until native TLS support lands.
 - **Historical throughput:** `RuntimeConfig::backfill()` increases worker, RPC, and batch defaults for catch-up. Override `blocks_per_batch`, `max_ingester_workers`, and `max_in_flight` based on your provider and Postgres capacity.
 - **Worker caps:** `max_ingester_workers` and `max_handler_workers` are caps, not promises. They are capped by available chains and by state-ordering partitions.
 - **Handler ordering:** `ContractState` and `ChainState` handlers stay ordered within their logical partition. More handler workers help independent chains/contracts, but not a single hot ordered partition.
@@ -381,7 +403,6 @@ for these limits:
 
 ## Roadmap
 
-- Add TLS-enabled Postgres connections.
 - Support raw transaction and call trace indexing.
 - Improve error handling, messages, and reporting.
 - Add a minimal UI for inspecting events and indexed states.

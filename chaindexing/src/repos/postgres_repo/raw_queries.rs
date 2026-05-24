@@ -1,4 +1,4 @@
-use tokio_postgres::{types::ToSql, Client, NoTls, Transaction};
+use tokio_postgres::{types::ToSql, Client, Transaction};
 
 use crate::chain_reorg::ReorgedBlock;
 use crate::checkpoints::{self, CheckpointKind};
@@ -6,6 +6,8 @@ use crate::events::PartialEvent;
 use crate::nodes::Node;
 use crate::{root, Event, UnsavedContractAddress};
 use crate::{ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo};
+
+use super::tls;
 use serde::de::DeserializeOwned;
 
 pub type PostgresRepoClient = Client;
@@ -17,11 +19,7 @@ impl HasRawQueryClient for PostgresRepo {
     type RawQueryTxnClient<'a> = Transaction<'a>;
 
     async fn get_client(&self) -> Self::RawQueryClient {
-        let (client, conn) = tokio_postgres::connect(&self.url, NoTls).await.unwrap();
-
-        tokio::spawn(async move { conn.await.map_err(|e| eprintln!("connection error: {e}")) });
-
-        client
+        tls::connect_raw_client(&self.url, self.tls_config()).await.unwrap()
     }
     async fn get_txn_client<'a>(
         client: &'a mut Self::RawQueryClient,

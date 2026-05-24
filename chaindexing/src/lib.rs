@@ -58,7 +58,7 @@ pub type Address = ethers::types::Address;
 /// Represents bytes
 pub type Bytes = Vec<u8>;
 #[cfg(feature = "postgres")]
-pub use repos::PostgresRepo;
+pub use repos::{PostgresRepo, PostgresTlsConfig, PostgresTlsMode};
 
 #[doc(hidden)]
 pub mod booting;

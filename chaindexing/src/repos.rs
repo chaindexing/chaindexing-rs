@@ -5,7 +5,7 @@ mod postgres_repo;
 #[cfg(feature = "postgres")]
 pub use postgres_repo::{
     Conn as PostgresRepoConn, Pool as PostgresRepoPool, PostgresRepo, PostgresRepoAsyncConnection,
-    PostgresRepoClient, PostgresRepoTxnClient,
+    PostgresRepoClient, PostgresRepoTxnClient, PostgresTlsConfig, PostgresTlsMode,
 };
 
 mod repo;
