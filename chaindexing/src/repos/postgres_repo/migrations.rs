@@ -36,6 +36,20 @@ impl RepoMigrations for PostgresRepo {
         SQLikeMigrations::drop_blocks()
     }
 
+    fn create_transactions_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_transactions()
+    }
+    fn drop_transactions_migration() -> &'static [&'static str] {
+        SQLikeMigrations::drop_transactions()
+    }
+
+    fn create_call_traces_migration() -> &'static [&'static str] {
+        SQLikeMigrations::create_call_traces()
+    }
+    fn drop_call_traces_migration() -> &'static [&'static str] {
+        SQLikeMigrations::drop_call_traces()
+    }
+
     fn create_block_scans_migration() -> &'static [&'static str] {
         SQLikeMigrations::create_block_scans()
     }

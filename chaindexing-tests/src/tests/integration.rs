@@ -53,6 +53,8 @@ mod postgres_integration {
                    'chaindexing_events',
                    'chaindexing_checkpoints',
                    'chaindexing_blocks',
+                   'chaindexing_transactions',
+                   'chaindexing_call_traces',
                    'chaindexing_block_scans',
                    'chaindexing_reorgs',
                    'chaindexing_outbox'
@@ -64,6 +66,8 @@ mod postgres_integration {
         assert!(table_names.contains(&"chaindexing_events".to_string()));
         assert!(table_names.contains(&"chaindexing_checkpoints".to_string()));
         assert!(table_names.contains(&"chaindexing_blocks".to_string()));
+        assert!(table_names.contains(&"chaindexing_transactions".to_string()));
+        assert!(table_names.contains(&"chaindexing_call_traces".to_string()));
         assert!(table_names.contains(&"chaindexing_block_scans".to_string()));
         assert!(table_names.contains(&"chaindexing_reorgs".to_string()));
         assert!(table_names.contains(&"chaindexing_outbox".to_string()));

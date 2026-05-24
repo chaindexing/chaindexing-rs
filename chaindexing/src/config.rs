@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::chain_reorg::{IndexingFinality, MinConfirmationCount, ReorgMode, SideEffectFinality};
 use crate::chains::Chain;
+use crate::indexed_data::IndexedDataConfig;
 use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
 use crate::runtime_config::{RuntimeConfig, RuntimeConfigError};
@@ -120,6 +121,7 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub(crate) reorg_mode: ReorgMode,
     pub(crate) indexing_finality: IndexingFinality,
     pub(crate) side_effect_finality: SideEffectFinality,
+    pub(crate) indexed_data_config: IndexedDataConfig,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -149,6 +151,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             reorg_mode: ReorgMode::Realtime,
             indexing_finality: IndexingFinality::LatestWithConfirmations(0),
             side_effect_finality: SideEffectFinality::Safe,
+            indexed_data_config: IndexedDataConfig::default(),
         }
     }
 
@@ -226,6 +229,31 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     /// Overrides the preset's durable side-effect dispatch finality policy.
     pub fn with_side_effect_finality(mut self, side_effect_finality: SideEffectFinality) -> Self {
         self.side_effect_finality = side_effect_finality;
+
+        self
+    }
+
+    /// Enables indexing full JSON-RPC transaction payloads into
+    /// `chaindexing_transactions`. This requires providers that support full
+    /// block transaction responses.
+    pub fn with_raw_transaction_indexing(mut self) -> Self {
+        self.indexed_data_config.raw_transactions = true;
+
+        self
+    }
+
+    /// Enables indexing call traces into `chaindexing_call_traces`. The default
+    /// Alloy provider calls `debug_traceBlockByHash` with Geth's call tracer;
+    /// custom providers may override the trace method for other nodes.
+    pub fn with_call_trace_indexing(mut self) -> Self {
+        self.indexed_data_config.call_traces = true;
+
+        self
+    }
+
+    /// Replaces the optional indexed-data flags in one step.
+    pub fn with_indexed_data(mut self, indexed_data_config: IndexedDataConfig) -> Self {
+        self.indexed_data_config = indexed_data_config;
 
         self
     }
@@ -640,5 +668,26 @@ mod tests {
             config.side_effect_finality,
             SideEffectFinality::Confirmations(12)
         );
+    }
+
+    #[test]
+    fn indexed_data_defaults_to_disabled_and_can_be_enabled() {
+        let config: Config<()> = Config::new(repo());
+
+        assert!(!config.indexed_data_config.enabled());
+
+        let config = config.with_raw_transaction_indexing().with_call_trace_indexing();
+
+        assert!(config.indexed_data_config.raw_transactions);
+        assert!(config.indexed_data_config.call_traces);
+        assert!(config.indexed_data_config.requires_full_blocks());
+    }
+
+    #[test]
+    fn indexed_data_config_can_be_replaced_explicitly() {
+        let config: Config<()> = Config::new(repo()).with_indexed_data(IndexedDataConfig::all());
+
+        assert!(config.indexed_data_config.raw_transactions);
+        assert!(config.indexed_data_config.call_traces);
     }
 }

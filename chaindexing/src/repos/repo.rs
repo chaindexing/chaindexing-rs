@@ -183,6 +183,12 @@ pub trait RepoMigrations: Migratable {
     fn create_blocks_migration() -> &'static [&'static str];
     fn drop_blocks_migration() -> &'static [&'static str];
 
+    fn create_transactions_migration() -> &'static [&'static str];
+    fn drop_transactions_migration() -> &'static [&'static str];
+
+    fn create_call_traces_migration() -> &'static [&'static str];
+    fn drop_call_traces_migration() -> &'static [&'static str];
+
     fn create_block_scans_migration() -> &'static [&'static str];
     fn drop_block_scans_migration() -> &'static [&'static str];
 
@@ -199,6 +205,8 @@ pub trait RepoMigrations: Migratable {
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
             Self::create_blocks_migration(),
+            Self::create_transactions_migration(),
+            Self::create_call_traces_migration(),
             Self::create_reorgs_migration(),
             Self::create_block_scans_migration(),
             Self::create_checkpoints_migration(),
@@ -211,6 +219,8 @@ pub trait RepoMigrations: Migratable {
         [
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
+            Self::drop_call_traces_migration(),
+            Self::drop_transactions_migration(),
             Self::drop_block_scans_migration(),
             Self::drop_reorgs_migration(),
             Self::drop_blocks_migration(),
@@ -354,6 +364,75 @@ impl SQLikeMigrations {
         &["DROP TABLE IF EXISTS chaindexing_blocks"]
     }
 
+    pub fn create_transactions() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_transactions (
+                id BIGSERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                block_number BIGINT NOT NULL,
+                block_hash VARCHAR NOT NULL,
+                block_timestamp BIGINT NOT NULL DEFAULT 0,
+                transaction_hash VARCHAR NOT NULL,
+                transaction_index INTEGER NOT NULL,
+                from_address VARCHAR NOT NULL,
+                to_address VARCHAR,
+                value VARCHAR NOT NULL,
+                input TEXT NOT NULL,
+                raw JSONB NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'canonical',
+                reorg_id BIGINT,
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_transactions_identity
+            ON chaindexing_transactions(chain_id, block_hash, transaction_hash)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_transactions_canonical_lookup
+            ON chaindexing_transactions(chain_id, block_number, transaction_index)
+            WHERE status = 'canonical'",
+            "CREATE INDEX IF NOT EXISTS chaindexing_transactions_sender_lookup
+            ON chaindexing_transactions(chain_id, from_address, block_number)
+            WHERE status = 'canonical'",
+        ]
+    }
+    pub fn drop_transactions() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_transactions"]
+    }
+
+    pub fn create_call_traces() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_call_traces (
+                id BIGSERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                block_number BIGINT NOT NULL,
+                block_hash VARCHAR NOT NULL,
+                transaction_hash VARCHAR NOT NULL DEFAULT '',
+                trace_index INTEGER NOT NULL,
+                trace_address VARCHAR NOT NULL,
+                call_type VARCHAR,
+                from_address VARCHAR,
+                to_address VARCHAR,
+                value VARCHAR,
+                input TEXT,
+                output TEXT,
+                error TEXT,
+                raw JSONB NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'canonical',
+                reorg_id BIGINT,
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_call_traces_identity
+            ON chaindexing_call_traces(chain_id, block_hash, transaction_hash, trace_address, trace_index)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_call_traces_canonical_lookup
+            ON chaindexing_call_traces(chain_id, block_number, transaction_hash, trace_index)
+            WHERE status = 'canonical'",
+            "CREATE INDEX IF NOT EXISTS chaindexing_call_traces_address_lookup
+            ON chaindexing_call_traces(chain_id, from_address, to_address, block_number)
+            WHERE status = 'canonical'",
+        ]
+    }
+    pub fn drop_call_traces() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_call_traces"]
+    }
+
     pub fn create_block_scans() -> &'static [&'static str] {
         &[
             "CREATE TABLE IF NOT EXISTS chaindexing_block_scans (
@@ -456,5 +535,40 @@ impl SQLikeMigrations {
             "CREATE INDEX IF NOT EXISTS chaindexing_outbox_status_lease_expires_at
             ON chaindexing_outbox(status, lease_expires_at)",
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transaction_migration_defines_canonical_lookup_and_identity() {
+        let migration = SQLikeMigrations::create_transactions().join("\n");
+
+        assert!(migration.contains("CREATE TABLE IF NOT EXISTS chaindexing_transactions"));
+        assert!(migration.contains("chaindexing_transactions_identity"));
+        assert!(migration.contains("WHERE status = 'canonical'"));
+    }
+
+    #[test]
+    fn call_trace_migration_defines_trace_identity() {
+        let migration = SQLikeMigrations::create_call_traces().join("\n");
+
+        assert!(migration.contains("CREATE TABLE IF NOT EXISTS chaindexing_call_traces"));
+        assert!(migration.contains("transaction_hash VARCHAR NOT NULL DEFAULT ''"));
+        assert!(migration.contains("chaindexing_call_traces_identity"));
+    }
+
+    #[test]
+    fn reset_migrations_drop_optional_indexed_data_tables() {
+        assert_eq!(
+            SQLikeMigrations::drop_transactions(),
+            &["DROP TABLE IF EXISTS chaindexing_transactions"]
+        );
+        assert_eq!(
+            SQLikeMigrations::drop_call_traces(),
+            &["DROP TABLE IF EXISTS chaindexing_call_traces"]
+        );
     }
 }

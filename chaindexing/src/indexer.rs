@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 
 use crate::{
-    index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexingFinality,
-    IndexingHandle, PostgresRepo, PostgresTlsConfig, ReorgMode, RuntimeConfig, SideEffectFinality,
+    index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexedDataConfig,
+    IndexingFinality, IndexingHandle, PostgresRepo, PostgresTlsConfig, ReorgMode, RuntimeConfig,
+    SideEffectFinality,
 };
 
 /// High-level builder for configuring and running a Postgres-backed indexer.
@@ -103,6 +104,27 @@ impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
     pub fn side_effect_finality(self, side_effect_finality: SideEffectFinality) -> Self {
         Self {
             config: self.config.with_side_effect_finality(side_effect_finality),
+        }
+    }
+
+    /// Indexes full JSON-RPC transaction payloads alongside events.
+    pub fn raw_transactions(self) -> Self {
+        Self {
+            config: self.config.with_raw_transaction_indexing(),
+        }
+    }
+
+    /// Indexes per-block call traces alongside events.
+    pub fn call_traces(self) -> Self {
+        Self {
+            config: self.config.with_call_trace_indexing(),
+        }
+    }
+
+    /// Replaces the optional indexed-data configuration.
+    pub fn indexed_data(self, indexed_data_config: IndexedDataConfig) -> Self {
+        Self {
+            config: self.config.with_indexed_data(indexed_data_config),
         }
     }
 

@@ -6,6 +6,7 @@ use crate::chain_reorg::UnsavedReorgedBlock;
 
 use crate::chain_blocks::{self, BlockScan, CanonicalBlock, ChainBlock};
 use crate::checkpoints::{self, CheckpointKind};
+use crate::indexed_data::{self, IndexedCallTrace, IndexedTransaction};
 use crate::{contracts::ContractAddress, events::Event, nodes::Node, ChainId};
 use diesel::{sql_query, QueryableByName};
 use diesel_async::RunQueryDsl;
@@ -99,10 +100,7 @@ impl PostgresRepo {
         event_chain_id: &ChainId,
         blocks: &[ChainBlock],
     ) -> Option<i64> {
-        let canonical_blocks = match chain_blocks::canonical_blocks_query(blocks) {
-            Some(query) => sql_query(query).load::<CanonicalBlock>(conn).await.unwrap(),
-            None => vec![],
-        };
+        let canonical_blocks = Self::canonical_blocks(conn, blocks).await;
         let fork_point = chain_blocks::find_fork_point(blocks, &canonical_blocks);
 
         if let Some(fork_point) = fork_point {
@@ -131,6 +129,22 @@ impl PostgresRepo {
             .execute(conn)
             .await
             .unwrap();
+
+            sql_query(indexed_data::mark_transactions_reorged_from_query(
+                *event_chain_id,
+                fork_point,
+            ))
+            .execute(conn)
+            .await
+            .unwrap();
+
+            sql_query(indexed_data::mark_call_traces_reorged_from_query(
+                *event_chain_id,
+                fork_point,
+            ))
+            .execute(conn)
+            .await
+            .unwrap();
         }
 
         if let Some(query) = chain_blocks::upsert_blocks_query(blocks) {
@@ -140,8 +154,42 @@ impl PostgresRepo {
         fork_point
     }
 
+    pub(crate) async fn find_fork_point<'a>(
+        conn: &mut Conn<'a>,
+        blocks: &[ChainBlock],
+    ) -> Option<i64> {
+        let canonical_blocks = Self::canonical_blocks(conn, blocks).await;
+
+        chain_blocks::find_fork_point(blocks, &canonical_blocks)
+    }
+
+    async fn canonical_blocks<'a>(
+        conn: &mut Conn<'a>,
+        blocks: &[ChainBlock],
+    ) -> Vec<CanonicalBlock> {
+        match chain_blocks::canonical_blocks_query(blocks) {
+            Some(query) => sql_query(query).load::<CanonicalBlock>(conn).await.unwrap(),
+            None => vec![],
+        }
+    }
+
     pub(crate) async fn create_block_scans<'a>(conn: &mut Conn<'a>, scans: &[BlockScan]) {
         if let Some(query) = chain_blocks::upsert_block_scans_query(scans) {
+            sql_query(query).execute(conn).await.unwrap();
+        }
+    }
+
+    pub(crate) async fn create_transactions<'a>(
+        conn: &mut Conn<'a>,
+        transactions: &[IndexedTransaction],
+    ) {
+        if let Some(query) = indexed_data::upsert_transactions_query(transactions) {
+            sql_query(query).execute(conn).await.unwrap();
+        }
+    }
+
+    pub(crate) async fn create_call_traces<'a>(conn: &mut Conn<'a>, traces: &[IndexedCallTrace]) {
+        if let Some(query) = indexed_data::upsert_call_traces_query(traces) {
             sql_query(query).execute(conn).await.unwrap();
         }
     }

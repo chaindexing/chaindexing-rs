@@ -18,7 +18,9 @@ mod config;
 mod contracts;
 mod diesel;
 mod handlers;
+mod indexed_data;
 mod indexer;
+mod inspection;
 mod nodes;
 mod outbox;
 mod pruning;
@@ -38,7 +40,9 @@ pub use handlers::{
     PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
     SideEffectHandlerContext as SideEffectContext,
 };
+pub use indexed_data::{IndexedCallTrace, IndexedDataConfig, IndexedTransaction};
 pub use indexer::Indexer;
+pub use inspection::{InspectionQueries, InspectionQuery};
 pub use nodes::NodeHeartbeat as Heartbeat;
 pub use outbox::{
     dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxFinalityWatermark,
