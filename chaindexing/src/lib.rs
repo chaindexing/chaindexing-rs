@@ -148,7 +148,7 @@ impl std::error::Error for ChaindexingError {}
 /// Use this when embedding Chaindexing in a larger service that owns shutdown.
 pub struct IndexingHandle {
     shutdown_tx: watch::Sender<bool>,
-    join_handle: tokio::task::JoinHandle<()>,
+    join_handle: tokio::task::JoinHandle<Result<(), ChaindexingError>>,
 }
 
 impl IndexingHandle {
@@ -236,7 +236,8 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
                     &config.optimization_config,
                     &get_tasks_runner(&config),
                 )
-                .await;
+                .await
+                .map_err(|error| ChaindexingError::Runtime(error.to_string()))?;
 
             tokio::select! {
                 _ = interval.tick() => {}
@@ -249,6 +250,8 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
         }
 
         node_tasks.stop().await;
+
+        Ok(())
     });
 
     Ok(IndexingHandle {
@@ -313,8 +316,10 @@ fn get_tasks_runner<S: Sync + Send + Debug + Clone + 'static>(
     ChaindexingNodeTasksRunner { config }
 }
 
-fn supervisor_result(result: Result<(), JoinError>) -> Result<(), ChaindexingError> {
-    result.map_err(|error| ChaindexingError::Runtime(error.to_string()))
+fn supervisor_result(
+    result: Result<Result<(), ChaindexingError>, JoinError>,
+) -> Result<(), ChaindexingError> {
+    result.map_err(|error| ChaindexingError::Runtime(error.to_string()))?
 }
 
 #[cfg(test)]
@@ -326,12 +331,27 @@ mod lifecycle_tests {
         let (shutdown_tx, _shutdown_rx) = watch::channel(false);
         let handle = IndexingHandle {
             shutdown_tx,
-            join_handle: tokio::spawn(async {}),
+            join_handle: tokio::spawn(async { Ok(()) }),
         };
 
         let error = handle.wait_for_shutdown_signal().await.unwrap_err();
 
         assert!(error.to_string().contains("indexer supervisor exited before a shutdown signal"));
+    }
+
+    #[tokio::test]
+    async fn wait_surfaces_supervisor_runtime_errors() {
+        let (shutdown_tx, _shutdown_rx) = watch::channel(false);
+        let handle = IndexingHandle {
+            shutdown_tx,
+            join_handle: tokio::spawn(async {
+                Err(ChaindexingError::Runtime("worker failed".to_string()))
+            }),
+        };
+
+        let error = handle.wait().await.unwrap_err();
+
+        assert!(error.to_string().contains("worker failed"));
     }
 }
 

@@ -96,6 +96,8 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                             _ = cancellation_token.cancelled() => break,
                         }
                     }
+
+                    Ok::<(), crate::nodes::NodeSubtaskFailure>(())
                 }),
             )
             .await;

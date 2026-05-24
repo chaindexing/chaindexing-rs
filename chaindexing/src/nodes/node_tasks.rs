@@ -4,8 +4,29 @@ use chrono::Utc;
 use std::fmt::Debug;
 
 use super::node::Node;
+use super::node_task::{NodeTask, NodeTaskError};
 use super::node_tasks_runner::NodeTasksRunner;
-use super::NodeTask;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NodeTasksError {
+    errors: Vec<NodeTaskError>,
+}
+
+impl NodeTasksError {
+    fn new(errors: Vec<NodeTaskError>) -> Self {
+        Self { errors }
+    }
+}
+
+impl std::fmt::Display for NodeTasksError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = self.errors.iter().map(ToString::to_string).collect::<Vec<_>>().join("; ");
+
+        write!(f, "{message}")
+    }
+}
+
+impl std::error::Error for NodeTasksError {}
 
 #[derive(PartialEq, Debug)]
 enum NodeTasksState {
@@ -29,8 +50,7 @@ pub struct NodeTasks<'a> {
     state: NodeTasksState,
     tasks: Vec<NodeTask>,
     started_at_in_secs: u64,
-    /// Not used currently. In V2, We will populate NodeTasksErrors here
-    pub errors: Vec<String>,
+    pub errors: Vec<NodeTaskError>,
 }
 
 impl<'a> NodeTasks<'a> {
@@ -49,7 +69,7 @@ impl<'a> NodeTasks<'a> {
         is_leader: bool,
         optimization_config: &Option<OptimizationConfig>,
         tasks_runner: &impl NodeTasksRunner,
-    ) {
+    ) -> Result<(), NodeTasksError> {
         if is_leader {
             match self.state {
                 NodeTasksState::Idle | NodeTasksState::Aborted => {
@@ -57,9 +77,7 @@ impl<'a> NodeTasks<'a> {
                 }
 
                 NodeTasksState::Active => {
-                    if self.record_task_errors().await {
-                        return;
-                    }
+                    self.record_task_errors().await?;
 
                     if let Some(OptimizationConfig {
                         node_heartbeat,
@@ -85,6 +103,8 @@ impl<'a> NodeTasks<'a> {
         } else if self.state == NodeTasksState::Active {
             self.abort().await;
         }
+
+        Ok(())
     }
 
     async fn make_active(&mut self, tasks_runner: &impl NodeTasksRunner) {
@@ -105,23 +125,24 @@ impl<'a> NodeTasks<'a> {
         }
     }
 
-    async fn record_task_errors(&mut self) -> bool {
+    async fn record_task_errors(&mut self) -> Result<(), NodeTasksError> {
         let mut errors = vec![];
         for task in &self.tasks {
             errors.extend(task.collect_errors().await);
         }
 
         if errors.is_empty() {
-            false
+            Ok(())
         } else {
             for error in &errors {
                 eprintln!("Chaindexing worker error: {error}");
             }
 
+            let runtime_error = NodeTasksError::new(errors.clone());
             self.errors.extend(errors);
             self.stop().await;
             self.state = NodeTasksState::Idle;
-            true
+            Err(runtime_error)
         }
     }
 

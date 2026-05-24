@@ -13,7 +13,39 @@ pub struct NodeTask {
 
 struct NodeSubtask {
     name: String,
-    handle: tokio::task::JoinHandle<()>,
+    handle: tokio::task::JoinHandle<NodeSubtaskResult>,
+}
+
+pub(crate) type NodeSubtaskResult = Result<(), NodeSubtaskFailure>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NodeSubtaskFailure {
+    pub(crate) message: String,
+}
+
+impl std::fmt::Display for NodeTaskError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NodeTaskError::StoppedUnexpectedly { task_name } => {
+                write!(f, "Subtask `{task_name}` stopped unexpectedly")
+            }
+            NodeTaskError::Failed { task_name, message } => {
+                write!(f, "Subtask `{task_name}` failed: {message}")
+            }
+            NodeTaskError::Panicked { task_name, message } => {
+                write!(f, "Subtask `{task_name}` panicked: {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for NodeTaskError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NodeTaskError {
+    StoppedUnexpectedly { task_name: String },
+    Failed { task_name: String, message: String },
+    Panicked { task_name: String, message: String },
 }
 
 #[derive(Clone, Debug)]
@@ -80,14 +112,10 @@ impl NodeTask {
         self.cancellation_token.clone()
     }
 
-    pub async fn add_subtask(&self, task: tokio::task::JoinHandle<()>) {
-        self.add_named_subtask("unnamed", task).await;
-    }
-
-    pub async fn add_named_subtask(
+    pub(crate) async fn add_named_subtask(
         &self,
         name: impl Into<String>,
-        task: tokio::task::JoinHandle<()>,
+        task: tokio::task::JoinHandle<NodeSubtaskResult>,
     ) {
         let mut subtasks = self.subtasks.lock().await;
         subtasks.push(NodeSubtask {
@@ -105,7 +133,7 @@ impl NodeTask {
         }
     }
 
-    pub async fn collect_errors(&self) -> Vec<String> {
+    pub(crate) async fn collect_errors(&self) -> Vec<NodeTaskError> {
         let mut subtasks = self.subtasks.lock().await;
         let mut errors = vec![];
         let mut index = 0;
@@ -118,11 +146,22 @@ impl NodeTask {
 
             let subtask = subtasks.remove(index);
             match subtask.handle.await {
-                Ok(()) => errors.push(format!("Subtask `{}` stopped unexpectedly", subtask.name)),
+                Ok(Ok(())) => errors.push(NodeTaskError::StoppedUnexpectedly {
+                    task_name: subtask.name,
+                }),
+                Ok(Err(error)) => errors.push(NodeTaskError::Failed {
+                    task_name: subtask.name,
+                    message: error.message,
+                }),
                 Err(join_error) if join_error.is_cancelled() => {}
-                Err(join_error) => {
-                    errors.push(format!("Subtask `{}` failed: {join_error}", subtask.name))
-                }
+                Err(join_error) if join_error.is_panic() => errors.push(NodeTaskError::Panicked {
+                    task_name: subtask.name,
+                    message: join_error.to_string(),
+                }),
+                Err(join_error) => errors.push(NodeTaskError::Failed {
+                    task_name: subtask.name,
+                    message: join_error.to_string(),
+                }),
             }
         }
 
@@ -130,7 +169,7 @@ impl NodeTask {
     }
 }
 
-async fn await_or_abort(mut handle: tokio::task::JoinHandle<()>) {
+async fn await_or_abort(mut handle: tokio::task::JoinHandle<NodeSubtaskResult>) {
     if tokio::time::timeout(Duration::from_millis(500), &mut handle).await.is_err() {
         handle.abort();
         let _ = handle.await;
@@ -153,7 +192,34 @@ mod tests {
         let errors = node_task.collect_errors().await;
 
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("panic-task"));
+        assert!(errors[0].to_string().contains("panic-task"));
+    }
+
+    #[tokio::test]
+    async fn collects_explicit_subtask_errors() {
+        let node_task = NodeTask::new();
+
+        node_task
+            .add_named_subtask(
+                "fallible-task",
+                tokio::spawn(async {
+                    Err(NodeSubtaskFailure {
+                        message: "database unavailable".to_string(),
+                    })
+                }),
+            )
+            .await;
+
+        tokio::task::yield_now().await;
+        let errors = node_task.collect_errors().await;
+
+        assert_eq!(
+            errors,
+            vec![NodeTaskError::Failed {
+                task_name: "fallible-task".to_string(),
+                message: "database unavailable".to_string(),
+            }]
+        );
     }
 
     #[tokio::test]
@@ -165,6 +231,7 @@ mod tests {
                 "running-task",
                 tokio::spawn(async {
                     tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    Ok(())
                 }),
             )
             .await;
@@ -187,6 +254,7 @@ mod tests {
                 tokio::spawn(async move {
                     token.cancelled().await;
                     observed_cancel_for_task.store(true, Ordering::SeqCst);
+                    Ok(())
                 }),
             )
             .await;

@@ -10,6 +10,7 @@ mod node_tasks_runner;
 
 pub use node::Node;
 pub use node_heartbeat::NodeHeartbeat;
+pub(crate) use node_task::NodeSubtaskFailure;
 pub use node_task::NodeTask;
 pub use node_tasks::NodeTasks;
 pub use node_tasks_runner::NodeTasksRunner;

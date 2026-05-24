@@ -78,6 +78,8 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                             _ = cancellation_token.cancelled() => break,
                                         }
                                     }
+
+                                    Ok::<(), crate::nodes::NodeSubtaskFailure>(())
                                 }),
                             )
                             .await;
@@ -104,6 +106,8 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                             _ = cancellation_token.cancelled() => break,
                         }
                     }
+
+                    Ok::<(), crate::nodes::NodeSubtaskFailure>(())
                 }
             }),
         )
