@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use crate::Event;
 use crate::{
     ChaindexingRepo, ChaindexingRepoTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
 };
-use crate::{ChaindexingRepoClient, Event};
 
 use super::{serde_map_to_string_map, to_columns_and_values, to_sql_string_literal};
 
@@ -143,17 +143,6 @@ impl StateVersion {
         state_version.extend(updates.clone());
         Self::append(&state_version, state_table_name, event, client).await
     }
-    pub async fn update_without_txn(
-        state: &HashMap<String, String>,
-        updates: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &mut ChaindexingRepoClient,
-    ) -> HashMap<String, String> {
-        let mut state_version = state.clone();
-        state_version.extend(updates.clone());
-        Self::append_without_txn(&state_version, state_table_name, event, client).await
-    }
 
     pub async fn delete<'a>(
         state: &HashMap<String, String>,
@@ -164,16 +153,6 @@ impl StateVersion {
         let mut state_version = state.clone();
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
         Self::append(&state_version, state_table_name, event, client).await
-    }
-    pub async fn delete_without_txn(
-        state: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoClient,
-    ) -> HashMap<String, String> {
-        let mut state_version = state.clone();
-        state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
-        Self::append_without_txn(&state_version, state_table_name, event, client).await
     }
 
     async fn append<'a>(
@@ -190,21 +169,6 @@ impl StateVersion {
             )
             .await
             .unwrap(),
-        )
-    }
-
-    async fn append_without_txn(
-        partial_state_version: &HashMap<String, String>,
-        state_table_name: &str,
-        event: &Event,
-        client: &ChaindexingRepoClient,
-    ) -> HashMap<String, String> {
-        let query = Self::append_query(partial_state_version, state_table_name, event);
-
-        serde_map_to_string_map(
-            &ChaindexingRepo::load_data::<HashMap<String, serde_json::Value>>(client, &query)
-                .await
-                .unwrap(),
         )
     }
 

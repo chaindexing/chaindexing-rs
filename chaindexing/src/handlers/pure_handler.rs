@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use tokio::sync::Mutex;
 
@@ -25,8 +25,7 @@ pub trait PureHandler: Send + Sync {
 pub struct PureHandlerContext<'a, 'b> {
     pub event: Event,
     pub(crate) repo_client: &'a ChaindexingRepoTxnClient<'a>,
-    pub(crate) repo_client_for_mcs: Arc<Mutex<ChaindexingRepoClient>>,
-    pub(crate) deferred_mutations_for_mcs: DeferredFutures<'b>,
+    _lifetime: PhantomData<&'b ()>,
     is_at_block_tail: bool,
 }
 
@@ -34,14 +33,17 @@ impl<'a, 'b> PureHandlerContext<'a, 'b> {
     pub fn new(
         event: &Event,
         repo_client: &'a ChaindexingRepoTxnClient<'a>,
-        repo_client_for_mcs: &Arc<Mutex<ChaindexingRepoClient>>,
-        deferred_mutations_for_mcs: &DeferredFutures<'b>,
+        _repo_client_for_mcs: &Arc<Mutex<ChaindexingRepoClient>>,
+        _deferred_mutations_for_mcs: &DeferredFutures<'b>,
     ) -> Self {
+        Self::from_txn(event, repo_client)
+    }
+
+    pub(crate) fn from_txn(event: &Event, repo_client: &'a ChaindexingRepoTxnClient<'a>) -> Self {
         Self {
             event: event.clone(),
             repo_client,
-            repo_client_for_mcs: repo_client_for_mcs.clone(),
-            deferred_mutations_for_mcs: deferred_mutations_for_mcs.clone(),
+            _lifetime: PhantomData,
             is_at_block_tail: false,
         }
     }

@@ -14,7 +14,6 @@ pub use side_effect_handler::{SideEffectHandler, SideEffectHandlerContext};
 
 use tokio::{sync::Mutex, time::interval};
 
-use crate::deferred_futures::DeferredFutures;
 use crate::nodes::NodeTask;
 use crate::Config;
 use crate::{contracts, states, HasRawQueryClient};
@@ -30,16 +29,10 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                 let node_task = node_task.clone();
                 let cancellation_token = node_task.cancellation_token();
 
-                // MultiChainStates are indexed in an order-agnostic fashion, so no need for txn client
-                let repo_client_for_mcs = Arc::new(Mutex::new(config.repo.get_client().await));
-                let deferred_mutations_for_mcs = DeferredFutures::new();
-
                 async move {
                     for (index, chain_ids) in get_chunked_chain_ids(&config).into_iter().enumerate()
                     {
                         let config = config.clone();
-                        let repo_client_for_mcs = repo_client_for_mcs.clone();
-                        let deferred_mutations_for_mcs = deferred_mutations_for_mcs.clone();
                         let cancellation_token = cancellation_token.clone();
 
                         node_task
@@ -66,8 +59,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                             &pure_handlers,
                                             &side_effect_handlers,
                                             (&chain_ids, config.blocks_per_batch),
-                                            (&repo_client, &repo_client_for_mcs),
-                                            &deferred_mutations_for_mcs,
+                                            &repo_client,
                                             &config.shared_state,
                                             config.side_effect_finality,
                                         )
@@ -98,8 +90,6 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                         }
 
                         maybe_handle_chain_reorg::run(&mut repo_client, &state_table_names).await;
-
-                        deferred_mutations_for_mcs.consume().await;
 
                         tokio::select! {
                             _ = interval.tick() => {}

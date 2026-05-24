@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::ChaindexingRepoClient;
 use crate::{ChaindexingRepo, ChaindexingRepoTxnClient};
 use crate::{ExecutesWithRawQuery, LoadsDataWithRawQuery};
 
@@ -65,23 +64,6 @@ impl StateView {
         }
     }
 
-    pub async fn refresh_without_txn(
-        latest_state_version: &HashMap<String, String>,
-        table_name: &str,
-        client: &ChaindexingRepoClient,
-    ) {
-        let state_version_group_id = StateVersion::get_group_id(latest_state_version);
-
-        if StateVersion::was_deleted(latest_state_version) {
-            Self::delete_without_txn(&state_version_group_id, table_name, client).await;
-        } else {
-            let new_state_view = Self::from_latest_state_version(latest_state_version);
-
-            Self::delete_without_txn(&state_version_group_id, table_name, client).await;
-            Self::create_without_txn(&new_state_view, table_name, client).await;
-        }
-    }
-
     fn from_latest_state_version(
         latest_state_version: &HashMap<String, String>,
     ) -> HashMap<String, String> {
@@ -103,17 +85,7 @@ impl StateView {
         )
         .await;
     }
-    async fn delete_without_txn(
-        state_version_group_id: &str,
-        table_name: &str,
-        client: &ChaindexingRepoClient,
-    ) {
-        ChaindexingRepo::execute(
-            client,
-            &Self::delete_query(state_version_group_id, table_name),
-        )
-        .await;
-    }
+
     fn delete_query(state_version_group_id: &str, table_name: &str) -> String {
         format!(
             "DELETE FROM {table_name} WHERE state_version_group_id = {state_version_group_id}",
@@ -129,13 +101,7 @@ impl StateView {
         ChaindexingRepo::execute_in_txn(client, &Self::create_query(new_state_view, table_name))
             .await;
     }
-    async fn create_without_txn(
-        new_state_view: &HashMap<String, String>,
-        table_name: &str,
-        client: &ChaindexingRepoClient,
-    ) {
-        ChaindexingRepo::execute(client, &Self::create_query(new_state_view, table_name)).await;
-    }
+
     fn create_query(new_state_view: &HashMap<String, String>, table_name: &str) -> String {
         let (columns, values) = to_columns_and_values(new_state_view);
         format!(

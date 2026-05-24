@@ -48,50 +48,26 @@ pub trait MultiChainState:
 
     /// Updates state with the specified updates
     async fn update<'a, 'b>(&self, updates: &Updates, context: &PureHandlerContext<'a, 'b>) {
-        let event = context.event.clone();
+        let event = &context.event;
         let client = context.repo_client;
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client).await;
-        let updates = updates.clone();
-        let client = context.repo_client_for_mcs.clone();
 
-        context
-            .deferred_mutations_for_mcs
-            .add(async move {
-                let mut client = client.lock().await;
-
-                let latest_state_version = StateVersion::update_without_txn(
-                    &state_view,
-                    &updates.values,
-                    table_name,
-                    &event,
-                    &mut client,
-                )
-                .await;
-                StateView::refresh_without_txn(&latest_state_version, table_name, &client).await;
-            })
-            .await;
+        let latest_state_version =
+            StateVersion::update(&state_view, &updates.values, table_name, event, client).await;
+        StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
     /// Deletes state from the state's table
     async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
-        let event = context.event.clone();
+        let event = &context.event;
         let client = context.repo_client;
         let table_name = Self::table_name();
         let state_view = self.to_complete_view(table_name, client).await;
-        let client = context.repo_client_for_mcs.clone();
 
-        context
-            .deferred_mutations_for_mcs
-            .add(async move {
-                let client = client.lock().await;
-
-                let latest_state_version =
-                    StateVersion::delete_without_txn(&state_view, table_name, &event, &client)
-                        .await;
-                StateView::refresh_without_txn(&latest_state_version, table_name, &client).await;
-            })
-            .await;
+        let latest_state_version =
+            StateVersion::delete(&state_view, table_name, event, client).await;
+        StateView::refresh(&latest_state_version, table_name, client).await;
     }
 
     fn to_view(&self) -> HashMap<String, String> {

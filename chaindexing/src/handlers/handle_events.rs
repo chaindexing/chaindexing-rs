@@ -4,7 +4,6 @@ use std::{collections::HashMap, sync::Arc};
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
-use crate::deferred_futures::DeferredFutures;
 use crate::streams::ContractAddressesStream;
 use crate::SideEffectFinality;
 use crate::{contracts, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery};
@@ -20,8 +19,7 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
         Arc<dyn SideEffectHandler<SharedState = S>>,
     >,
     (chain_ids, blocks_per_batch): (&[u64], u64),
-    (repo_client, repo_client_for_mcs): (&ChaindexingRepoClientMutex, &ChaindexingRepoClientMutex),
-    deferred_mutations_for_mcs: &DeferredFutures<'a>,
+    repo_client: &ChaindexingRepoClientMutex,
     shared_state: &Option<Arc<Mutex<S>>>,
     side_effect_finality: SideEffectFinality,
 ) {
@@ -58,13 +56,8 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
 
                     {
                         if let Some(handler) = pure_handlers.get(&handler_key) {
-                            let handler_context = PureHandlerContext::new(
-                                event,
-                                &txn_client,
-                                repo_client_for_mcs,
-                                deferred_mutations_for_mcs,
-                            )
-                            .with_is_at_block_tail(is_at_block_tail);
+                            let handler_context = PureHandlerContext::from_txn(event, &txn_client)
+                                .with_is_at_block_tail(is_at_block_tail);
 
                             handler.handle_event(handler_context).await;
                         }
