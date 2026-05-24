@@ -1,16 +1,65 @@
 # Chaindexing
 
-[<img alt="github" src="https://img.shields.io/badge/Github-jurshsmith%2Fchaindexing-blue?logo=github" height="20">](https://github.com/jurshsmith/chaindexing-rs)
+[<img alt="github" src="https://img.shields.io/badge/Github-chaindexing%2Fchaindexing--rs-blue?logo=github" height="20">](https://github.com/chaindexing/chaindexing-rs)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/chaindexing.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/chaindexing)
-[<img alt="diesel-streamer build" src="https://img.shields.io/github/actions/workflow/status/jurshsmith/chaindexing-rs/ci.yml?branch=main&style=for-the-badge" height="20">](https://github.com/jurshsmith/chaindexing-rs/actions?query=branch%3Amain)
+[<img alt="chaindexing build" src="https://img.shields.io/github/actions/workflow/status/chaindexing/chaindexing-rs/ci.yml?branch=main&style=for-the-badge" height="20">](https://github.com/chaindexing/chaindexing-rs/actions?query=branch%3Amain)
 
-Index any EVM chain and query in SQL
+Embed an EVM event indexer in Rust and materialize reorg-aware contract state into Postgres.
 
-[Getting Started](#getting-started) | [Reorg Handling](docs/reorg-handling.md) | [Finality Policies](docs/finality-policies.md) | [Examples](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) | [Design Goals & Features](#design-goals--features) | [RoadMap](#roadmap) | [Contributing](#contributing)
+Chaindexing is for teams that want indexed blockchain data in a database they own, with ordinary
+SQL read paths, deterministic Rust handlers, bounded reorg repair, and production-facing controls
+for RPC pressure, finality, and external side effects.
 
-## Getting Started
+[Quickstart](#quickstart) | [Why Chaindexing](#why-chaindexing) | [Guarantees](#guarantees) | [Reorg Handling](docs/reorg-handling.md) | [Finality Policies](docs/finality-policies.md) | [Examples](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) | [Production Limits](#production-limits) | [Roadmap](#roadmap) | [Contributing](#contributing)
 
-📊 Here is what indexing and tracking owers of your favorite NFTs looks like:
+## Quickstart
+
+Add Chaindexing to a Tokio Rust service:
+
+```toml
+[dependencies]
+chaindexing = "0.1.81"
+tokio = { version = "1", features = ["full"] }
+```
+
+A minimal NFT ownership indexer has three pieces: a Postgres state table, a deterministic event
+handler, and an indexer runtime.
+
+Define the state you want to query from Postgres:
+
+```rust
+use chaindexing::augmenting_std::serde::{Deserialize, Serialize};
+use chaindexing::state_migrations;
+use chaindexing::states::{ContractState, StateMigrations};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(crate = "chaindexing::augmenting_std::serde")]
+pub struct Nft {
+    pub token_id: u32,
+    pub owner_address: String,
+}
+
+impl ContractState for Nft {
+    fn table_name() -> &'static str {
+        "nfts"
+    }
+}
+
+pub struct NftMigrations;
+
+impl StateMigrations for NftMigrations {
+    fn migrations(&self) -> &'static [&'static str] {
+        state_migrations!([r#"
+            CREATE TABLE IF NOT EXISTS nfts (
+                token_id INTEGER NOT NULL,
+                owner_address TEXT NOT NULL
+            )
+        "#])
+    }
+}
+```
+
+Handle the contract event that changes that state:
 
 ```rust
 use chaindexing::states::{ContractState, Filters, Updates};
@@ -35,8 +84,8 @@ impl EventHandler for TransferHandler {
         if let Some(existing_nft) =
             Nft::read_one(&Filters::new("token_id", token_id), &context).await
         {
-          let updates = Updates::new("owner_address", &to);
-          existing_nft.update(&updates, &context).await;
+            let updates = Updates::new("owner_address", &to);
+            existing_nft.update(&updates, &context).await;
         } else {
             let new_nft = Nft {
                 token_id,
@@ -49,40 +98,59 @@ impl EventHandler for TransferHandler {
 }
 ```
 
-A quick and effective way to get started is by exploring the comprehensive examples provided here: [https://github.com/chaindexing/chaindexing-examples/tree/main/rust](https://github.com/chaindexing/chaindexing-examples/tree/main/rust).
-
-Minimal runtime setup now looks like this:
+Run the indexer against your Postgres database and JSON-RPC provider:
 
 ```rust
 use chaindexing::{Chain, ChainId, Contract, Indexer, ReorgMode, RuntimeConfig};
 
-# async fn start() -> Result<(), chaindexing::ChaindexingError> {
-let erc721 = Contract::new("ERC721")
-    .add_event_handler(TransferHandler)
-    .add_address(
-        "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
-        &ChainId::Mainnet,
-        17_773_490,
-    );
+async fn start_indexer() -> Result<(), chaindexing::ChaindexingError> {
+    let erc721 = Contract::new("ERC721")
+        .add_event_handler(TransferHandler)
+        .add_state_migrations(NftMigrations)
+        .add_address(
+            "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+            &ChainId::Mainnet,
+            17_773_490,
+        );
 
-Indexer::new(&std::env::var("DATABASE_URL").unwrap())
-    .chain(Chain::mainnet(&std::env::var("MAINNET_JSON_RPC_URL").unwrap()))
-    .contract(erc721)
-    .runtime(RuntimeConfig::realtime())
-    .reorg_mode(ReorgMode::Balanced)
-    .run()
-    .await?;
-# Ok(())
-# }
+    Indexer::new(&std::env::var("DATABASE_URL").unwrap())
+        .chain(Chain::mainnet(&std::env::var("MAINNET_JSON_RPC_URL").unwrap()))
+        .contract(erc721)
+        .runtime(RuntimeConfig::realtime())
+        .reorg_mode(ReorgMode::Balanced)
+        .run()
+        .await
+}
 ```
 
 `run()` owns the indexer lifecycle and blocks until Ctrl-C before shutting workers down. Services
 or tests that need to manage shutdown themselves should call `Indexer::start()` and keep the
 returned `IndexingHandle`.
 
+Then query the indexed state with ordinary SQL:
+
+```sql
+SELECT token_id, owner_address, chain_id, contract_address
+FROM nfts
+WHERE token_id = 42;
+```
+
+Full working examples live in
+[chaindexing-examples/rust](https://github.com/chaindexing/chaindexing-examples/tree/main/rust).
+
+## Why Chaindexing
+
+| Serious indexing concern | Chaindexing's answer |
+| --- | --- |
+| Own the data model | Indexed state is materialized into your Postgres tables, so app reads can use SQL, views, BI tools, ORMs, exports, and normal database operations. |
+| Reorg correctness | Blocks are tracked by hash and parent hash; canonical events, state versions, scans, and handler cursors are rewound inside the configured finality window. |
+| External side effects | Direct side-effect handlers exist for compatibility, while durable webhooks, notifications, queues, and bridge jobs should go through the Postgres outbox. |
+| Runtime control | Workload profiles expose batch size, worker limits, RPC in-flight budgets, retry/backoff, and polling cadence without YAML or a separate indexing service. |
+| Dynamic contracts | Handlers can include newly discovered contract addresses at runtime, useful for factory patterns such as Uniswap pools. |
+
 ## Guarantees
 
-Chaindexing's Postgres backend is being hardened around these guarantees:
+Chaindexing's Postgres backend is designed around these guarantees:
 
 - Event ingestion is idempotent for the canonical event identity: `chain_id`, `contract_address`, `block_hash`, `transaction_hash`, and `log_index`.
 - Canonical block tracking uses `block_hash` and `parent_hash`; replaced blocks, scans, and events are marked `reorged`.
@@ -92,7 +160,7 @@ Chaindexing's Postgres backend is being hardened around these guarantees:
 - Ingestion and handler checkpoints are stored durably in Postgres and written transactionally with cursor updates.
 - Multi-node leader election uses a Postgres advisory lock by default.
 - Empty event batches are safe to retry.
-- Direct side-effect handlers are supported for compatibility; durable external side effects should be written to `chaindexing_outbox` with `SideEffectContext::enqueue_outbox` or `enqueue_outbox_with_finality`.
+- Direct side-effect handlers are supported for compatibility; durable external side effects should be written to `chaindexing_outbox` with `SideEffectContext::enqueue_outbox`, `enqueue_outbox_with_configured_finality`, or `enqueue_outbox_with_finality`.
 
 Non-goals:
 
@@ -105,7 +173,7 @@ Non-goals:
 Use presets to express product behavior without configuring the reorg algorithm:
 
 ```rust
-use chaindexing::{IndexingFinality, ReorgMode, SideEffectFinality};
+use chaindexing::{Indexer, IndexingFinality, ReorgMode, SideEffectFinality};
 
 Indexer::new(&database_url)
     .reorg_mode(ReorgMode::Realtime); // low-latency UI/feed use cases
@@ -133,7 +201,7 @@ library cannot reliably know whether a laptop, CI runner, staging box, or produc
 resource-constrained.
 
 ```rust
-use chaindexing::{RpcPolicy, RuntimeConfig, RuntimeLimits};
+use chaindexing::{Indexer, RpcPolicy, RuntimeConfig, RuntimeLimits};
 
 // Low-latency indexing for app feeds and dashboards.
 Indexer::new(&database_url)
@@ -187,9 +255,15 @@ Compatibility setters like `.blocks_per_batch(...)`, `.ingestion_rate_ms(...)`,
 `.handler_rate_ms(...)`, and `.chain_concurrency(...)` still work. New applications should prefer
 `.runtime(...)` because it keeps workload, resource limits, RPC policy, and polling cadence explicit.
 
+## Durable outbox
+
 Example side-effect outbox usage:
 
 ```rust
+use chaindexing::{SideEffectContext, SideEffectHandler};
+
+pub struct TransferSideEffectHandler;
+
 #[chaindexing::augmenting_std::async_trait]
 impl SideEffectHandler for TransferSideEffectHandler {
     type SharedState = ();
@@ -234,19 +308,23 @@ impl OutboxDispatcher for Dispatcher {
     }
 }
 
-# async fn dispatch() {
-let dispatched = dispatch_pending_outbox_jobs(
-    &std::env::var("DATABASE_URL").unwrap(),
-    &Dispatcher,
-    OutboxDispatchConfig::default().with_finality_watermark(OutboxFinalityWatermark {
-        chain_id: 1,
-        latest_block_number: Some(latest),
-        safe_block_number: Some(safe),
-        finalized_block_number: Some(finalized),
-    }),
-)
-.await;
-# }
+async fn dispatch_outbox(
+    latest_block_number: u64,
+    safe_block_number: u64,
+    finalized_block_number: u64,
+) -> usize {
+    dispatch_pending_outbox_jobs(
+        &std::env::var("DATABASE_URL").unwrap(),
+        &Dispatcher,
+        OutboxDispatchConfig::default().with_finality_watermark(OutboxFinalityWatermark {
+            chain_id: 1,
+            latest_block_number: Some(latest_block_number),
+            safe_block_number: Some(safe_block_number),
+            finalized_block_number: Some(finalized_block_number),
+        }),
+    )
+    .await
+}
 ```
 
 Outbox dispatch is intentionally at-least-once. Dispatchers should make external calls idempotent
@@ -259,57 +337,54 @@ Application code can read indexed state directly from Postgres:
 use chaindexing::states::{ContractState, Filters};
 use chaindexing::ChainId;
 
-# async fn read_nft() {
-let nft = Nft::read_one_from_postgres(
-    &std::env::var("DATABASE_URL").unwrap(),
-    &ChainId::Mainnet,
-    "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
-    &Filters::new("token_id", 42),
-)
-.await;
-# }
+async fn read_nft() -> Option<Nft> {
+    Nft::read_one_from_postgres(
+        &std::env::var("DATABASE_URL").unwrap(),
+        &ChainId::Mainnet,
+        "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+        &Filters::new("token_id", 42),
+    )
+    .await
+}
 ```
 
-## Design Goals & Features
+## Capabilities
 
-- 💸&nbsp;Free forever<br/>
-- ⚡&nbsp;Real-time use-cases<br/>
-- 🌐&nbsp;Multi-chain<br/>
-- 🧂&nbsp;Granular, 🧩 Modular & 📈 Scalable<br/>
-- 🌍&nbsp;Environment-agnostic to allow inspecting 🔍 & replicating indexes anywhere!<br/>
-- 🔓&nbsp;ORM-agnostic, use any ORM to access indexed data<br/>
-- 📤&nbsp;Easy export to any data lake: S3, Snowflake, etc.<br/>
-- 🚫&nbsp;No complex YAML/JSON/CLI config<br/>
-- 💪&nbsp;Index contracts discovered at runtime<br/>
-- ✨&nbsp;Handles re-org with no UX impact<br/>
-- 🔥&nbsp;Side effect handling for notifications & bridging use cases<br/>
-- 💸&nbsp;Optimize RPC cost by indexing when certain activities happen in your DApp<br/>
-- 💎&nbsp;Language-agnostic, so no macros!<br/>
+| Capability | Status |
+| --- | --- |
+| EVM log indexing | Supported for any EVM chain available through an HTTP JSON-RPC provider. |
+| Postgres state materialization | Supported. Chaindexing owns internal tables and writes your declared state tables. |
+| Multi-chain indexing | Supported through multiple `Chain` configs. |
+| Runtime-discovered contracts | Supported with `chaindexing::include_contract(...)`. |
+| Reorg repair | Supported inside the configured confirmation/finality window. |
+| Durable side-effect dispatch | Supported through `chaindexing_outbox`; dispatch is intentionally at-least-once. |
+| Raw transactions and traces | Not supported yet. |
+| SQLite or non-Postgres backends | Not supported yet; Postgres is the production backend. |
 
-## RoadMap
+## Production Limits
 
-- ⬜&nbsp;Expose `is_at_block_tail` flag to improve op heuristics for applications<br/>
-- ⬜&nbsp;Support SQLite Database (Currently supports only Postgres)<br/>
-- ⬜&nbsp;Support indexing raw transactions & call traces.<br/>
-- ⬜&nbsp;Improved error handling/messages/reporting (Please feel free to open an issue when an opaque runtime error is encountered)<br/>
-- ⬜&nbsp;Support TLS connections<br/>
-- ⬜&nbsp;Minimal UI for inspecting events and indexed states<br/>
+Chaindexing is still young and optimized for Rust ergonomics plus Postgres ownership. The runtime
+profile API makes the main scaling tradeoffs explicit, but production deployments should account
+for these limits:
 
-## Performance Considerations & Limitations
+- **Postgres TLS:** Raw Postgres clients currently use `NoTls`. Use a trusted network, proxy, or tunnel until native TLS support lands.
+- **Historical throughput:** `RuntimeConfig::backfill()` increases worker, RPC, and batch defaults for catch-up. Override `blocks_per_batch`, `max_ingester_workers`, and `max_in_flight` based on your provider and Postgres capacity.
+- **Worker caps:** `max_ingester_workers` and `max_handler_workers` are caps, not promises. They are capped by available chains and by state-ordering partitions.
+- **Handler ordering:** `ContractState` and `ChainState` handlers stay ordered within their logical partition. More handler workers help independent chains/contracts, but not a single hot ordered partition.
+- **Handler batch shape:** Handler loading is block-bounded, not event-bounded. A batch includes every matching event in the selected blocks so cursors never skip logs inside a block. Lower `blocks_per_batch` to reduce multi-block batches; a single extremely hot block still has to fit in memory and one handler transaction.
+- **Database bottlenecks:** `db_connections` bounds the pooled Postgres work used by ingestion and supervision, while handler raw clients scale with `max_handler_workers`. More connections only help if Postgres has spare CPU, IO, and lock capacity.
+- **RPC provider limits:** `max_in_flight`, `max_per_chain`, and optional `requests_per_second` express provider pressure. Public endpoints often cap block ranges and requests per second.
+- **Deep backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized. Prefer `RuntimeConfig::backfill()` with explicit limits, or start closer to the present block.
+- **Error reporting:** Some internal database and provider failures are still surfaced as opaque runtime errors. Improving typed errors and diagnostics is active roadmap work.
 
-Chaindexing is still young and optimized for ergonomics first. The runtime profile API makes the
-main scaling tradeoffs explicit, but historical backfills or very high-volume workloads may still
-need careful tuning:
+## Roadmap
 
-- 🐢 **Historical Throughput:** `RuntimeConfig::backfill()` increases worker, RPC, and batch defaults for catch-up. Override `blocks_per_batch`, `max_ingester_workers`, and `max_in_flight` based on your provider and Postgres capacity.
-- 🔗 **Worker Caps:** `max_ingester_workers` and `max_handler_workers` are caps, not promises. They are capped by available chains and by state-ordering partitions.
-- ⚙️ **Handler Ordering:** `ContractState` and `ChainState` handlers stay ordered within their logical partition. More handler workers help independent chains/contracts, but not a single hot ordered partition.
-- 📦 **Handler Batch Shape:** Handler loading is block-bounded, not event-bounded. A batch includes every matching event in the selected blocks so cursors never skip logs inside a block. Lower `blocks_per_batch` to reduce multi-block batches; a single extremely hot block still has to fit in memory and one handler transaction.
-- 🗄️ **Database Bottlenecks:** `db_connections` bounds the pooled Postgres work used by ingestion and supervision, while handler raw clients scale with `max_handler_workers`. More connections only help if Postgres has spare CPU, IO, and lock capacity.
-- 🌐 **RPC Provider Limits:** `max_in_flight`, `max_per_chain`, and optional `requests_per_second` express provider pressure. Public endpoints often cap block ranges and requests per second.
-- ⏳ **Deep Backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized. Prefer `RuntimeConfig::backfill()` with explicit limits, or start closer to the present block.
-
-These limitations are passively being addressed; community benchmarks and pull requests are highly appreciated!
+- Expose an `is_at_block_tail` signal for application operational heuristics.
+- Add TLS-enabled Postgres connections.
+- Support raw transaction and call trace indexing.
+- Improve error handling, messages, and reporting.
+- Add a minimal UI for inspecting events and indexed states.
+- Evaluate SQLite or other local backends after the Postgres guarantees are complete.
 
 ## Contributing
 
