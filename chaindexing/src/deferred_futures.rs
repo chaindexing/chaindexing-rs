@@ -30,10 +30,46 @@ impl<'a> DeferredFutures<'a> {
         futures.push(Box::pin(future));
     }
     pub async fn consume(&self) {
-        let mut futures = self.futures.lock().await;
+        let mut futures = {
+            let mut pending_futures = self.futures.lock().await;
+            std::mem::take(&mut *pending_futures)
+        };
 
         join_all(futures.iter_mut()).await;
+    }
+}
 
-        *futures = Vec::new();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn consume_does_not_hold_queue_lock_while_awaiting_futures() {
+        let deferred = DeferredFutures::new();
+        let nested_deferred = deferred.clone();
+        let completed = Arc::new(AtomicUsize::new(0));
+        let completed_for_future = completed.clone();
+
+        deferred
+            .add(async move {
+                nested_deferred
+                    .add(async move {
+                        completed_for_future.fetch_add(1, Ordering::SeqCst);
+                    })
+                    .await;
+            })
+            .await;
+
+        tokio::time::timeout(Duration::from_millis(100), deferred.consume())
+            .await
+            .expect("consume should not deadlock while futures add more work");
+        deferred.consume().await;
+
+        assert_eq!(completed.load(Ordering::SeqCst), 1);
     }
 }
