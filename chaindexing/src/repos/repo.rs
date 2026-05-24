@@ -183,6 +183,12 @@ pub trait RepoMigrations: Migratable {
     fn create_blocks_migration() -> &'static [&'static str];
     fn drop_blocks_migration() -> &'static [&'static str];
 
+    fn create_block_scans_migration() -> &'static [&'static str];
+    fn drop_block_scans_migration() -> &'static [&'static str];
+
+    fn create_reorgs_migration() -> &'static [&'static str];
+    fn drop_reorgs_migration() -> &'static [&'static str];
+
     fn create_checkpoints_migration() -> &'static [&'static str];
     fn drop_checkpoints_migration() -> &'static [&'static str];
 
@@ -193,6 +199,8 @@ pub trait RepoMigrations: Migratable {
             Self::create_events_migration(),
             Self::create_reorged_blocks_migration(),
             Self::create_blocks_migration(),
+            Self::create_reorgs_migration(),
+            Self::create_block_scans_migration(),
             Self::create_checkpoints_migration(),
             Self::create_outbox_migration(),
         ]
@@ -203,6 +211,8 @@ pub trait RepoMigrations: Migratable {
         [
             Self::drop_events_migration(),
             Self::drop_reorged_blocks_migration(),
+            Self::drop_block_scans_migration(),
+            Self::drop_reorgs_migration(),
             Self::drop_blocks_migration(),
             Self::drop_checkpoints_migration(),
             Self::restart_ingest_and_handlers_next_block_numbers_migration(),
@@ -283,12 +293,21 @@ impl SQLikeMigrations {
                 transaction_index INTEGER NOT NULL,
                 log_index INTEGER NOT NULL,
                 removed BOOLEAN NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'canonical',
+                reorg_id BIGINT,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW() 
             )",
+            "ALTER TABLE chaindexing_events
+             ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'canonical'",
+            "ALTER TABLE chaindexing_events
+             ADD COLUMN IF NOT EXISTS reorg_id BIGINT",
             "CREATE INDEX IF NOT EXISTS chaindexing_events_chain_contract_block_log_index
             ON chaindexing_events(chain_id,contract_address,block_number,log_index)",
             "CREATE INDEX IF NOT EXISTS chaindexing_events_abi
             ON chaindexing_events(abi)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_events_canonical_lookup
+            ON chaindexing_events(chain_id,contract_address,block_number,transaction_index,log_index)
+            WHERE status = 'canonical'",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_events_identity
             ON chaindexing_events(chain_id,contract_address,block_hash,transaction_hash,log_index)",
         ]
@@ -318,9 +337,12 @@ impl SQLikeMigrations {
                 block_number BIGINT NOT NULL,
                 block_hash VARCHAR NOT NULL,
                 parent_hash VARCHAR NOT NULL,
+                block_timestamp BIGINT NOT NULL DEFAULT 0,
                 status VARCHAR NOT NULL,
                 inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+            "ALTER TABLE chaindexing_blocks
+             ADD COLUMN IF NOT EXISTS block_timestamp BIGINT NOT NULL DEFAULT 0",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_blocks_identity
             ON chaindexing_blocks(chain_id, block_number, block_hash)",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_blocks_canonical_number
@@ -330,6 +352,49 @@ impl SQLikeMigrations {
     }
     pub fn drop_blocks() -> &'static [&'static str] {
         &["DROP TABLE IF EXISTS chaindexing_blocks"]
+    }
+
+    pub fn create_block_scans() -> &'static [&'static str] {
+        &[
+            "CREATE TABLE IF NOT EXISTS chaindexing_block_scans (
+                id BIGSERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                block_hash VARCHAR NOT NULL,
+                contract_address VARCHAR NOT NULL,
+                topic_set_hash VARCHAR NOT NULL,
+                log_count INTEGER NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'canonical',
+                reorg_id BIGINT,
+                scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_block_scans_identity
+            ON chaindexing_block_scans(chain_id, block_hash, contract_address, topic_set_hash)",
+            "CREATE INDEX IF NOT EXISTS chaindexing_block_scans_canonical
+            ON chaindexing_block_scans(chain_id, contract_address, block_hash)
+            WHERE status = 'canonical'",
+        ]
+    }
+    pub fn drop_block_scans() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_block_scans"]
+    }
+
+    pub fn create_reorgs() -> &'static [&'static str] {
+        &["CREATE TABLE IF NOT EXISTS chaindexing_reorgs (
+                id BIGSERIAL PRIMARY KEY,
+                chain_id BIGINT NOT NULL,
+                common_ancestor_number BIGINT NOT NULL,
+                common_ancestor_hash VARCHAR NOT NULL,
+                fork_block_number BIGINT NOT NULL,
+                old_tip_number BIGINT NOT NULL,
+                new_tip_number BIGINT NOT NULL,
+                depth BIGINT NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'repairing',
+                inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                repaired_at TIMESTAMPTZ
+            )"]
+    }
+    pub fn drop_reorgs() -> &'static [&'static str] {
+        &["DROP TABLE IF EXISTS chaindexing_reorgs"]
     }
 
     pub fn create_checkpoints() -> &'static [&'static str] {
@@ -360,6 +425,9 @@ impl SQLikeMigrations {
                 chain_id BIGINT NOT NULL,
                 contract_address VARCHAR NOT NULL,
                 event_id UUID NOT NULL,
+                source_block_hash VARCHAR NOT NULL DEFAULT '',
+                source_block_number BIGINT NOT NULL DEFAULT 0,
+                required_finality VARCHAR NOT NULL DEFAULT 'latest',
                 handler_id VARCHAR NOT NULL,
                 payload JSONB NOT NULL,
                 status VARCHAR NOT NULL,
@@ -375,6 +443,12 @@ impl SQLikeMigrations {
              ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ",
             "ALTER TABLE IF EXISTS chaindexing_outbox
              ADD COLUMN IF NOT EXISTS lease_token UUID",
+            "ALTER TABLE IF EXISTS chaindexing_outbox
+             ADD COLUMN IF NOT EXISTS source_block_hash VARCHAR NOT NULL DEFAULT ''",
+            "ALTER TABLE IF EXISTS chaindexing_outbox
+             ADD COLUMN IF NOT EXISTS source_block_number BIGINT NOT NULL DEFAULT 0",
+            "ALTER TABLE IF EXISTS chaindexing_outbox
+             ADD COLUMN IF NOT EXISTS required_finality VARCHAR NOT NULL DEFAULT 'latest'",
             "CREATE UNIQUE INDEX IF NOT EXISTS chaindexing_outbox_idempotency_key
             ON chaindexing_outbox(idempotency_key)",
             "CREATE INDEX IF NOT EXISTS chaindexing_outbox_status_next_attempt_at

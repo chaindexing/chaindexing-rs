@@ -6,8 +6,8 @@ use crate::ChainId;
 use diesel::prelude::Insertable;
 use serde::Deserialize;
 
-/// Tolerance for chain re-organization
-#[derive(Clone, Debug)]
+/// Tolerance for chain re-organization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MinConfirmationCount {
     value: u8,
 }
@@ -44,6 +44,57 @@ impl MinConfirmationCount {
 pub enum Execution<'a> {
     Main,
     Confirmation(&'a MinConfirmationCount),
+}
+
+/// High-level reorg/finality posture for common application profiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReorgMode {
+    /// Prefer low-latency indexing. Reorgs are repaired by replay.
+    Realtime,
+    /// Prefer stable indexing when provider support is available.
+    Balanced,
+    /// Prefer finalized data and irreversible side-effect safety.
+    FinalityFirst,
+}
+
+/// Controls how far the ingester should advance canonical event ingestion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IndexingFinality {
+    /// Index the latest observed head after the given confirmation delay.
+    LatestWithConfirmations(u64),
+    /// Index the provider's safe head when supported.
+    Safe,
+    /// Index the provider's finalized head when supported.
+    Finalized,
+}
+
+/// Controls when durable outbox side effects are eligible for dispatch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SideEffectFinality {
+    SameAsIndexing,
+    Confirmations(u64),
+    Safe,
+    Finalized,
+}
+
+impl ReorgMode {
+    pub(crate) fn indexing_finality(
+        self,
+        _min_confirmation_count: MinConfirmationCount,
+    ) -> IndexingFinality {
+        match self {
+            ReorgMode::Realtime => IndexingFinality::LatestWithConfirmations(0),
+            ReorgMode::Balanced => IndexingFinality::Safe,
+            ReorgMode::FinalityFirst => IndexingFinality::Finalized,
+        }
+    }
+
+    pub(crate) fn side_effect_finality(self) -> SideEffectFinality {
+        match self {
+            ReorgMode::Realtime | ReorgMode::Balanced => SideEffectFinality::Safe,
+            ReorgMode::FinalityFirst => SideEffectFinality::Finalized,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
@@ -98,5 +149,36 @@ impl ReorgedBlocks {
 
     pub fn get_ids<'a>(reorged_blocks: &'a [&'a ReorgedBlock]) -> Vec<i32> {
         reorged_blocks.iter().map(|r| r.id).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reorg_mode_presets_choose_finality_policies() {
+        let min_confirmation_count = MinConfirmationCount::new(12);
+
+        assert_eq!(
+            ReorgMode::Realtime.indexing_finality(min_confirmation_count),
+            IndexingFinality::LatestWithConfirmations(0)
+        );
+        assert_eq!(
+            ReorgMode::Balanced.indexing_finality(min_confirmation_count),
+            IndexingFinality::Safe
+        );
+        assert_eq!(
+            ReorgMode::FinalityFirst.indexing_finality(min_confirmation_count),
+            IndexingFinality::Finalized
+        );
+        assert_eq!(
+            ReorgMode::Balanced.side_effect_finality(),
+            SideEffectFinality::Safe
+        );
+        assert_eq!(
+            ReorgMode::FinalityFirst.side_effect_finality(),
+            SideEffectFinality::Finalized
+        );
     }
 }

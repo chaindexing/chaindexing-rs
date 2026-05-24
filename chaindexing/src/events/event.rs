@@ -31,6 +31,8 @@ pub struct Event {
     pub(crate) transaction_index: i32,
     pub(crate) log_index: i32,
     removed: bool,
+    status: String,
+    reorg_id: Option<i64>,
 }
 
 /// Introduced to allow computing with a subset of Event struct
@@ -96,6 +98,8 @@ impl Event {
             transaction_index: log.transaction_index.unwrap().as_u32() as i32,
             log_index: log.log_index.unwrap().as_u32() as i32,
             removed: log.removed.unwrap(),
+            status: "canonical".to_string(),
+            reorg_id: None,
         }
     }
 
@@ -371,6 +375,8 @@ mod event_param_tests {
             transaction_index: 1,
             log_index,
             removed: false,
+            status: "canonical".to_string(),
+            reorg_id: None,
         }
     }
 

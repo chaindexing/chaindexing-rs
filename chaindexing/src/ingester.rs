@@ -1,3 +1,4 @@
+mod block_logs;
 mod error;
 mod filters;
 mod ingest_events;
@@ -119,12 +120,18 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
     last_pruned_at_per_chain_id: &mut HashMap<u64, u64>,
 ) -> Result<(), IngesterError> {
     let current_block_number = provider::fetch_current_block_number(&provider).await?;
+    let target_block_number = provider::fetch_target_block_number(
+        &provider,
+        current_block_number,
+        config.indexing_finality,
+    )
+    .await?;
     let mut contract_addresses_stream =
         ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(5);
 
     while let Some(contract_addresses) = contract_addresses_stream.next().await {
         let contract_addresses =
-            filter_uningested_contract_addresses(&contract_addresses, current_block_number);
+            filter_uningested_contract_addresses(&contract_addresses, target_block_number);
 
         let mut conn = conn.lock().await;
         let repo_client = &*repo_client.lock().await;
@@ -135,7 +142,7 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
             contract_addresses.clone(),
             &provider,
             chain_id,
-            current_block_number,
+            target_block_number,
             config,
         )
         .await?;
@@ -145,7 +152,7 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
             contract_addresses,
             &provider,
             chain_id,
-            current_block_number,
+            target_block_number,
             config,
         )
         .await?;

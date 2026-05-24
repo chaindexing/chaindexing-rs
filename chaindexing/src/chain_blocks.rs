@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use diesel::QueryableByName;
 use ethers::types::{Block, TxHash, H256, U64};
@@ -11,6 +13,7 @@ pub(crate) struct ChainBlock {
     pub block_number: i64,
     pub block_hash: String,
     pub parent_hash: String,
+    pub block_timestamp: i64,
 }
 
 #[derive(Debug, QueryableByName)]
@@ -36,6 +39,7 @@ pub(crate) fn from_provider_blocks(
                 block_number: block_number.as_u64() as i64,
                 block_hash: h256_to_string(&block_hash),
                 parent_hash: h256_to_string(&block.parent_hash),
+                block_timestamp: block.timestamp.as_u64() as i64,
             })
         })
         .collect();
@@ -120,6 +124,59 @@ pub(crate) fn mark_reorged_from_query(chain_id: ChainId, block_number: i64) -> S
     )
 }
 
+pub(crate) fn create_reorg_query(
+    chain_id: ChainId,
+    fork_block_number: i64,
+    incoming_blocks: &[ChainBlock],
+    canonical_blocks: &[CanonicalBlock],
+) -> String {
+    let common_ancestor_number = fork_block_number.saturating_sub(1);
+    let common_ancestor_hash = canonical_blocks
+        .iter()
+        .find(|block| block.block_number == common_ancestor_number)
+        .map(|block| block.block_hash.as_str())
+        .unwrap_or("unknown");
+    let old_tip_number = canonical_blocks
+        .iter()
+        .map(|block| block.block_number)
+        .max()
+        .unwrap_or(fork_block_number);
+    let new_tip_number = incoming_blocks
+        .iter()
+        .map(|block| block.block_number)
+        .max()
+        .unwrap_or(fork_block_number);
+    let depth = old_tip_number.saturating_sub(common_ancestor_number).max(1);
+
+    format!(
+        "INSERT INTO chaindexing_reorgs
+            (chain_id, common_ancestor_number, common_ancestor_hash, fork_block_number,
+             old_tip_number, new_tip_number, depth, status)
+         VALUES ({}, {}, '{}', {}, {}, {}, {}, 'repaired')",
+        chain_id,
+        common_ancestor_number,
+        escape_sql_literal(common_ancestor_hash),
+        fork_block_number,
+        old_tip_number,
+        new_tip_number,
+        depth
+    )
+}
+
+pub(crate) fn mark_scans_reorged_from_query(chain_id: ChainId, block_number: i64) -> String {
+    format!(
+        "UPDATE chaindexing_block_scans scan
+         SET status = 'reorged'
+         FROM chaindexing_blocks block
+         WHERE block.chain_id = scan.chain_id
+           AND block.block_hash = scan.block_hash
+           AND scan.chain_id = {}
+           AND block.block_number >= {}
+           AND scan.status = 'canonical'",
+        chain_id, block_number
+    )
+}
+
 pub(crate) fn upsert_blocks_query(blocks: &[ChainBlock]) -> Option<String> {
     if blocks.is_empty() {
         return None;
@@ -127,11 +184,12 @@ pub(crate) fn upsert_blocks_query(blocks: &[ChainBlock]) -> Option<String> {
 
     Some(format!(
         "INSERT INTO chaindexing_blocks
-            (chain_id, block_number, block_hash, parent_hash, status)
+            (chain_id, block_number, block_hash, parent_hash, block_timestamp, status)
          VALUES {}
          ON CONFLICT (chain_id, block_number, block_hash)
          DO UPDATE SET
             parent_hash = EXCLUDED.parent_hash,
+            block_timestamp = EXCLUDED.block_timestamp,
             status = EXCLUDED.status",
         values(blocks)
     ))
@@ -142,18 +200,85 @@ fn values(blocks: &[ChainBlock]) -> String {
         .iter()
         .map(|block| {
             format!(
-                "({}, {}, '{}', '{}', 'canonical')",
+                "({}, {}, '{}', '{}', {}, 'canonical')",
                 block.chain_id,
                 block.block_number,
                 escape_sql_literal(&block.block_hash),
-                escape_sql_literal(&block.parent_hash)
+                escape_sql_literal(&block.parent_hash),
+                block.block_timestamp
             )
         })
         .collect::<Vec<_>>()
         .join(",")
 }
 
-fn h256_to_string(h256: &H256) -> String {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct BlockScan {
+    pub chain_id: i64,
+    pub block_hash: String,
+    pub contract_address: String,
+    pub topic_set_hash: String,
+    pub log_count: i32,
+}
+
+impl BlockScan {
+    pub fn new(
+        chain_id: ChainId,
+        block_hash: &str,
+        contract_address: &str,
+        topic_key: &str,
+        log_count: usize,
+    ) -> Self {
+        Self {
+            chain_id: chain_id as i64,
+            block_hash: block_hash.to_string(),
+            contract_address: contract_address.to_lowercase(),
+            topic_set_hash: topic_set_hash(topic_key),
+            log_count: log_count as i32,
+        }
+    }
+}
+
+pub(crate) fn upsert_block_scans_query(scans: &[BlockScan]) -> Option<String> {
+    if scans.is_empty() {
+        return None;
+    }
+
+    let values = scans
+        .iter()
+        .map(|scan| {
+            format!(
+                "({}, '{}', '{}', '{}', {}, 'canonical')",
+                scan.chain_id,
+                escape_sql_literal(&scan.block_hash),
+                escape_sql_literal(&scan.contract_address),
+                escape_sql_literal(&scan.topic_set_hash),
+                scan.log_count,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    Some(format!(
+        "INSERT INTO chaindexing_block_scans
+            (chain_id, block_hash, contract_address, topic_set_hash, log_count, status)
+         VALUES {values}
+         ON CONFLICT (chain_id, block_hash, contract_address, topic_set_hash)
+         DO UPDATE SET
+            log_count = EXCLUDED.log_count,
+            status = EXCLUDED.status,
+            reorg_id = NULL,
+            scanned_at = NOW()"
+    ))
+}
+
+fn topic_set_hash(topic_key: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    topic_key.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+pub(crate) fn h256_to_string(h256: &H256) -> String {
     serde_json::to_value(h256).unwrap().as_str().unwrap().to_lowercase()
 }
 
@@ -183,12 +308,14 @@ mod tests {
                 block_number: 10,
                 block_hash: "0xaaa".to_string(),
                 parent_hash: "0x999".to_string(),
+                block_timestamp: 0,
             },
             ChainBlock {
                 chain_id: 1,
                 block_number: 11,
                 block_hash: "0xbbb".to_string(),
                 parent_hash: "0xaaa".to_string(),
+                block_timestamp: 0,
             },
         ];
 
@@ -200,6 +327,51 @@ mod tests {
     }
 
     #[test]
+    fn builds_reorg_record_query() {
+        let incoming = vec![ChainBlock {
+            chain_id: 1,
+            block_number: 11,
+            block_hash: "0xnew11".to_string(),
+            parent_hash: "0xold10".to_string(),
+            block_timestamp: 0,
+        }];
+        let canonical = vec![
+            CanonicalBlock {
+                block_number: 10,
+                block_hash: "0xold10".to_string(),
+            },
+            CanonicalBlock {
+                block_number: 11,
+                block_hash: "0xold11".to_string(),
+            },
+        ];
+
+        let query = create_reorg_query(ChainId::Mainnet, 11, &incoming, &canonical);
+
+        assert!(query.contains("INSERT INTO chaindexing_reorgs"));
+        assert!(query.contains("0xold10"));
+        assert!(query.contains("'repaired'"));
+    }
+
+    #[test]
+    fn builds_block_scan_upsert_query() {
+        let scans = vec![BlockScan::new(
+            ChainId::Mainnet,
+            "0xblock",
+            "0xABC",
+            "topics",
+            0,
+        )];
+
+        let query = upsert_block_scans_query(&scans).unwrap();
+
+        assert!(query.contains("INSERT INTO chaindexing_block_scans"));
+        assert!(query.contains("'0xabc'"));
+        assert!(query.contains("log_count = EXCLUDED.log_count"));
+        assert!(query.contains("status = EXCLUDED.status"));
+    }
+
+    #[test]
     fn finds_first_conflicting_block_when_parent_matches() {
         let incoming = vec![
             ChainBlock {
@@ -207,12 +379,14 @@ mod tests {
                 block_number: 10,
                 block_hash: "0xold10".to_string(),
                 parent_hash: "0xold9".to_string(),
+                block_timestamp: 0,
             },
             ChainBlock {
                 chain_id: 1,
                 block_number: 11,
                 block_hash: "0xnew11".to_string(),
                 parent_hash: "0xold10".to_string(),
+                block_timestamp: 0,
             },
         ];
         let canonical = vec![
@@ -237,18 +411,21 @@ mod tests {
                 block_number: 9,
                 block_hash: "0xold9".to_string(),
                 parent_hash: "0xold8".to_string(),
+                block_timestamp: 0,
             },
             ChainBlock {
                 chain_id: 1,
                 block_number: 10,
                 block_hash: "0xnew10".to_string(),
                 parent_hash: "0xold9".to_string(),
+                block_timestamp: 0,
             },
             ChainBlock {
                 chain_id: 1,
                 block_number: 11,
                 block_hash: "0xnew11".to_string(),
                 parent_hash: "0xnew10".to_string(),
+                block_timestamp: 0,
             },
         ];
         let canonical = vec![
@@ -276,6 +453,7 @@ mod tests {
             block_number: 10,
             block_hash: "0xold10".to_string(),
             parent_hash: "0xold9".to_string(),
+            block_timestamp: 0,
         }];
         let canonical = vec![CanonicalBlock {
             block_number: 10,
@@ -309,6 +487,7 @@ mod tests {
                     .to_string(),
                 parent_hash: "0x0000000000000000000000000000000000000000000000000000000000000001"
                     .to_string(),
+                block_timestamp: 0,
             }]
         );
     }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use ethers::abi::HumanReadableParser;
 use tokio::sync::Mutex;
 
-use crate::chain_reorg::MinConfirmationCount;
+use crate::chain_reorg::{IndexingFinality, MinConfirmationCount, ReorgMode, SideEffectFinality};
 use crate::chains::Chain;
 use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
@@ -109,6 +109,9 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub optimization_config: Option<OptimizationConfig>,
     pub(crate) pruning_config: Option<PruningConfig>,
     pub(crate) leader_lock_id: i64,
+    pub(crate) reorg_mode: ReorgMode,
+    pub(crate) indexing_finality: IndexingFinality,
+    pub(crate) side_effect_finality: SideEffectFinality,
 }
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
@@ -131,6 +134,9 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
             optimization_config: None,
             pruning_config: None,
             leader_lock_id: DEFAULT_LEADER_LOCK_ID,
+            reorg_mode: ReorgMode::Realtime,
+            indexing_finality: IndexingFinality::LatestWithConfirmations(0),
+            side_effect_finality: SideEffectFinality::Safe,
         }
     }
 
@@ -181,6 +187,33 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     /// The minimum confirmation count for detecting chain-reorganizations or uncled blocks
     pub fn with_min_confirmation_count(mut self, min_confirmation_count: u8) -> Self {
         self.min_confirmation_count = MinConfirmationCount::new(min_confirmation_count);
+
+        self
+    }
+
+    /// Uses a preset reorg/finality posture.
+    ///
+    /// `Realtime` preserves the low-latency default while still repairing reorgs
+    /// by canonical block hash. `Balanced` uses `safe` when supported, and
+    /// `FinalityFirst` uses `finalized` when supported.
+    pub fn with_reorg_mode(mut self, reorg_mode: ReorgMode) -> Self {
+        self.reorg_mode = reorg_mode;
+        self.indexing_finality = reorg_mode.indexing_finality(self.min_confirmation_count);
+        self.side_effect_finality = reorg_mode.side_effect_finality();
+
+        self
+    }
+
+    /// Overrides the preset's event ingestion finality policy.
+    pub fn with_indexing_finality(mut self, indexing_finality: IndexingFinality) -> Self {
+        self.indexing_finality = indexing_finality;
+
+        self
+    }
+
+    /// Overrides the preset's durable side-effect dispatch finality policy.
+    pub fn with_side_effect_finality(mut self, side_effect_finality: SideEffectFinality) -> Self {
+        self.side_effect_finality = side_effect_finality;
 
         self
     }
@@ -379,5 +412,32 @@ mod tests {
             config.validate(),
             Err(ConfigError::InvalidEventAbi { .. })
         ));
+    }
+
+    #[test]
+    fn reorg_mode_sets_indexing_and_side_effect_finality() {
+        let config: Config<()> = Config::new(repo()).with_reorg_mode(ReorgMode::Balanced);
+
+        assert_eq!(config.reorg_mode, ReorgMode::Balanced);
+        assert_eq!(config.indexing_finality, IndexingFinality::Safe);
+        assert_eq!(config.side_effect_finality, SideEffectFinality::Safe);
+    }
+
+    #[test]
+    fn finality_overrides_keep_preset_visible() {
+        let config: Config<()> = Config::new(repo())
+            .with_reorg_mode(ReorgMode::FinalityFirst)
+            .with_indexing_finality(IndexingFinality::LatestWithConfirmations(6))
+            .with_side_effect_finality(SideEffectFinality::Confirmations(12));
+
+        assert_eq!(config.reorg_mode, ReorgMode::FinalityFirst);
+        assert_eq!(
+            config.indexing_finality,
+            IndexingFinality::LatestWithConfirmations(6)
+        );
+        assert_eq!(
+            config.side_effect_finality,
+            SideEffectFinality::Confirmations(12)
+        );
     }
 }

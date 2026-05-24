@@ -5,7 +5,9 @@ use tokio::sync::Mutex;
 
 use crate::events::Event;
 use crate::outbox::{OutboxReceipt, UnsavedOutboxJob};
-use crate::{ChaindexingRepo, ChaindexingRepoTxnClient, EventParam, ExecutesWithRawQuery};
+use crate::{
+    ChaindexingRepo, ChaindexingRepoTxnClient, EventParam, ExecutesWithRawQuery, SideEffectFinality,
+};
 
 use super::handler_context::HandlerContext;
 
@@ -36,6 +38,7 @@ pub struct SideEffectHandlerContext<'a, SharedState: Sync + Send + Clone> {
     pub event: Event,
     pub(crate) repo_client: &'a ChaindexingRepoTxnClient<'a>,
     shared_state: Option<Arc<Mutex<SharedState>>>,
+    side_effect_finality: SideEffectFinality,
 }
 
 impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedState> {
@@ -43,11 +46,13 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
         event: &Event,
         repo_client: &'a ChaindexingRepoTxnClient<'a>,
         shared_state: &Option<Arc<Mutex<SharedState>>>,
+        side_effect_finality: SideEffectFinality,
     ) -> Self {
         Self {
             event: event.clone(),
             repo_client,
             shared_state: shared_state.clone(),
+            side_effect_finality,
         }
     }
 
@@ -71,6 +76,39 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
         payload: &Payload,
     ) -> OutboxReceipt {
         let job = UnsavedOutboxJob::new(&self.event, handler_id, payload).unwrap();
+        let receipt = job.receipt();
+
+        ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await;
+
+        receipt
+    }
+
+    /// Enqueues a durable outbox job using the indexer's configured side-effect
+    /// finality policy.
+    pub async fn enqueue_outbox_with_configured_finality<Payload: serde::Serialize>(
+        &self,
+        handler_id: &str,
+        payload: &Payload,
+    ) -> OutboxReceipt {
+        self.enqueue_outbox_with_finality(handler_id, payload, self.side_effect_finality)
+            .await
+    }
+
+    /// Enqueues a durable outbox job that should only be dispatched after the
+    /// requested finality condition is satisfied by the dispatcher.
+    pub async fn enqueue_outbox_with_finality<Payload: serde::Serialize>(
+        &self,
+        handler_id: &str,
+        payload: &Payload,
+        required_finality: SideEffectFinality,
+    ) -> OutboxReceipt {
+        let job = UnsavedOutboxJob::new_with_finality(
+            &self.event,
+            handler_id,
+            payload,
+            required_finality,
+        )
+        .unwrap();
         let receipt = job.receipt();
 
         ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await;

@@ -12,9 +12,14 @@ mod tests {
         provider_with_filter_stubber, provider_with_logs, test_runner,
     };
     use chaindexing::{
-        ingester, ChainId, ChaindexingRepo, Config, ExecutesWithRawQuery, HasRawQueryClient,
-        PostgresRepo, Repo,
+        augmenting_std::serde::Deserialize, ingester, ChainId, ChaindexingRepo, Config,
+        ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo, Repo,
     };
+
+    #[derive(Debug, Deserialize)]
+    struct Count {
+        count: i64,
+    }
 
     #[tokio::test]
     pub async fn creates_contract_events() {
@@ -63,6 +68,52 @@ mod tests {
                 .find(|event| event.contract_address == contract_address)
                 .unwrap();
             assert_eq!(event.contract_address, contract_address);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    pub async fn records_block_scans_even_when_no_logs_match() {
+        if test_runner::skip_without_test_database() {
+            return;
+        }
+
+        test_runner::run_test_with_txn(|repo_client, suffix| async move {
+            let repo = test_runner::new_repo();
+            let pool = repo.get_pool(1).await;
+            let conn = ChaindexingRepo::get_conn(&pool).await;
+
+            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-scans-{suffix}"), "90");
+            let config =
+                Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
+
+            let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
+
+            ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
+                .await;
+
+            let conn = Arc::new(Mutex::new(conn));
+            let repo_client = Arc::new(Mutex::new(repo_client));
+            ingester::ingest_for_chain(
+                &ChainId::Mainnet,
+                provider,
+                conn,
+                &repo_client,
+                &config,
+                &mut HashMap::new(),
+            )
+            .await
+            .unwrap();
+
+            let repo_client = repo_client.lock().await;
+            let count: Count = ChaindexingRepo::load_data(
+                &repo_client,
+                "SELECT COUNT(*)::BIGINT AS count FROM chaindexing_block_scans",
+            )
+            .await
+            .unwrap();
+
+            assert!(count.count > 0);
         })
         .await;
     }

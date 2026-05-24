@@ -19,7 +19,7 @@ pub fn get<S: Send + Sync + Clone>(
         ContractAddress::group_contract_addresses_by_address_and_chain_id(contract_addresses);
 
     logs.iter()
-        .map(
+        .filter_map(
             |log @ Log {
                  topics,
                  address,
@@ -28,17 +28,23 @@ pub fn get<S: Send + Sync + Clone>(
              }| {
                 let contract_address =
                     contract_addresses_by_address.get(&(*address, *chain_id)).unwrap();
-                let block = blocks_by_number.get(&block_number.unwrap()).unwrap();
+                let block_number = block_number.as_ref()?;
+                let block = blocks_by_number.get(block_number).filter(|block| {
+                    log.block_hash
+                        .zip(block.hash)
+                        .map(|(log_hash, block_hash)| log_hash == block_hash)
+                        .unwrap_or(false)
+                })?;
                 let contract_event_key =
                     contracts::contract_event_key(&contract_address.contract_name, topics[0]);
 
-                Event::new(
+                Some(Event::new(
                     log,
                     events_by_topics.get(&contract_event_key).unwrap(),
                     chain_id,
                     &contract_address.contract_name,
                     block.timestamp.as_u64() as i64,
-                )
+                ))
             },
         )
         .collect()

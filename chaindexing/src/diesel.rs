@@ -38,6 +38,8 @@ pub mod schema {
           transaction_index -> Int4,
           log_index -> Int4,
           removed -> Bool,
+          status -> VarChar,
+          reorg_id -> Nullable<Int8>,
       }
     }
 
@@ -50,8 +52,51 @@ pub mod schema {
       }
     }
 
+    diesel::table! {
+      chaindexing_blocks (id) {
+          id -> Int8,
+          chain_id -> Int8,
+          block_number -> Int8,
+          block_hash -> VarChar,
+          parent_hash -> VarChar,
+          block_timestamp -> Int8,
+          status -> VarChar,
+      }
+    }
+
+    diesel::table! {
+      chaindexing_block_scans (id) {
+          id -> Int8,
+          chain_id -> Int8,
+          block_hash -> VarChar,
+          contract_address -> VarChar,
+          topic_set_hash -> VarChar,
+          log_count -> Int4,
+          status -> VarChar,
+          reorg_id -> Nullable<Int8>,
+      }
+    }
+
+    diesel::table! {
+      chaindexing_reorgs (id) {
+          id -> Int8,
+          chain_id -> Int8,
+          common_ancestor_number -> Int8,
+          common_ancestor_hash -> VarChar,
+          fork_block_number -> Int8,
+          old_tip_number -> Int8,
+          new_tip_number -> Int8,
+          depth -> Int8,
+          status -> VarChar,
+      }
+    }
+
     diesel::allow_tables_to_appear_in_same_query!(
+        chaindexing_block_scans,
+        chaindexing_blocks,
         chaindexing_contract_addresses,
         chaindexing_events,
+        chaindexing_reorgs,
+        chaindexing_reorged_blocks,
     );
 }

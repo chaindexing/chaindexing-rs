@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use futures_util::FutureExt;
 
+use super::block_logs;
 use super::filters::{self, Filter};
 use super::provider::{self, Provider};
 use super::IngesterError;
@@ -49,15 +50,17 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             min_confirmation_count.as_u64(),
         )
         .await?;
-        let logs = provider::fetch_logs(provider, &filters).await?;
+        let block_logs =
+            block_logs::fetch(provider, &filters, chain_id, &blocks_by_tx_hash).await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);
         let events = events::get(
-            &logs,
+            &block_logs.logs,
             contracts,
             &contract_addresses,
             chain_id,
             &blocks_by_tx_hash,
         );
+        let block_scans = block_logs.scans;
         let contract_addresses = contract_addresses.clone();
         let chain_id = *chain_id;
 
@@ -70,8 +73,17 @@ pub async fn run<'a, S: Send + Sync + Clone>(
                     ChaindexingRepo::create_reorged_block(conn, &reorged_block).await;
                     ChaindexingRepo::delete_events_from_block_number(conn, &chain_id, block_number)
                         .await;
+                    rewind_next_block_numbers_to_ingest_from(
+                        conn,
+                        &contract_addresses,
+                        block_number,
+                    )
+                    .await;
+
+                    return Ok(());
                 }
 
+                ChaindexingRepo::create_block_scans(conn, &block_scans).await;
                 ChaindexingRepo::create_events(conn, &events.clone()).await;
 
                 update_next_block_numbers_to_ingest_from(conn, &contract_addresses, &filters).await;
@@ -133,6 +145,21 @@ async fn remove_already_ingested_filters(
             .filter(|f| !already_ingested_filters.contains_key(&f.contract_address_id))
             .cloned()
             .collect::<Vec<_>>()
+    }
+}
+
+async fn rewind_next_block_numbers_to_ingest_from<'a>(
+    conn: &mut ChaindexingRepoConn<'a>,
+    contract_addresses: &[ContractAddress],
+    block_number: i64,
+) {
+    for contract_address in contract_addresses {
+        ChaindexingRepo::update_next_block_number_to_ingest_from(
+            conn,
+            contract_address,
+            block_number,
+        )
+        .await
     }
 }
 

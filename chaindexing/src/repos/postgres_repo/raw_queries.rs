@@ -278,6 +278,7 @@ impl LoadsDataWithRawQuery for PostgresRepo {
                 chain_id = {chain_id}
                 AND
                 contract_address IN ({addresses})
+                AND status = 'canonical'
             )
             SELECT
                 *
@@ -376,6 +377,7 @@ fn load_events_query(
             WHERE chain_id = {chain_id}
               AND contract_address = {contract_address}
               AND block_number >= {from_block_number}
+              AND status = 'canonical'
             ORDER BY block_number ASC
             LIMIT {block_limit}
         )
@@ -385,6 +387,7 @@ fn load_events_query(
             ON b.block_number = e.block_number
         WHERE e.chain_id = {chain_id}
           AND e.contract_address = {contract_address}
+          AND e.status = 'canonical'
         ORDER BY e.block_number ASC, e.transaction_index ASC, e.log_index ASC",
         contract_address = sql_string_literal(contract_address),
     )

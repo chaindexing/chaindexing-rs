@@ -7,11 +7,12 @@ use std::time::Duration;
 use ethers::prelude::Middleware;
 use ethers::prelude::*;
 use ethers::providers::{Http, Provider as EthersProvider, ProviderError as EthersProviderError};
-use ethers::types::{Filter as EthersFilter, Log};
+use ethers::types::{BlockNumber, Filter as EthersFilter, Log, H256};
 use futures_util::future::try_join_all;
 use tokio::time::sleep;
 
 use super::filters::Filter;
+use crate::chain_reorg::IndexingFinality;
 
 pub type ProviderError = EthersProviderError;
 const MAX_PROVIDER_ATTEMPTS: u32 = 5;
@@ -23,6 +24,25 @@ pub trait Provider: Clone + Sync + Send {
     async fn get_logs(&self, filter: &EthersFilter) -> Result<Vec<Log>, ProviderError>;
 
     async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError>;
+
+    async fn get_block_by_tag(
+        &self,
+        _block_number: BlockNumber,
+    ) -> Result<Option<Block<TxHash>>, ProviderError> {
+        Ok(None)
+    }
+
+    fn supports_block_hash_log_filters(&self) -> bool {
+        true
+    }
+
+    async fn get_logs_by_block_hash(
+        &self,
+        filter: &EthersFilter,
+        block_hash: H256,
+    ) -> Result<Vec<Log>, ProviderError> {
+        self.get_logs(&filter.clone().at_block_hash(block_hash)).await
+    }
 
     async fn get_blocks(
         &self,
@@ -93,6 +113,13 @@ impl Provider for EthersProvider<Http> {
             .await?
             .ok_or_else(|| ProviderError::CustomError(format!("block {block_number} not found")))
     }
+
+    async fn get_block_by_tag(
+        &self,
+        block_number: BlockNumber,
+    ) -> Result<Option<Block<TxHash>>, ProviderError> {
+        Middleware::get_block(&self, block_number).await
+    }
 }
 
 pub fn get(json_rpc_url: &str) -> Result<Arc<impl Provider>, ProviderError> {
@@ -107,6 +134,37 @@ pub async fn fetch_current_block_number(
     retry_provider(|| async { provider.get_block_number().await.map(|block| block.as_u64()) }).await
 }
 
+pub async fn fetch_target_block_number(
+    provider: &Arc<impl Provider>,
+    current_block_number: u64,
+    indexing_finality: IndexingFinality,
+) -> Result<u64, ProviderError> {
+    match indexing_finality {
+        IndexingFinality::LatestWithConfirmations(confirmations) => {
+            Ok(current_block_number.saturating_sub(confirmations))
+        }
+        IndexingFinality::Safe => fetch_tagged_block_number(provider, BlockNumber::Safe)
+            .await
+            .map(|block| block.unwrap_or(current_block_number)),
+        IndexingFinality::Finalized => fetch_tagged_block_number(provider, BlockNumber::Finalized)
+            .await
+            .map(|block| block.unwrap_or(current_block_number)),
+    }
+}
+
+async fn fetch_tagged_block_number(
+    provider: &Arc<impl Provider>,
+    tag: BlockNumber,
+) -> Result<Option<u64>, ProviderError> {
+    retry_provider(|| async {
+        provider
+            .get_block_by_tag(tag)
+            .await
+            .map(|block| block.and_then(|block| block.number).map(|number| number.as_u64()))
+    })
+    .await
+}
+
 pub async fn fetch_logs(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
@@ -117,6 +175,15 @@ pub async fn fetch_logs(
             .map(|logs_per_filter| logs_per_filter.into_iter().flatten().collect())
     })
     .await
+}
+
+pub async fn fetch_logs_by_block_hash(
+    provider: &Arc<impl Provider>,
+    filter: &Filter,
+    block_hash: H256,
+) -> Result<Vec<Log>, ProviderError> {
+    retry_provider(|| async { provider.get_logs_by_block_hash(&filter.value, block_hash).await })
+        .await
 }
 
 pub async fn fetch_blocks_for_filters(
@@ -230,6 +297,69 @@ mod tests {
                 U64::from(11),
                 U64::from(12)
             ]
+        );
+    }
+
+    #[derive(Clone)]
+    struct TaggedProvider;
+
+    #[crate::augmenting_std::async_trait]
+    impl Provider for TaggedProvider {
+        async fn get_block_number(&self) -> Result<U64, ProviderError> {
+            Ok(U64::from(100))
+        }
+
+        async fn get_logs(&self, _filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
+            Ok(vec![])
+        }
+
+        async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+            Ok(Block {
+                number: Some(block_number),
+                ..Default::default()
+            })
+        }
+
+        async fn get_block_by_tag(
+            &self,
+            block_number: BlockNumber,
+        ) -> Result<Option<Block<TxHash>>, ProviderError> {
+            let number = match block_number {
+                BlockNumber::Safe => 90,
+                BlockNumber::Finalized => 80,
+                _ => 100,
+            };
+
+            Ok(Some(Block {
+                number: Some(U64::from(number)),
+                ..Default::default()
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_target_block_number_uses_tagged_finality_when_available() {
+        let provider = Arc::new(TaggedProvider);
+
+        assert_eq!(
+            fetch_target_block_number(&provider, 100, IndexingFinality::Safe).await.unwrap(),
+            90
+        );
+        assert_eq!(
+            fetch_target_block_number(&provider, 100, IndexingFinality::Finalized)
+                .await
+                .unwrap(),
+            80
+        );
+        assert_eq!(
+            fetch_target_block_number(
+                &provider,
+                100,
+                IndexingFinality::LatestWithConfirmations(12),
+            )
+            .await
+            .unwrap(),
+            88
         );
     }
 }

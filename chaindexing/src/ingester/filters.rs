@@ -71,6 +71,10 @@ pub struct Filter {
 }
 
 impl Filter {
+    pub(crate) fn topic_set_key(&self) -> String {
+        format!("{:?}", self.value.topics)
+    }
+
     fn maybe_new(
         contract_address: &ContractAddress,
         topics: &[ContractEventTopic],

@@ -9,4 +9,7 @@ pub use contracts::{
 };
 pub use events::{transfer_event_with_contract, unique_transfer_event_with_contract};
 pub use handlers::{ApprovalForAllTestHandler, TransferTestHandler};
-pub use providers::{empty_provider, filter_matches_contract_address, transfer_log};
+pub use providers::{
+    block_hash_for_number, block_number_for_hash, empty_provider, filter_matches_contract_address,
+    transfer_log,
+};

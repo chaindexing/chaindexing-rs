@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
 use crate::{
-    index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexingHandle,
-    PostgresRepo,
+    index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexingFinality,
+    IndexingHandle, PostgresRepo, ReorgMode, SideEffectFinality,
 };
 
 /// High-level builder for configuring and running a Postgres-backed indexer.
@@ -61,6 +61,27 @@ impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
     pub fn min_confirmations(self, min_confirmation_count: u8) -> Self {
         Self {
             config: self.config.with_min_confirmation_count(min_confirmation_count),
+        }
+    }
+
+    /// Uses a preset reorg/finality posture.
+    pub fn reorg_mode(self, reorg_mode: ReorgMode) -> Self {
+        Self {
+            config: self.config.with_reorg_mode(reorg_mode),
+        }
+    }
+
+    /// Overrides the preset's event ingestion finality policy.
+    pub fn indexing_finality(self, indexing_finality: IndexingFinality) -> Self {
+        Self {
+            config: self.config.with_indexing_finality(indexing_finality),
+        }
+    }
+
+    /// Overrides the preset's durable side-effect dispatch finality policy.
+    pub fn side_effect_finality(self, side_effect_finality: SideEffectFinality) -> Self {
+        Self {
+            config: self.config.with_side_effect_finality(side_effect_finality),
         }
     }
 

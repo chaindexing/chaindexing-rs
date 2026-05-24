@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 
 use crate::deferred_futures::DeferredFutures;
 use crate::streams::ContractAddressesStream;
+use crate::SideEffectFinality;
 use crate::{contracts, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery};
 use crate::{ChaindexingRepo, ChaindexingRepoClientMutex};
 
@@ -22,6 +23,7 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
     (repo_client, repo_client_for_mcs): (&ChaindexingRepoClientMutex, &ChaindexingRepoClientMutex),
     deferred_mutations_for_mcs: &DeferredFutures<'a>,
     shared_state: &Option<Arc<Mutex<S>>>,
+    side_effect_finality: SideEffectFinality,
 ) {
     for chain_id in chain_ids {
         let mut contract_addresses_stream =
@@ -67,8 +69,12 @@ pub async fn run<'a, S: Send + Sync + Clone + Debug>(
                         if event.block_number >= contract_address.next_block_number_for_side_effects
                         {
                             if let Some(handler) = side_effect_handlers.get(&handler_key) {
-                                let handler_context =
-                                    SideEffectHandlerContext::new(event, &txn_client, shared_state);
+                                let handler_context = SideEffectHandlerContext::new(
+                                    event,
+                                    &txn_client,
+                                    shared_state,
+                                    side_effect_finality,
+                                );
 
                                 handler.handle_event(handler_context).await;
                             }

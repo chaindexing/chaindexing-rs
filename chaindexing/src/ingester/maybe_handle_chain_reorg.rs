@@ -10,6 +10,7 @@ use crate::events::{self, Event};
 use crate::Config;
 use crate::{ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, Repo};
 
+use super::block_logs;
 use super::filters::{self, Filter};
 use super::Provider;
 use super::{provider, IngesterError};
@@ -44,11 +45,11 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             min_confirmation_count.as_u64(),
         )
         .await?;
-        let logs = provider::fetch_logs(provider, &filters).await?;
+        let block_logs = block_logs::fetch(provider, &filters, chain_id, &blocks_by_number).await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_number);
 
         let provider_events = events::get(
-            &logs,
+            &block_logs.logs,
             contracts,
             &contract_addresses,
             chain_id,
@@ -59,7 +60,14 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             get_provider_added_and_removed_events(&already_ingested_events, &provider_events);
 
         if !chain_blocks.is_empty() || added_and_removed_events.is_some() {
-            handle_chain_reorg(conn, chain_id, chain_blocks, added_and_removed_events).await?;
+            handle_chain_reorg(
+                conn,
+                chain_id,
+                chain_blocks,
+                block_logs.scans,
+                added_and_removed_events,
+            )
+            .await?;
         }
     }
 
@@ -94,6 +102,7 @@ async fn handle_chain_reorg<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     chain_id: &ChainId,
     chain_blocks: Vec<ChainBlock>,
+    block_scans: Vec<chain_blocks::BlockScan>,
     added_and_removed_events: Option<(Vec<Event>, Vec<Event>)>,
 ) -> Result<(), IngesterError> {
     let chain_id = *chain_id;
@@ -132,6 +141,7 @@ async fn handle_chain_reorg<'a>(
                 ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
             }
 
+            ChaindexingRepo::create_block_scans(conn, &block_scans).await;
             ChaindexingRepo::create_events(conn, &added_events).await;
 
             Ok(())

@@ -28,6 +28,7 @@ mod root;
 /// Augmenting modules for standard library to support Chaindexing's operations
 pub mod augmenting_std;
 
+pub use chain_reorg::{IndexingFinality, ReorgMode, SideEffectFinality};
 pub use chains::{Chain, ChainId};
 pub use config::{Config, OptimizationConfig};
 pub use contracts::{Contract, ContractAddress, EventAbi};
@@ -39,7 +40,8 @@ pub use handlers::{
 pub use indexer::Indexer;
 pub use nodes::NodeHeartbeat as Heartbeat;
 pub use outbox::{
-    dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxJob, OutboxReceipt,
+    dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxFinalityWatermark,
+    OutboxJob, OutboxReceipt,
 };
 
 pub use chaindexing_macros::state_migrations;

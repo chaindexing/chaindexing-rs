@@ -3,14 +3,13 @@ mod raw_queries;
 
 use crate::chain_reorg::UnsavedReorgedBlock;
 
-use crate::chain_blocks::{self, CanonicalBlock, ChainBlock};
+use crate::chain_blocks::{self, BlockScan, CanonicalBlock, ChainBlock};
 use crate::checkpoints::{self, CheckpointKind};
 use crate::{contracts::ContractAddress, events::Event, nodes::Node, ChainId};
 use diesel::{sql_query, QueryableByName};
 use diesel_async::RunQueryDsl;
 
 use diesel::{
-    delete,
     result::{DatabaseErrorKind, Error as DieselError},
     ExpressionMethods, QueryDsl,
 };
@@ -66,9 +65,11 @@ impl PostgresRepo {
     ) {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
-        delete(chaindexing_events)
+        diesel::update(chaindexing_events)
             .filter(chain_id.eq(*event_chain_id as i64))
             .filter(block_number.ge(reorged_block_number))
+            .filter(status.eq("canonical"))
+            .set((status.eq("reorged"), reorg_id.eq::<Option<i64>>(None)))
             .execute(conn)
             .await
             .unwrap();
@@ -86,7 +87,25 @@ impl PostgresRepo {
         let fork_point = chain_blocks::find_fork_point(blocks, &canonical_blocks);
 
         if let Some(fork_point) = fork_point {
+            sql_query(chain_blocks::create_reorg_query(
+                *event_chain_id,
+                fork_point,
+                blocks,
+                &canonical_blocks,
+            ))
+            .execute(conn)
+            .await
+            .unwrap();
+
             sql_query(chain_blocks::mark_reorged_from_query(
+                *event_chain_id,
+                fork_point,
+            ))
+            .execute(conn)
+            .await
+            .unwrap();
+
+            sql_query(chain_blocks::mark_scans_reorged_from_query(
                 *event_chain_id,
                 fork_point,
             ))
@@ -100,6 +119,12 @@ impl PostgresRepo {
         }
 
         fork_point
+    }
+
+    pub(crate) async fn create_block_scans<'a>(conn: &mut Conn<'a>, scans: &[BlockScan]) {
+        if let Some(query) = chain_blocks::upsert_block_scans_query(scans) {
+            sql_query(query).execute(conn).await.unwrap();
+        }
     }
 
     pub(crate) async fn try_advisory_lock<'a>(conn: &mut Conn<'a>, lock_id: i64) -> bool {
@@ -160,7 +185,8 @@ impl Repo for PostgresRepo {
                 transaction_hash,
                 log_index,
             ))
-            .do_nothing()
+            .do_update()
+            .set((status.eq("canonical"), reorg_id.eq::<Option<i64>>(None)))
             .execute(conn)
             .await
             .unwrap();
@@ -183,6 +209,7 @@ impl Repo for PostgresRepo {
             .filter(chain_id.eq(event_chain_id as i64))
             .filter(contract_address.eq(address.to_lowercase()))
             .filter(block_number.between(from as i64, to as i64))
+            .filter(status.eq("canonical"))
             .load(conn)
             .await
             .unwrap()
@@ -190,7 +217,13 @@ impl Repo for PostgresRepo {
     async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &[Uuid]) {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
-        delete(chaindexing_events).filter(id.eq_any(ids)).execute(conn).await.unwrap();
+        diesel::update(chaindexing_events)
+            .filter(id.eq_any(ids))
+            .filter(status.eq("canonical"))
+            .set((status.eq("reorged"), reorg_id.eq::<Option<i64>>(None)))
+            .execute(conn)
+            .await
+            .unwrap();
     }
 
     async fn update_next_block_number_to_ingest_from<'a>(

@@ -1,6 +1,6 @@
 use chaindexing::IngesterProvider;
 use ethers::providers::ProviderError;
-use ethers::types::{Block, Filter, Log, TxHash, U64};
+use ethers::types::{Block, Filter, Log, TxHash, H256, U64};
 
 use rand::prelude::*;
 
@@ -20,6 +20,11 @@ pub fn empty_provider() -> impl IngesterProvider {
         async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
             Ok(Block {
                 number: Some(block_number),
+                hash: Some(block_hash_for_number(block_number)),
+                parent_hash: block_hash_for_number(U64::from(
+                    block_number.as_u64().saturating_sub(1),
+                )),
+                timestamp: block_number.as_u64().into(),
                 ..Default::default()
             })
         }
@@ -28,7 +33,7 @@ pub fn empty_provider() -> impl IngesterProvider {
     Provider
 }
 
-use ethers::types::{Address, Bytes, ValueOrArray, H160, H256};
+use ethers::types::{Address, Bytes, ValueOrArray, H160};
 use std::str::FromStr;
 
 pub fn filter_matches_contract_address(filter: &Filter, contract_address: &str) -> bool {
@@ -71,6 +76,16 @@ fn h256(str: &str) -> H256 {
     H256::from_str(str).unwrap()
 }
 
+pub fn block_hash_for_number(block_number: U64) -> H256 {
+    H256::from_low_u64_be(block_number.as_u64())
+}
+
+pub fn block_number_for_hash(block_hash: H256) -> U64 {
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&block_hash.as_bytes()[24..32]);
+    U64::from(u64::from_be_bytes(bytes))
+}
+
 #[macro_export]
 macro_rules! provider_with_logs {
     ($contract_address:expr) => {{
@@ -82,7 +97,10 @@ macro_rules! provider_with_logs {
         use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
-        use $crate::factory::{filter_matches_contract_address, transfer_log};
+        use $crate::factory::{
+            block_hash_for_number, block_number_for_hash, filter_matches_contract_address,
+            transfer_log,
+        };
 
         #[derive(Clone)]
         struct Provider {
@@ -100,7 +118,14 @@ macro_rules! provider_with_logs {
                 }
 
                 let mut log = transfer_log(&self.contract_address);
-                log.block_number = Some(filter.get_from_block().unwrap_or_else(|| U64::from(0)));
+                if let Some(block_hash) = filter.get_block_hash() {
+                    log.block_hash = Some(block_hash);
+                    log.block_number = Some(block_number_for_hash(block_hash));
+                } else {
+                    let block_number = filter.get_from_block().unwrap_or_else(|| U64::from(0));
+                    log.block_hash = Some(block_hash_for_number(block_number));
+                    log.block_number = Some(block_number);
+                }
 
                 Ok(vec![log])
             }
@@ -108,6 +133,11 @@ macro_rules! provider_with_logs {
             async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
                 Ok(Block {
                     number: Some(block_number),
+                    hash: Some(block_hash_for_number(block_number)),
+                    parent_hash: block_hash_for_number(U64::from(
+                        block_number.as_u64().saturating_sub(1),
+                    )),
+                    timestamp: block_number.as_u64().into(),
                     ..Default::default()
                 })
             }
@@ -128,7 +158,7 @@ macro_rules! provider_with_filter_stubber {
         use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
-        use $crate::factory::filter_matches_contract_address;
+        use $crate::factory::{block_hash_for_number, filter_matches_contract_address};
 
         #[derive(Clone)]
         struct Provider<FilterStubber> {
@@ -152,9 +182,18 @@ macro_rules! provider_with_filter_stubber {
                 Ok(vec![])
             }
 
+            fn supports_block_hash_log_filters(&self) -> bool {
+                false
+            }
+
             async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
                 Ok(Block {
                     number: Some(block_number),
+                    hash: Some(block_hash_for_number(block_number)),
+                    parent_hash: block_hash_for_number(U64::from(
+                        block_number.as_u64().saturating_sub(1),
+                    )),
+                    timestamp: block_number.as_u64().into(),
                     ..Default::default()
                 })
             }
@@ -173,6 +212,7 @@ macro_rules! provider_with_empty_logs {
         use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
+        use $crate::factory::block_hash_for_number;
 
         #[derive(Clone)]
         struct Provider;
@@ -189,6 +229,11 @@ macro_rules! provider_with_empty_logs {
             async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
                 Ok(Block {
                     number: Some(block_number),
+                    hash: Some(block_hash_for_number(block_number)),
+                    parent_hash: block_hash_for_number(U64::from(
+                        block_number.as_u64().saturating_sub(1),
+                    )),
+                    timestamp: block_number.as_u64().into(),
                     ..Default::default()
                 })
             }

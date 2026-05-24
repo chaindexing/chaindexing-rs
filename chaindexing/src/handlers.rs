@@ -69,6 +69,7 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                             (&repo_client, &repo_client_for_mcs),
                                             &deferred_mutations_for_mcs,
                                             &config.shared_state,
+                                            config.side_effect_finality,
                                         )
                                         .await;
 
