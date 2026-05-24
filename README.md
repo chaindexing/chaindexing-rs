@@ -6,7 +6,7 @@
 
 Index any EVM chain and query in SQL
 
-[Getting Started](#getting-started) | [Examples](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) | [Design Goals & Features](#design-goals--features) | [RoadMap](#roadmap) | [Contributing](#contributing)
+[Getting Started](#getting-started) | [Reorg Handling](docs/reorg-handling.md) | [Finality Policies](docs/finality-policies.md) | [Examples](https://github.com/chaindexing/chaindexing-examples/tree/main/rust) | [Design Goals & Features](#design-goals--features) | [RoadMap](#roadmap) | [Contributing](#contributing)
 
 ## Getting Started
 
@@ -54,7 +54,7 @@ A quick and effective way to get started is by exploring the comprehensive examp
 Minimal runtime setup now looks like this:
 
 ```rust
-use chaindexing::{Chain, ChainId, Contract, Indexer};
+use chaindexing::{Chain, ChainId, Contract, Indexer, ReorgMode};
 
 # async fn start() -> Result<(), chaindexing::ChaindexingError> {
 let erc721 = Contract::new("ERC721")
@@ -68,6 +68,7 @@ let erc721 = Contract::new("ERC721")
 Indexer::new(&std::env::var("DATABASE_URL").unwrap())
     .chain(Chain::mainnet(&std::env::var("MAINNET_JSON_RPC_URL").unwrap()))
     .contract(erc721)
+    .reorg_mode(ReorgMode::Balanced)
     .run()
     .await?;
 # Ok(())
@@ -83,18 +84,45 @@ returned `IndexingHandle`.
 Chaindexing's Postgres backend is being hardened around these guarantees:
 
 - Event ingestion is idempotent for the canonical event identity: `chain_id`, `contract_address`, `block_hash`, `transaction_hash`, and `log_index`.
+- Canonical block tracking uses `block_hash` and `parent_hash`; replaced blocks, scans, and events are marked `reorged`.
+- Event logs are fetched by `blockHash` when the provider supports it, with durable empty-scan records in `chaindexing_block_scans`.
 - Handler state is deterministic and replayable from persisted events.
-- Reorg repair is bounded by the configured confirmation depth and now records canonical block hashes for detected event-bearing blocks.
+- Reorg repair is bounded by the configured finality/confirmation policy and records repairs in `chaindexing_reorgs`.
 - Ingestion and handler checkpoints are stored durably in Postgres and written transactionally with cursor updates.
 - Multi-node leader election uses a Postgres advisory lock by default.
 - Empty event batches are safe to retry.
-- Direct side-effect handlers are supported for compatibility; durable external side effects should be written to `chaindexing_outbox` with `SideEffectContext::enqueue_outbox`.
+- Direct side-effect handlers are supported for compatibility; durable external side effects should be written to `chaindexing_outbox` with `SideEffectContext::enqueue_outbox` or `enqueue_outbox_with_finality`.
 
 Non-goals:
 
 - Chaindexing does not promise reorg safety beyond the configured confirmation window.
 - Chaindexing does not promise exactly-once network calls from direct side-effect handlers.
 - Postgres is the supported production backend while the core guarantees are being completed.
+
+## Reorg and finality presets
+
+Use presets to express product behavior without configuring the reorg algorithm:
+
+```rust
+use chaindexing::{IndexingFinality, ReorgMode, SideEffectFinality};
+
+Indexer::new(&database_url)
+    .reorg_mode(ReorgMode::Realtime); // low-latency UI/feed use cases
+
+Indexer::new(&database_url)
+    .reorg_mode(ReorgMode::Balanced); // analytics/reporting default for production
+
+Indexer::new(&database_url)
+    .reorg_mode(ReorgMode::FinalityFirst); // payments, claims, settlement
+
+Indexer::new(&database_url)
+    .reorg_mode(ReorgMode::Balanced)
+    .indexing_finality(IndexingFinality::LatestWithConfirmations(12))
+    .side_effect_finality(SideEffectFinality::Finalized);
+```
+
+See [Reorg Handling](docs/reorg-handling.md), [Finality Policies](docs/finality-policies.md),
+and [Side Effects and Reorgs](docs/side-effects-and-reorgs.md) for the operational model.
 
 Example side-effect outbox usage:
 
@@ -113,6 +141,14 @@ impl SideEffectHandler for TransferSideEffectHandler {
         context
             .enqueue_outbox("nft-transfer-notification", &format!("token {token_id} moved"))
             .await;
+
+        // For workflows that should honor the indexer's side-effect finality policy:
+        context
+            .enqueue_outbox_with_configured_finality(
+                "nft-transfer-webhook",
+                &format!("token {token_id} moved"),
+            )
+            .await;
     }
 }
 ```
@@ -120,7 +156,10 @@ impl SideEffectHandler for TransferSideEffectHandler {
 Dispatch pending outbox jobs from a worker process:
 
 ```rust
-use chaindexing::{dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxJob};
+use chaindexing::{
+    dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher,
+    OutboxFinalityWatermark, OutboxJob,
+};
 
 struct Dispatcher;
 
@@ -136,7 +175,12 @@ impl OutboxDispatcher for Dispatcher {
 let dispatched = dispatch_pending_outbox_jobs(
     &std::env::var("DATABASE_URL").unwrap(),
     &Dispatcher,
-    OutboxDispatchConfig::default(),
+    OutboxDispatchConfig::default().with_finality_watermark(OutboxFinalityWatermark {
+        chain_id: 1,
+        latest_block_number: Some(latest),
+        safe_block_number: Some(safe),
+        finalized_block_number: Some(finalized),
+    }),
 )
 .await;
 # }
