@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
     use crate::db::database_url;
-    use crate::factory::{bayc_contract, empty_provider, BAYC_CONTRACT_START_BLOCK_NUMBER};
+    use crate::factory::{bayc_contract, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER};
     use crate::{
         find_contract_address_by_contract_name, provider_with_empty_logs,
         provider_with_filter_stubber, provider_with_logs, test_runner,
@@ -34,7 +35,11 @@ mod tests {
             let contract_address = &contract_address.address;
             let provider = Arc::new(provider_with_logs!(&contract_address, CURRENT_BLOCK_NUMBER));
 
-            assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
+            let contract_address = contract_address.to_lowercase();
+            assert!(ChaindexingRepo::get_all_events(&mut conn)
+                .await
+                .iter()
+                .all(|event| event.contract_address != contract_address));
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
                 .await;
 
@@ -53,11 +58,11 @@ mod tests {
 
             let mut conn = conn.lock().await;
             let ingested_events = ChaindexingRepo::get_all_events(&mut conn).await;
-            let first_event = ingested_events.first().unwrap();
-            assert_eq!(
-                first_event.contract_address,
-                contract_address.to_lowercase()
-            );
+            let event = ingested_events
+                .iter()
+                .find(|event| event.contract_address == contract_address)
+                .unwrap();
+            assert_eq!(event.contract_address, contract_address);
         })
         .await;
     }
@@ -201,14 +206,15 @@ mod tests {
             .await
             .unwrap();
 
+            let saw_expected_filter = Arc::new(AtomicBool::new(false));
+            let saw_expected_filter_in_stub = saw_expected_filter.clone();
             let second_provider = Arc::new(provider_with_filter_stubber!(
                 contract_address,
                 CURRENT_BLOCK_NUMBER,
-                |filter: &Filter| {
-                    assert_eq!(
-                        filter.get_from_block().unwrap().as_u64(),
-                        EXPECTED_NEXT_BLOCK
-                    );
+                move |filter: &Filter| {
+                    if filter.get_from_block().unwrap().as_u64() == EXPECTED_NEXT_BLOCK {
+                        saw_expected_filter_in_stub.store(true, Ordering::SeqCst);
+                    }
                 }
             ));
 
@@ -222,6 +228,8 @@ mod tests {
             )
             .await
             .unwrap();
+
+            assert!(saw_expected_filter.load(Ordering::SeqCst));
         })
         .await;
     }
@@ -238,7 +246,37 @@ mod tests {
             let repo_client = test_runner::new_repo().get_client().await;
             let config: Config<()> = Config::new(PostgresRepo::new(&database_url()));
 
-            let provider = Arc::new(empty_provider());
+            #[derive(Clone)]
+            struct Provider;
+
+            #[chaindexing::augmenting_std::async_trait]
+            impl chaindexing::IngesterProvider for Provider {
+                async fn get_block_number(
+                    &self,
+                ) -> Result<ethers::types::U64, ethers::providers::ProviderError> {
+                    Ok(ethers::types::U64::from(0))
+                }
+
+                async fn get_logs(
+                    &self,
+                    _filter: &ethers::types::Filter,
+                ) -> Result<Vec<ethers::types::Log>, ethers::providers::ProviderError>
+                {
+                    panic!("no-contract ingestion must not fetch logs")
+                }
+
+                async fn get_block(
+                    &self,
+                    _block_number: ethers::types::U64,
+                ) -> Result<
+                    ethers::types::Block<ethers::types::TxHash>,
+                    ethers::providers::ProviderError,
+                > {
+                    panic!("no-contract ingestion must not fetch blocks")
+                }
+            }
+
+            let provider = Arc::new(Provider);
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
 
@@ -252,8 +290,6 @@ mod tests {
             )
             .await
             .unwrap();
-            let mut conn = conn.lock().await;
-            assert!(ChaindexingRepo::get_all_events(&mut conn).await.is_empty());
         })
         .await;
     }

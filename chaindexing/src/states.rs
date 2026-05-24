@@ -63,7 +63,7 @@ use state_versions::{StateVersion, StateVersions, STATE_VERSIONS_TABLE_PREFIX};
 use state_views::StateViews;
 
 pub(crate) async fn backtrack_states<'a>(
-    table_names: &Vec<String>,
+    table_names: &[String],
     chain_id: i64,
     block_number: i64,
     client: &ChaindexingRepoTxnClient<'a>,
@@ -80,7 +80,7 @@ pub(crate) async fn backtrack_states<'a>(
 }
 
 pub(crate) async fn prune_state_versions(
-    table_names: &Vec<String>,
+    table_names: &[String],
     client: &ChaindexingRepoClient,
     min_block_number: u64,
     chain_id: u64,

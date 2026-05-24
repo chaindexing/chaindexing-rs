@@ -28,8 +28,17 @@ pub fn empty_provider() -> impl IngesterProvider {
     Provider
 }
 
-use ethers::types::{Bytes, H160, H256};
+use ethers::types::{Address, Bytes, ValueOrArray, H160, H256};
 use std::str::FromStr;
+
+pub fn filter_matches_contract_address(filter: &Filter, contract_address: &str) -> bool {
+    let contract_address = Address::from_str(contract_address).unwrap();
+
+    matches!(
+        filter.address.as_ref(),
+        Some(ValueOrArray::Value(address)) if *address == contract_address
+    )
+}
 
 pub fn transfer_log(contract_address: &str) -> Log {
     let log_index = *(1..800).collect::<Vec<_>>().choose(&mut rand::rng()).unwrap();
@@ -73,7 +82,7 @@ macro_rules! provider_with_logs {
         use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
-        use $crate::factory::transfer_log;
+        use $crate::factory::{filter_matches_contract_address, transfer_log};
 
         #[derive(Clone)]
         struct Provider {
@@ -85,8 +94,15 @@ macro_rules! provider_with_logs {
                 Ok(U64::from($current_block_number))
             }
 
-            async fn get_logs(&self, _filter: &Filter) -> Result<Vec<Log>, ProviderError> {
-                Ok(vec![transfer_log(&self.contract_address)])
+            async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError> {
+                if !filter_matches_contract_address(filter, &self.contract_address) {
+                    return Ok(vec![]);
+                }
+
+                let mut log = transfer_log(&self.contract_address);
+                log.block_number = Some(filter.get_from_block().unwrap_or_else(|| U64::from(0)));
+
+                Ok(vec![log])
             }
 
             async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
@@ -112,19 +128,26 @@ macro_rules! provider_with_filter_stubber {
         use chaindexing::IngesterProvider;
         use ethers::providers::ProviderError;
         use ethers::types::{Block, Filter, Log, TxHash, U64};
+        use $crate::factory::filter_matches_contract_address;
 
         #[derive(Clone)]
-        struct Provider;
+        struct Provider<FilterStubber> {
+            contract_address: String,
+            filter_stubber: FilterStubber,
+        }
         #[chaindexing::augmenting_std::async_trait]
-        impl IngesterProvider for Provider {
+        impl<FilterStubber> IngesterProvider for Provider<FilterStubber>
+        where
+            FilterStubber: Fn(&Filter) + Clone + Send + Sync,
+        {
             async fn get_block_number(&self) -> Result<U64, ProviderError> {
                 Ok(U64::from($current_block_number))
             }
 
             async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ProviderError> {
-                let filter_stubber = $filter_stubber;
-
-                filter_stubber(filter);
+                if filter_matches_contract_address(filter, &self.contract_address) {
+                    (self.filter_stubber)(filter);
+                }
 
                 Ok(vec![])
             }
@@ -137,7 +160,10 @@ macro_rules! provider_with_filter_stubber {
             }
         }
 
-        Provider
+        Provider {
+            contract_address: $contract_address.to_string(),
+            filter_stubber: $filter_stubber,
+        }
     }};
 }
 

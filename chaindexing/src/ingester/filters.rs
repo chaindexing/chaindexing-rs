@@ -56,7 +56,7 @@ pub fn group_by_contract_address_id(filters: &[Filter]) -> HashMap<i64, Vec<Filt
     )
 }
 
-pub fn get_latest(filters: &Vec<Filter>) -> Option<Filter> {
+pub fn get_latest(filters: &[Filter]) -> Option<Filter> {
     let mut filters = filters.to_owned();
     filters.sort_by_key(|f| f.value.get_to_block());
 

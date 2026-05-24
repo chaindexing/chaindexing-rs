@@ -87,8 +87,8 @@ mod postgres_integration {
             ),
         );
 
-        ChaindexingRepo::create_events(&mut conn, &[event.clone()]).await;
-        ChaindexingRepo::create_events(&mut conn, &[event.clone()]).await;
+        ChaindexingRepo::create_events(&mut conn, std::slice::from_ref(&event)).await;
+        ChaindexingRepo::create_events(&mut conn, std::slice::from_ref(&event)).await;
 
         let repo_client = repo.get_client().await;
         let count: Count = ChaindexingRepo::load_data(
@@ -118,7 +118,7 @@ mod postgres_integration {
         };
         let suffix = test_runner::generate_unique_test_suffix();
         let contract_name = format!("integration-checkpoint-{suffix}");
-        let address = format!("0xcheckpoint{suffix}").to_lowercase();
+        let address = factory::contract_address_for_seed(&format!("checkpoint-{suffix}"));
         let chain_id = ChainId::Mainnet;
         let checkpoint_block_number = 44;
         let stale_cursor_block_number = 11;

@@ -15,4 +15,4 @@ proc-macro = true
 [dependencies]
 quote = "1"
 syn = { version = "2", features = ["full"] }
-sqlparser = "0.58"
+sqlparser = "0.62"

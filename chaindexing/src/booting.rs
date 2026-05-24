@@ -66,7 +66,7 @@ pub async fn setup_root(client: &ChaindexingRepoClient) {
 async fn maybe_reset<S: Send + Sync + Clone>(
     reset_count: u64,
     reset_including_side_effects_count: u64,
-    reset_queries: &Vec<String>,
+    reset_queries: &[String],
     contracts: &[Contract<S>],
     client: &ChaindexingRepoClient,
 ) {
@@ -101,7 +101,7 @@ async fn maybe_reset<S: Send + Sync + Clone>(
 }
 
 async fn reset<S: Send + Sync + Clone>(
-    reset_queries: &Vec<String>,
+    reset_queries: &[String],
     contracts: &[Contract<S>],
     client: &ChaindexingRepoClient,
 ) {
@@ -133,7 +133,7 @@ async fn reset_user_migrations<S: Send + Sync + Clone>(
         ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
     }
 }
-async fn run_user_reset_queries(client: &ChaindexingRepoClient, reset_queries: &Vec<String>) {
+async fn run_user_reset_queries(client: &ChaindexingRepoClient, reset_queries: &[String]) {
     for reset_query in reset_queries {
         ChaindexingRepo::execute(client, reset_query).await;
     }

@@ -87,7 +87,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 }
 
 async fn remove_already_ingested_filters(
-    filters: &Vec<Filter>,
+    filters: &[Filter],
     contract_addresses: &[ContractAddress],
     chain_id: &ChainId,
     repo_client: &ChaindexingRepoClient,

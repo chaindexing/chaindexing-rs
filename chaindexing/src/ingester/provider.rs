@@ -53,7 +53,7 @@ pub trait Provider: Clone + Sync + Send {
 
     async fn get_blocks_by_number(
         &self,
-        logs: &Vec<Log>,
+        logs: &[Log],
     ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
         let block_numbers: Vec<_> = logs
             .iter()

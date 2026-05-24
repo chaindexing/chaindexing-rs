@@ -23,10 +23,7 @@ use super::repo::{Repo, RepoError};
 pub type Conn<'a> = bb8::PooledConnection<'a, AsyncDieselConnectionManager<AsyncPgConnection>>;
 pub type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
 
-pub use diesel_async::{
-    scoped_futures::ScopedFutureExt as PostgresRepoTransactionExt,
-    AsyncConnection as PostgresRepoAsyncConnection,
-};
+pub use diesel_async::AsyncConnection as PostgresRepoAsyncConnection;
 
 pub use raw_queries::{PostgresRepoClient, PostgresRepoTxnClient};
 
@@ -141,8 +138,8 @@ impl Repo for PostgresRepo {
             + Sync
             + 'a,
     {
-        conn.transaction::<(), RepoError, _>(|transaction_conn| {
-            async move { (repo_ops)(transaction_conn).await }.scope_boxed()
+        conn.transaction::<(), RepoError, _>(async |transaction_conn| {
+            (repo_ops)(transaction_conn).await
         })
         .await
     }

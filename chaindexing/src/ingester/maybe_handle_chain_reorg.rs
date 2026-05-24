@@ -69,7 +69,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 async fn get_already_ingested_events<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     chain_id: &ChainId,
-    filters: &Vec<Filter>,
+    filters: &[Filter],
 ) -> Vec<Event> {
     let mut already_ingested_events = vec![];
     for filter in filters {
@@ -104,7 +104,7 @@ async fn handle_chain_reorg<'a>(
                 ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await;
             let event_reorg_number =
                 added_and_removed_events.as_ref().map(|(added_events, removed_events)| {
-                    get_earliest_block_number((added_events, removed_events))
+                    get_earliest_block_number(added_events, removed_events)
                 });
 
             let earliest_block_number = match (block_reorg_number, event_reorg_number) {
@@ -169,7 +169,7 @@ fn get_provider_added_and_removed_events(
     }
 }
 
-fn get_earliest_block_number((added_events, removed_events): (&Vec<Event>, &Vec<Event>)) -> i64 {
+fn get_earliest_block_number(added_events: &[Event], removed_events: &[Event]) -> i64 {
     let earliest_added_event = added_events.iter().min_by_key(|e| e.block_number);
     let earliest_removed_event = removed_events.iter().min_by_key(|e| e.block_number);
 

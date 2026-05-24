@@ -2,7 +2,7 @@ use crate::chain_reorg::{ReorgedBlock, ReorgedBlocks};
 use crate::{states, ChaindexingRepo, LoadsDataWithRawQuery};
 use crate::{ChaindexingRepoClient, ExecutesWithRawQuery, HasRawQueryClient};
 
-pub async fn run(repo_client: &mut ChaindexingRepoClient, table_names: &Vec<String>) {
+pub async fn run(repo_client: &mut ChaindexingRepoClient, table_names: &[String]) {
     let reorged_blocks = ChaindexingRepo::load_unhandled_reorged_blocks(repo_client).await;
 
     if !reorged_blocks.is_empty() {
