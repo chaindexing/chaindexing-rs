@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::{
     index_states, start_indexing, Chain, ChaindexingError, Config, Contract, IndexingFinality,
-    IndexingHandle, PostgresRepo, ReorgMode, SideEffectFinality,
+    IndexingHandle, PostgresRepo, ReorgMode, RuntimeConfig, SideEffectFinality,
 };
 
 /// High-level builder for configuring and running a Postgres-backed indexer.
@@ -103,6 +103,28 @@ impl<SharedState: Sync + Send + Clone> Indexer<SharedState> {
     pub fn chain_concurrency(self, chain_concurrency: u32) -> Self {
         Self {
             config: self.config.with_chain_concurrency(chain_concurrency),
+        }
+    }
+
+    /// Configures how many ingestion workers can run concurrently.
+    pub fn ingester_concurrency(self, ingester_concurrency: u32) -> Self {
+        Self {
+            config: self.config.with_ingester_concurrency(ingester_concurrency),
+        }
+    }
+
+    /// Configures how many handler workers can run concurrently.
+    pub fn handler_concurrency(self, handler_concurrency: u32) -> Self {
+        Self {
+            config: self.config.with_handler_concurrency(handler_concurrency),
+        }
+    }
+
+    /// Configures Chaindexing with a behavior-oriented runtime profile plus
+    /// explicit resource and RPC limits.
+    pub fn runtime(self, runtime_config: RuntimeConfig) -> Self {
+        Self {
+            config: self.config.with_runtime_config(runtime_config),
         }
     }
 

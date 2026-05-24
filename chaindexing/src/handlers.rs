@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp::min;
 use std::fmt::Debug;
 use std::{sync::Arc, time::Duration};
 
@@ -116,8 +116,59 @@ fn get_chunked_chain_ids<S: Send + Sync + Clone + Debug + 'static>(
     config: &Config<S>,
 ) -> Vec<Vec<u64>> {
     let chain_ids: Vec<_> = config.chains.iter().map(|c| c.id as u64).collect();
-    let chain_ids_count = chain_ids.len();
-    let chunk_size = max(chain_ids_count / config.chain_concurrency as usize, 1);
+    let worker_count = worker_count(chain_ids.len(), config.effective_handler_concurrency());
 
-    chain_ids.chunks(chunk_size).map(|c| c.to_vec()).collect()
+    chunk_evenly(&chain_ids, worker_count)
+}
+
+fn worker_count(item_count: usize, requested_workers: u32) -> usize {
+    if item_count == 0 {
+        0
+    } else {
+        min(item_count, requested_workers.max(1) as usize)
+    }
+}
+
+fn chunk_evenly<T: Clone>(items: &[T], worker_count: usize) -> Vec<Vec<T>> {
+    if worker_count == 0 {
+        return vec![];
+    }
+
+    let chunk_size = items.len().div_ceil(worker_count);
+    items.chunks(chunk_size).map(|c| c.to_vec()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Chain, ChainId, PostgresRepo};
+
+    fn config_with_chains(chain_count: usize) -> Config<()> {
+        let mut config = Config::new(PostgresRepo::new("postgres://localhost/chaindexing"));
+        for index in 0..chain_count {
+            config = config.add_chain(Chain::new(
+                ChainId::Mainnet,
+                &format!("http://localhost:{index}"),
+            ));
+        }
+        config
+    }
+
+    #[test]
+    fn chunks_handler_chains_by_worker_cap() {
+        let config = config_with_chains(7).with_handler_concurrency(3);
+        let chunks = get_chunked_chain_ids(&config);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 7);
+    }
+
+    #[test]
+    fn caps_handler_workers_at_chain_count() {
+        let config = config_with_chains(2).with_handler_concurrency(9);
+        let chunks = get_chunked_chain_ids(&config);
+
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks.iter().all(|chunk| chunk.len() == 1));
+    }
 }

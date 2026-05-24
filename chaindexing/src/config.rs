@@ -8,6 +8,7 @@ use crate::chain_reorg::{IndexingFinality, MinConfirmationCount, ReorgMode, Side
 use crate::chains::Chain;
 use crate::nodes::{self, NodeHeartbeat};
 use crate::pruning::PruningConfig;
+use crate::runtime_config::{RuntimeConfig, RuntimeConfigError};
 use crate::{ChaindexingRepo, Contract};
 
 const DEFAULT_LEADER_LOCK_ID: i64 = 8_841_337_001;
@@ -26,6 +27,7 @@ pub enum ConfigError {
         abi: String,
         error: String,
     },
+    RuntimeConfig(RuntimeConfigError),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -55,6 +57,9 @@ impl std::fmt::Display for ConfigError {
                     f,
                     "Invalid event ABI `{abi}` on contract `{contract_name}`: {error}"
                 )
+            }
+            ConfigError::RuntimeConfig(error) => {
+                write!(f, "Invalid runtime config: {error}")
             }
         }
     }
@@ -100,6 +105,9 @@ pub struct Config<SharedState: Sync + Send + Clone> {
     pub handler_rate_ms: u64,
     pub ingestion_rate_ms: u64,
     pub chain_concurrency: u32,
+    pub ingester_concurrency: u32,
+    pub handler_concurrency: u32,
+    pub runtime_config: RuntimeConfig,
     node_election_rate_ms: Option<u64>,
     pub reset_count: u64,
     pub(crate) reset_including_side_effects_count: u64,
@@ -116,15 +124,19 @@ pub struct Config<SharedState: Sync + Send + Clone> {
 
 impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     pub fn new(repo: ChaindexingRepo) -> Self {
+        let runtime_config = RuntimeConfig::legacy_compatible();
         Self {
             repo,
             chains: vec![],
             contracts: vec![],
             min_confirmation_count: MinConfirmationCount::new(40),
-            blocks_per_batch: 450,
-            handler_rate_ms: 4_000,
-            ingestion_rate_ms: 20_000,
-            chain_concurrency: 4,
+            blocks_per_batch: runtime_config.blocks_per_batch_value(),
+            handler_rate_ms: runtime_config.handler_poll_interval_ms_value(),
+            ingestion_rate_ms: runtime_config.ingestion_poll_interval_ms_value(),
+            chain_concurrency: runtime_config.limits_ref().max_ingester_workers_value(),
+            ingester_concurrency: runtime_config.limits_ref().max_ingester_workers_value(),
+            handler_concurrency: runtime_config.limits_ref().max_handler_workers_value(),
+            runtime_config,
             node_election_rate_ms: None,
             reset_count: 0,
             reset_including_side_effects_count: 0,
@@ -218,26 +230,29 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self
     }
 
-    /// Advance config: How many blocks per batch should be ingested and handled.
-    /// Default is 8_000
+    /// Advanced config: how many blocks per batch should be ingested and handled.
+    /// The default is kept legacy-compatible; prefer `RuntimeConfig` profiles for new applications.
     pub fn with_blocks_per_batch(mut self, blocks_per_batch: u64) -> Self {
         self.blocks_per_batch = blocks_per_batch;
+        self.runtime_config = self.runtime_config.blocks_per_batch(blocks_per_batch);
 
         self
     }
 
-    /// Advance config: How often should the events handlers processes run.
-    /// Default is 4_000
+    /// Advanced config: how often event handler processes should run.
+    /// The default is kept legacy-compatible; prefer `RuntimeConfig` profiles for new applications.
     pub fn with_handler_rate_ms(mut self, handler_rate_ms: u64) -> Self {
         self.handler_rate_ms = handler_rate_ms;
+        self.runtime_config = self.runtime_config.handler_poll_interval_ms(handler_rate_ms);
 
         self
     }
 
-    /// Advance config:  How often should the events ingester processes run.
-    /// Default is 20_000
+    /// Advanced config: how often event ingester processes should run.
+    /// The default is kept legacy-compatible; prefer `RuntimeConfig` profiles for new applications.
     pub fn with_ingestion_rate_ms(mut self, ingestion_rate_ms: u64) -> Self {
         self.ingestion_rate_ms = ingestion_rate_ms;
+        self.runtime_config = self.runtime_config.ingestion_poll_interval_ms(ingestion_rate_ms);
 
         self
     }
@@ -245,6 +260,63 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
     /// Configures number of chain batches to be processed concurrently
     pub fn with_chain_concurrency(mut self, chain_concurrency: u32) -> Self {
         self.chain_concurrency = chain_concurrency;
+        self.ingester_concurrency = chain_concurrency;
+        self.handler_concurrency = chain_concurrency;
+
+        let limits = self
+            .runtime_config
+            .limits_ref()
+            .clone()
+            .max_ingester_workers(chain_concurrency)
+            .max_handler_workers(chain_concurrency);
+        self.runtime_config = self.runtime_config.limits(limits);
+
+        self
+    }
+
+    /// Configures maximum ingestion workers. This is preferred over
+    /// `with_chain_concurrency` when ingestion and handler pressure differ.
+    pub fn with_ingester_concurrency(mut self, ingester_concurrency: u32) -> Self {
+        self.ingester_concurrency = ingester_concurrency;
+        self.chain_concurrency = self.ingester_concurrency.max(self.handler_concurrency);
+
+        let limits = self
+            .runtime_config
+            .limits_ref()
+            .clone()
+            .max_ingester_workers(ingester_concurrency);
+        self.runtime_config = self.runtime_config.limits(limits);
+
+        self
+    }
+
+    /// Configures maximum handler workers. Effective handler parallelism is still
+    /// limited by state ordering partitions.
+    pub fn with_handler_concurrency(mut self, handler_concurrency: u32) -> Self {
+        self.handler_concurrency = handler_concurrency;
+        self.chain_concurrency = self.ingester_concurrency.max(self.handler_concurrency);
+
+        let limits = self
+            .runtime_config
+            .limits_ref()
+            .clone()
+            .max_handler_workers(handler_concurrency);
+        self.runtime_config = self.runtime_config.limits(limits);
+
+        self
+    }
+
+    /// Configures the runtime with behavior-oriented profiles and explicit
+    /// resource/RPC limits. Existing low-level setters still work for
+    /// compatibility, but this is the preferred API for new applications.
+    pub fn with_runtime_config(mut self, runtime_config: RuntimeConfig) -> Self {
+        self.blocks_per_batch = runtime_config.blocks_per_batch_value();
+        self.handler_rate_ms = runtime_config.handler_poll_interval_ms_value();
+        self.ingestion_rate_ms = runtime_config.ingestion_poll_interval_ms_value();
+        self.ingester_concurrency = runtime_config.limits_ref().max_ingester_workers_value();
+        self.handler_concurrency = runtime_config.limits_ref().max_handler_workers_value();
+        self.chain_concurrency = self.ingester_concurrency.max(self.handler_concurrency);
+        self.runtime_config = runtime_config;
 
         self
     }
@@ -309,7 +381,23 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
         self.node_election_rate_ms.unwrap_or(self.ingestion_rate_ms)
     }
 
+    pub(crate) fn effective_ingester_concurrency(&self) -> u32 {
+        let rpc = self.runtime_config.rpc_ref();
+        let max_rpc_in_flight = rpc.max_in_flight_value().max(1);
+        let max_rpc_per_chain = rpc.max_per_chain_value().max(1);
+        let rpc_limited_workers = max_rpc_in_flight / max_rpc_per_chain;
+
+        self.ingester_concurrency.max(1).min(rpc_limited_workers.max(1))
+    }
+
+    pub(crate) fn effective_handler_concurrency(&self) -> u32 {
+        self.handler_concurrency.max(1)
+    }
+
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.validate_runtime_fields()?;
+        self.runtime_config.validate().map_err(ConfigError::RuntimeConfig)?;
+
         if self.contracts.is_empty() {
             return Err(ConfigError::NoContract);
         }
@@ -349,13 +437,33 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 
         Ok(())
     }
+
+    fn validate_runtime_fields(&self) -> Result<(), ConfigError> {
+        for (field, value) in [
+            ("blocks_per_batch", self.blocks_per_batch),
+            ("handler_rate_ms", self.handler_rate_ms),
+            ("ingestion_rate_ms", self.ingestion_rate_ms),
+            ("chain_concurrency", self.chain_concurrency as u64),
+            ("ingester_concurrency", self.ingester_concurrency as u64),
+            ("handler_concurrency", self.handler_concurrency as u64),
+        ] {
+            if value == 0 {
+                return Err(ConfigError::RuntimeConfig(RuntimeConfigError::new(
+                    field,
+                    "must be greater than zero",
+                )));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::handlers::PureHandlerContext;
-    use crate::{ChainId, EventHandler};
+    use crate::{ChainId, EventHandler, RpcPolicy, RuntimeConfig, RuntimeLimits};
 
     struct TestHandler(&'static str);
 
@@ -370,6 +478,18 @@ mod tests {
 
     fn repo() -> ChaindexingRepo {
         ChaindexingRepo::new("postgres://localhost/chaindexing")
+    }
+
+    fn valid_contract() -> Contract<()> {
+        Contract::<()>::new("ERC721").add_event_handler(TestHandler(
+            "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+        ))
+    }
+
+    fn valid_config() -> Config<()> {
+        Config::new(repo())
+            .add_chain(Chain::mainnet("http://localhost:8545"))
+            .add_contract(valid_contract())
     }
 
     #[test]
@@ -412,6 +532,87 @@ mod tests {
             config.validate(),
             Err(ConfigError::InvalidEventAbi { .. })
         ));
+    }
+
+    #[test]
+    fn rejects_zero_concurrency() {
+        let config = valid_config().with_chain_concurrency(0);
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::RuntimeConfig(_))
+        ));
+    }
+
+    #[test]
+    fn applies_runtime_config_to_legacy_runtime_fields() {
+        let config: Config<()> = Config::new(repo()).with_runtime_config(
+            RuntimeConfig::backfill()
+                .limits(RuntimeLimits::throughput().max_ingester_workers(11).max_handler_workers(7))
+                .rpc(RpcPolicy::throughput().max_in_flight(44).max_per_chain(11))
+                .blocks_per_batch(1_234)
+                .ingestion_poll_interval_ms(333)
+                .handler_poll_interval_ms(222),
+        );
+
+        assert_eq!(config.blocks_per_batch, 1_234);
+        assert_eq!(config.ingestion_rate_ms, 333);
+        assert_eq!(config.handler_rate_ms, 222);
+        assert_eq!(config.ingester_concurrency, 11);
+        assert_eq!(config.handler_concurrency, 7);
+        assert_eq!(config.chain_concurrency, 11);
+        assert_eq!(config.runtime_config.rpc_ref().max_per_chain_value(), 11);
+    }
+
+    #[test]
+    fn legacy_setters_keep_runtime_config_in_sync() {
+        let config: Config<()> = Config::new(repo())
+            .with_blocks_per_batch(999)
+            .with_ingestion_rate_ms(888)
+            .with_handler_rate_ms(777)
+            .with_chain_concurrency(6);
+
+        assert_eq!(config.runtime_config.blocks_per_batch_value(), 999);
+        assert_eq!(
+            config.runtime_config.ingestion_poll_interval_ms_value(),
+            888
+        );
+        assert_eq!(config.runtime_config.handler_poll_interval_ms_value(), 777);
+        assert_eq!(
+            config.runtime_config.limits_ref().max_ingester_workers_value(),
+            6
+        );
+        assert_eq!(
+            config.runtime_config.limits_ref().max_handler_workers_value(),
+            6
+        );
+    }
+
+    #[test]
+    fn separate_concurrency_setters_keep_legacy_alias_in_sync() {
+        let config: Config<()> =
+            Config::new(repo()).with_ingester_concurrency(2).with_handler_concurrency(7);
+
+        assert_eq!(config.chain_concurrency, 7);
+        assert_eq!(
+            config.runtime_config.limits_ref().max_ingester_workers_value(),
+            2
+        );
+        assert_eq!(
+            config.runtime_config.limits_ref().max_handler_workers_value(),
+            7
+        );
+    }
+
+    #[test]
+    fn effective_ingester_concurrency_never_exceeds_global_rpc_budget() {
+        let config: Config<()> = Config::new(repo()).with_runtime_config(
+            RuntimeConfig::backfill()
+                .limits(RuntimeLimits::throughput().max_ingester_workers(10))
+                .rpc(RpcPolicy::throughput().max_in_flight(17).max_per_chain(8)),
+        );
+
+        assert_eq!(config.effective_ingester_concurrency(), 2);
     }
 
     #[test]

@@ -24,6 +24,7 @@ mod outbox;
 mod pruning;
 mod repos;
 mod root;
+mod runtime_config;
 
 /// Augmenting modules for standard library to support Chaindexing's operations
 pub mod augmenting_std;
@@ -43,6 +44,7 @@ pub use outbox::{
     dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxFinalityWatermark,
     OutboxJob, OutboxReceipt,
 };
+pub use runtime_config::{RpcPolicy, RuntimeConfig, RuntimeLimits, RuntimeWorkload};
 
 pub use chaindexing_macros::state_migrations;
 pub use ethers::types::{I256, U256};
@@ -192,6 +194,12 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
     config: &Config<S>,
 ) -> Result<IndexingHandle, ChaindexingError> {
     config.validate()?;
+    eprintln!(
+        "Chaindexing resolved runtime config: {}; effective_ingester_workers={}, effective_handler_workers={}",
+        config.runtime_config.resolved_summary(),
+        config.effective_ingester_concurrency(),
+        config.effective_handler_concurrency(),
+    );
 
     let client = config.repo.get_client().await;
     booting::setup_nodes(config, &client).await;
@@ -206,7 +214,10 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
         let mut interval =
             time::interval(Duration::from_millis(config.get_node_election_rate_ms()));
 
-        let pool = config.repo.get_pool(1).await;
+        let pool = config
+            .repo
+            .get_pool(config.runtime_config.limits_ref().db_connections_value())
+            .await;
         let mut conn = ChaindexingRepo::get_conn(&pool).await;
         let conn = &mut conn;
 
@@ -342,6 +353,7 @@ pub mod prelude {
         dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxJob,
         OutboxReceipt,
     };
+    pub use crate::runtime_config::{RpcPolicy, RuntimeConfig, RuntimeLimits, RuntimeWorkload};
     pub use crate::states::{
         ChainState, ContractState, Filters, MultiChainState, StateMigrations, Updates,
     };

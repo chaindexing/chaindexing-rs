@@ -8,7 +8,7 @@ mod provider;
 pub use error::IngesterError;
 pub use provider::{Provider, ProviderError};
 
-use std::cmp::max;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,10 +33,15 @@ use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo};
 
 pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> NodeTask {
     let node_task = NodeTask::new();
+    let pool = config
+        .repo
+        .get_pool(config.runtime_config.limits_ref().db_connections_value())
+        .await;
 
     for (index, chains) in get_chunked_chains(config).into_iter().enumerate() {
         let config = config.clone();
         let cancellation_token = node_task.cancellation_token();
+        let pool = pool.clone();
 
         node_task
             .add_named_subtask(
@@ -66,7 +71,6 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                                 }
                             };
                             let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
-                            let pool = config.repo.get_pool(1).await;
                             let conn = ChaindexingRepo::get_conn(&pool).await;
                             let conn = Arc::new(Mutex::new(conn));
 
@@ -102,9 +106,26 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
 
 pub fn get_chunked_chains<S: Send + Sync + Clone + 'static>(config: &Config<S>) -> Vec<Vec<Chain>> {
     let chains: Vec<_> = config.chains.clone();
-    let chunk_size = max(chains.len() / config.chain_concurrency as usize, 1);
+    let worker_count = worker_count(chains.len(), config.effective_ingester_concurrency());
 
-    chains.chunks(chunk_size).map(|c| c.to_vec()).collect()
+    chunk_evenly(&chains, worker_count)
+}
+
+fn worker_count(item_count: usize, requested_workers: u32) -> usize {
+    if item_count == 0 {
+        0
+    } else {
+        min(item_count, requested_workers.max(1) as usize)
+    }
+}
+
+fn chunk_evenly<T: Clone>(items: &[T], worker_count: usize) -> Vec<Vec<T>> {
+    if worker_count == 0 {
+        return vec![];
+    }
+
+    let chunk_size = items.len().div_ceil(worker_count);
+    items.chunks(chunk_size).map(|c| c.to_vec()).collect()
 }
 
 pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
@@ -211,4 +232,52 @@ fn filter_uningested_contract_addresses(
         .filter(|ca| current_block_number >= ca.next_block_number_to_ingest_from as u64)
         .cloned()
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{PostgresRepo, RpcPolicy, RuntimeConfig, RuntimeLimits};
+
+    fn config_with_chains(chain_count: usize) -> Config<()> {
+        let mut config = Config::new(PostgresRepo::new("postgres://localhost/chaindexing"));
+        for index in 0..chain_count {
+            config = config.add_chain(Chain::new(
+                ChainId::Mainnet,
+                &format!("http://localhost:{index}"),
+            ));
+        }
+        config
+    }
+
+    #[test]
+    fn chunks_ingester_chains_by_worker_cap() {
+        let config = config_with_chains(5).with_ingester_concurrency(2);
+        let chunks = get_chunked_chains(&config);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks.iter().map(Vec::len).sum::<usize>(), 5);
+    }
+
+    #[test]
+    fn caps_ingester_workers_at_chain_count() {
+        let config = config_with_chains(3).with_ingester_concurrency(20);
+        let chunks = get_chunked_chains(&config);
+
+        assert_eq!(chunks.len(), 3);
+        assert!(chunks.iter().all(|chunk| chunk.len() == 1));
+    }
+
+    #[test]
+    fn caps_ingester_workers_by_global_rpc_budget() {
+        let config = config_with_chains(10).with_runtime_config(
+            RuntimeConfig::backfill()
+                .limits(RuntimeLimits::throughput().max_ingester_workers(10))
+                .rpc(RpcPolicy::limited().max_in_flight(4).max_per_chain(2)),
+        );
+        let chunks = get_chunked_chains(&config);
+
+        assert_eq!(config.effective_ingester_concurrency(), 2);
+        assert_eq!(chunks.len(), 2);
+    }
 }

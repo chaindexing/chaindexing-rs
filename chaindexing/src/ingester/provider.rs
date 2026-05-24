@@ -165,38 +165,92 @@ async fn fetch_tagged_block_number(
     .await
 }
 
-pub async fn fetch_logs(
+pub async fn fetch_logs_with_policy(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
+    max_in_flight: usize,
+    requests_per_second: Option<u32>,
+    retry_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
 ) -> Result<Vec<Log>, ProviderError> {
-    retry_provider(|| async {
-        try_join_all(filters.iter().map(|f| provider.get_logs(&f.value)))
-            .await
-            .map(|logs_per_filter| logs_per_filter.into_iter().flatten().collect())
-    })
+    let max_in_flight = max_in_flight.max(1);
+
+    retry_provider_with_policy(
+        || async {
+            let mut logs = vec![];
+
+            for (index, filter_chunk) in filters.chunks(max_in_flight).enumerate() {
+                if index > 0 {
+                    throttle_requests(filter_chunk.len(), requests_per_second).await;
+                }
+
+                logs.extend(
+                    try_join_all(filter_chunk.iter().map(|f| provider.get_logs(&f.value)))
+                        .await?
+                        .into_iter()
+                        .flatten(),
+                );
+            }
+
+            Ok(logs)
+        },
+        retry_attempts,
+        base_backoff_ms,
+        max_backoff_ms,
+    )
     .await
 }
 
-pub async fn fetch_logs_by_block_hash(
+pub(crate) async fn throttle_requests(request_count: usize, requests_per_second: Option<u32>) {
+    let Some(requests_per_second) = requests_per_second else {
+        return;
+    };
+
+    if requests_per_second == 0 {
+        return;
+    }
+
+    let delay = Duration::from_secs_f64(request_count as f64 / requests_per_second as f64);
+    sleep(delay).await;
+}
+
+pub async fn fetch_logs_by_block_hash_with_policy(
     provider: &Arc<impl Provider>,
     filter: &Filter,
     block_hash: H256,
+    retry_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
 ) -> Result<Vec<Log>, ProviderError> {
-    retry_provider(|| async { provider.get_logs_by_block_hash(&filter.value, block_hash).await })
-        .await
+    retry_provider_with_policy(
+        || async { provider.get_logs_by_block_hash(&filter.value, block_hash).await },
+        retry_attempts,
+        base_backoff_ms,
+        max_backoff_ms,
+    )
+    .await
 }
 
-pub async fn fetch_blocks_for_filters(
+pub async fn fetch_blocks_for_filters_with_policy(
     provider: &Arc<impl Provider>,
     filters: &[Filter],
     current_block_number: u64,
     lookback_block_count: u64,
+    retry_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
 ) -> Result<HashMap<U64, Block<TxHash>>, ProviderError> {
-    retry_provider(|| async {
-        provider
-            .get_blocks_for_filters(filters, current_block_number, lookback_block_count)
-            .await
-    })
+    retry_provider_with_policy(
+        || async {
+            provider
+                .get_blocks_for_filters(filters, current_block_number, lookback_block_count)
+                .await
+        },
+        retry_attempts,
+        base_backoff_ms,
+        max_backoff_ms,
+    )
     .await
 }
 
@@ -235,29 +289,54 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, ProviderError>>,
 {
+    retry_provider_with_policy(
+        &mut operation,
+        MAX_PROVIDER_ATTEMPTS,
+        1_000,
+        MAX_BACKOFF_SECS * 1_000,
+    )
+    .await
+}
+
+async fn retry_provider_with_policy<T, F, Fut>(
+    mut operation: F,
+    max_attempts: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
+) -> Result<T, ProviderError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, ProviderError>>,
+{
     let mut attempts = 0;
+    let max_attempts = max_attempts.max(1);
+    let base_backoff_ms = base_backoff_ms.max(1);
+    let max_backoff_ms = max_backoff_ms.max(base_backoff_ms);
 
     loop {
         attempts += 1;
 
         match operation().await {
             Ok(value) => return Ok(value),
-            Err(error) if attempts >= MAX_PROVIDER_ATTEMPTS => return Err(error),
-            Err(_) => backoff(attempts - 1).await,
+            Err(error) if attempts >= max_attempts => return Err(error),
+            Err(_) => backoff(attempts - 1, base_backoff_ms, max_backoff_ms).await,
         }
     }
 }
 
-async fn backoff(retries_so_far: u32) {
-    let delay_secs = 2u64.saturating_pow(retries_so_far).min(MAX_BACKOFF_SECS);
+async fn backoff(retries_so_far: u32, base_backoff_ms: u64, max_backoff_ms: u64) {
+    let delay_ms = base_backoff_ms
+        .saturating_mul(2u64.saturating_pow(retries_so_far))
+        .min(max_backoff_ms);
 
-    sleep(Duration::from_secs(delay_secs)).await;
+    sleep(Duration::from_millis(delay_ms)).await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ethers::types::Filter as EthersFilter;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn block_numbers_for_filters_deduplicates_and_clamps_to_current_block() {
@@ -361,5 +440,55 @@ mod tests {
             .unwrap(),
             88
         );
+    }
+
+    #[derive(Clone)]
+    struct ConcurrencyTrackingProvider {
+        in_flight: Arc<AtomicUsize>,
+        max_observed: Arc<AtomicUsize>,
+    }
+
+    #[crate::augmenting_std::async_trait]
+    impl Provider for ConcurrencyTrackingProvider {
+        async fn get_block_number(&self) -> Result<U64, ProviderError> {
+            Ok(U64::from(100))
+        }
+
+        async fn get_logs(&self, _filter: &EthersFilter) -> Result<Vec<Log>, ProviderError> {
+            let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_observed.fetch_max(current, Ordering::SeqCst);
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+
+            Ok(vec![])
+        }
+
+        async fn get_block(&self, block_number: U64) -> Result<Block<TxHash>, ProviderError> {
+            Ok(Block {
+                number: Some(block_number),
+                ..Default::default()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_logs_with_policy_bounds_in_flight_requests() {
+        let max_observed = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(ConcurrencyTrackingProvider {
+            in_flight: Arc::new(AtomicUsize::new(0)),
+            max_observed: max_observed.clone(),
+        });
+        let filters = (0..5)
+            .map(|_| Filter {
+                contract_address_id: 1,
+                address: "0x1".to_string(),
+                value: EthersFilter::new(),
+            })
+            .collect::<Vec<_>>();
+
+        fetch_logs_with_policy(&provider, &filters, 2, None, 5, 1, 10).await.unwrap();
+
+        assert!(max_observed.load(Ordering::SeqCst) <= 2);
     }
 }

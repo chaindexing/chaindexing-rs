@@ -19,11 +19,38 @@ pub(crate) async fn fetch(
     filters: &[Filter],
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    max_rpc_in_flight: usize,
+    rpc_requests_per_second: Option<u32>,
+    rpc_retry_attempts: u32,
+    rpc_base_backoff_ms: u64,
+    rpc_max_backoff_ms: u64,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     if provider.supports_block_hash_log_filters() {
-        fetch_by_block_hash(provider, filters, chain_id, blocks_by_number).await
+        fetch_by_block_hash(
+            provider,
+            filters,
+            chain_id,
+            blocks_by_number,
+            max_rpc_in_flight,
+            rpc_requests_per_second,
+            rpc_retry_attempts,
+            rpc_base_backoff_ms,
+            rpc_max_backoff_ms,
+        )
+        .await
     } else {
-        fetch_by_range(provider, filters, chain_id, blocks_by_number).await
+        fetch_by_range(
+            provider,
+            filters,
+            chain_id,
+            blocks_by_number,
+            max_rpc_in_flight,
+            rpc_requests_per_second,
+            rpc_retry_attempts,
+            rpc_base_backoff_ms,
+            rpc_max_backoff_ms,
+        )
+        .await
     }
 }
 
@@ -32,24 +59,53 @@ async fn fetch_by_block_hash(
     filters: &[Filter],
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    max_rpc_in_flight: usize,
+    rpc_requests_per_second: Option<u32>,
+    rpc_retry_attempts: u32,
+    rpc_base_backoff_ms: u64,
+    rpc_max_backoff_ms: u64,
 ) -> Result<FetchedBlockLogs, IngesterError> {
     let mut logs = vec![];
     let mut scans = vec![];
+    let max_rpc_in_flight = max_rpc_in_flight.max(1);
+    let mut requests = vec![];
 
     for filter in filters {
         for block in blocks_for_filter(filter, blocks_by_number) {
             let Some(block_hash) = block.hash else {
                 continue;
             };
-            let block_hash_string = chain_blocks::h256_to_string(&block_hash);
-            let mut block_logs =
-                provider::fetch_logs_by_block_hash(provider, filter, block_hash).await?;
 
-            block_logs.retain(|log| log.block_hash == Some(block_hash));
+            requests.push((filter, block_hash));
+        }
+    }
+
+    for (index, request_chunk) in requests.chunks(max_rpc_in_flight).enumerate() {
+        if index > 0 {
+            provider::throttle_requests(request_chunk.len(), rpc_requests_per_second).await;
+        }
+
+        let chunk_logs =
+            futures_util::future::try_join_all(request_chunk.iter().map(|(filter, block_hash)| {
+                provider::fetch_logs_by_block_hash_with_policy(
+                    provider,
+                    filter,
+                    *block_hash,
+                    rpc_retry_attempts,
+                    rpc_base_backoff_ms,
+                    rpc_max_backoff_ms,
+                )
+            }))
+            .await?;
+
+        for ((filter, block_hash), mut block_logs) in
+            request_chunk.iter().zip(chunk_logs.into_iter())
+        {
+            block_logs.retain(|log| log.block_hash == Some(*block_hash));
 
             scans.push(BlockScan::new(
                 *chain_id,
-                &block_hash_string,
+                &chain_blocks::h256_to_string(block_hash),
                 &filter.address,
                 &filter.topic_set_key(),
                 block_logs.len(),
@@ -66,8 +122,22 @@ async fn fetch_by_range(
     filters: &[Filter],
     chain_id: &ChainId,
     blocks_by_number: &HashMap<U64, Block<TxHash>>,
+    max_rpc_in_flight: usize,
+    rpc_requests_per_second: Option<u32>,
+    rpc_retry_attempts: u32,
+    rpc_base_backoff_ms: u64,
+    rpc_max_backoff_ms: u64,
 ) -> Result<FetchedBlockLogs, IngesterError> {
-    let logs = provider::fetch_logs(provider, filters).await?;
+    let logs = provider::fetch_logs_with_policy(
+        provider,
+        filters,
+        max_rpc_in_flight,
+        rpc_requests_per_second,
+        rpc_retry_attempts,
+        rpc_base_backoff_ms,
+        rpc_max_backoff_ms,
+    )
+    .await?;
     let mut scans = vec![];
 
     for filter in filters {
@@ -106,4 +176,102 @@ fn blocks_for_filter<'a>(
 
     blocks.sort_by_key(|block| block.number);
     blocks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethers::types::{Filter as EthersFilter, H160, H256};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Clone)]
+    struct ConcurrencyTrackingProvider {
+        in_flight: Arc<AtomicUsize>,
+        max_observed: Arc<AtomicUsize>,
+    }
+
+    #[crate::augmenting_std::async_trait]
+    impl Provider for ConcurrencyTrackingProvider {
+        async fn get_block_number(&self) -> Result<U64, provider::ProviderError> {
+            Ok(U64::from(100))
+        }
+
+        async fn get_logs(
+            &self,
+            _filter: &EthersFilter,
+        ) -> Result<Vec<ethers::types::Log>, provider::ProviderError> {
+            Ok(vec![])
+        }
+
+        async fn get_block(
+            &self,
+            block_number: U64,
+        ) -> Result<Block<TxHash>, provider::ProviderError> {
+            Ok(Block {
+                number: Some(block_number),
+                ..Default::default()
+            })
+        }
+
+        async fn get_logs_by_block_hash(
+            &self,
+            _filter: &EthersFilter,
+            block_hash: H256,
+        ) -> Result<Vec<ethers::types::Log>, provider::ProviderError> {
+            let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_observed.fetch_max(current, Ordering::SeqCst);
+
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+
+            Ok(vec![ethers::types::Log {
+                block_hash: Some(block_hash),
+                ..Default::default()
+            }])
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_by_block_hash_bounds_in_flight_requests() {
+        let max_observed = Arc::new(AtomicUsize::new(0));
+        let provider = Arc::new(ConcurrencyTrackingProvider {
+            in_flight: Arc::new(AtomicUsize::new(0)),
+            max_observed: max_observed.clone(),
+        });
+        let filters = vec![Filter {
+            contract_address_id: 1,
+            address: H160::zero().to_string(),
+            value: EthersFilter::new().from_block(1).to_block(3),
+        }];
+        let blocks_by_number = (1..=3)
+            .map(|number| {
+                (
+                    U64::from(number),
+                    Block {
+                        number: Some(U64::from(number)),
+                        hash: Some(H256::from_low_u64_be(number)),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let fetched = fetch_by_block_hash(
+            &provider,
+            &filters,
+            &ChainId::Mainnet,
+            &blocks_by_number,
+            2,
+            None,
+            5,
+            1,
+            10,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(fetched.logs.len(), 3);
+        assert_eq!(fetched.scans.len(), 3);
+        assert!(max_observed.load(Ordering::SeqCst) <= 2);
+    }
 }

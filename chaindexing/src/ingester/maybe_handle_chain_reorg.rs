@@ -21,7 +21,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     provider: &Arc<impl Provider>,
     chain_id: &ChainId,
     current_block_number: u64,
-    Config {
+    config @ Config {
         contracts,
         min_confirmation_count,
         blocks_per_batch,
@@ -38,14 +38,29 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     if !filters.is_empty() {
         let already_ingested_events = get_already_ingested_events(conn, chain_id, &filters).await;
-        let blocks_by_number = provider::fetch_blocks_for_filters(
+        let rpc = config.runtime_config.rpc_ref();
+        let blocks_by_number = provider::fetch_blocks_for_filters_with_policy(
             provider,
             &filters,
             current_block_number,
             min_confirmation_count.as_u64(),
+            rpc.retry_attempts_value(),
+            rpc.base_backoff_ms_value(),
+            rpc.max_backoff_ms_value(),
         )
         .await?;
-        let block_logs = block_logs::fetch(provider, &filters, chain_id, &blocks_by_number).await?;
+        let block_logs = block_logs::fetch(
+            provider,
+            &filters,
+            chain_id,
+            &blocks_by_number,
+            rpc.max_per_chain_value() as usize,
+            rpc.requests_per_second_value(),
+            rpc.retry_attempts_value(),
+            rpc.base_backoff_ms_value(),
+            rpc.max_backoff_ms_value(),
+        )
+        .await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_number);
 
         let provider_events = events::get(
