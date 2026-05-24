@@ -5,35 +5,15 @@ use alloy::primitives::B256;
 use alloy::rpc::types::{Block, Log};
 
 use crate::chain_blocks::{self, BlockScan};
-use crate::{ChainId, RpcPolicy};
+use crate::ChainId;
 
 use super::filters::Filter;
+use super::provider::FetchPolicy;
 use super::{provider, IngesterError, Provider};
 
 pub(crate) struct FetchedBlockLogs {
     pub logs: Vec<Log>,
     pub scans: Vec<BlockScan>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct FetchPolicy {
-    pub(crate) max_rpc_in_flight: usize,
-    pub(crate) requests_per_second: Option<u32>,
-    pub(crate) retry_attempts: u32,
-    pub(crate) base_backoff_ms: u64,
-    pub(crate) max_backoff_ms: u64,
-}
-
-impl FetchPolicy {
-    pub(crate) fn from_rpc_policy(rpc: &RpcPolicy) -> Self {
-        Self {
-            max_rpc_in_flight: rpc.max_per_chain_value() as usize,
-            requests_per_second: rpc.requests_per_second_value(),
-            retry_attempts: rpc.retry_attempts_value(),
-            base_backoff_ms: rpc.base_backoff_ms_value(),
-            max_backoff_ms: rpc.max_backoff_ms_value(),
-        }
-    }
 }
 
 pub(crate) async fn fetch(
@@ -59,7 +39,7 @@ async fn fetch_by_block_hash(
 ) -> Result<FetchedBlockLogs, IngesterError> {
     let mut logs = vec![];
     let mut scans = vec![];
-    let max_rpc_in_flight = policy.max_rpc_in_flight.max(1);
+    let max_rpc_in_flight = policy.max_in_flight.max(1);
     let mut requests = vec![];
 
     for filter in filters {
@@ -118,7 +98,7 @@ async fn fetch_by_range(
     let logs = provider::fetch_logs_with_policy(
         provider,
         filters,
-        policy.max_rpc_in_flight,
+        policy.max_in_flight,
         policy.requests_per_second,
         policy.retry_attempts,
         policy.base_backoff_ms,
@@ -253,7 +233,7 @@ mod tests {
             &ChainId::Mainnet,
             &blocks_by_number,
             FetchPolicy {
-                max_rpc_in_flight: 2,
+                max_in_flight: 2,
                 requests_per_second: None,
                 retry_attempts: 5,
                 base_backoff_ms: 1,

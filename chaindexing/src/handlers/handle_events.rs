@@ -12,7 +12,7 @@ use crate::{ChaindexingRepo, ChaindexingRepoClientMutex};
 use super::pure_handler::{PureHandler, PureHandlerContext};
 use super::side_effect_handler::{SideEffectHandler, SideEffectHandlerContext};
 
-pub async fn run<'a, S: Send + Sync + Clone + Debug>(
+pub async fn run<S: Send + Sync + Clone + Debug>(
     pure_handlers: &HashMap<contracts::HandlerKey, Arc<dyn PureHandler>>,
     side_effect_handlers: &HashMap<
         contracts::HandlerKey,

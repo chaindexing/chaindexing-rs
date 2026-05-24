@@ -54,11 +54,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
                 &filters,
                 current_block_number,
                 min_confirmation_count.as_u64(),
-                rpc.max_per_chain_value() as usize,
-                rpc.requests_per_second_value(),
-                rpc.retry_attempts_value(),
-                rpc.base_backoff_ms_value(),
-                rpc.max_backoff_ms_value(),
+                provider::FetchPolicy::from_rpc_policy(rpc),
             )
             .await?
         } else {
@@ -67,11 +63,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
                 &filters,
                 current_block_number,
                 min_confirmation_count.as_u64(),
-                rpc.max_per_chain_value() as usize,
-                rpc.requests_per_second_value(),
-                rpc.retry_attempts_value(),
-                rpc.base_backoff_ms_value(),
-                rpc.max_backoff_ms_value(),
+                provider::FetchPolicy::from_rpc_policy(rpc),
             )
             .await?
         };
@@ -81,7 +73,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &filters,
             chain_id,
             &blocks_by_tx_hash,
-            block_logs::FetchPolicy::from_rpc_policy(rpc),
+            provider::FetchPolicy::from_rpc_policy(rpc),
         )
         .await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_tx_hash);
@@ -97,7 +89,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             chain_id,
             &indexed_blocks,
             &config.indexed_data_config,
-            block_logs::FetchPolicy::from_rpc_policy(rpc),
+            provider::FetchPolicy::from_rpc_policy(rpc),
         )
         .await?;
         let block_scans = block_logs.scans;

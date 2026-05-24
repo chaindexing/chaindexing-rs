@@ -12,7 +12,6 @@ use crate::events::{self, Event};
 use crate::Config;
 use crate::{
     ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, IndexedDataConfig, Repo,
-    RpcPolicy,
 };
 
 use super::block_logs;
@@ -53,11 +52,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &filters,
             current_block_number,
             min_confirmation_count.as_u64(),
-            rpc.max_per_chain_value() as usize,
-            rpc.requests_per_second_value(),
-            rpc.retry_attempts_value(),
-            rpc.base_backoff_ms_value(),
-            rpc.max_backoff_ms_value(),
+            provider::FetchPolicy::from_rpc_policy(rpc),
         )
         .await?;
         let block_logs = block_logs::fetch(
@@ -65,7 +60,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
             &filters,
             chain_id,
             &blocks_by_number,
-            block_logs::FetchPolicy::from_rpc_policy(rpc),
+            provider::FetchPolicy::from_rpc_policy(rpc),
         )
         .await?;
         let chain_blocks = chain_blocks::from_provider_blocks(chain_id, &blocks_by_number);
@@ -90,14 +85,16 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         let indexed_data = if let Some(fork_point) = block_fork_point {
             fetch_indexed_data_for_replacement_blocks(
                 provider,
-                chain_id,
-                &filters,
-                current_block_number,
-                min_confirmation_count.as_u64(),
-                &blocks_by_number,
-                fork_point,
-                &config.indexed_data_config,
-                rpc,
+                ReplacementIndexedDataRequest {
+                    chain_id,
+                    filters: &filters,
+                    current_block_number,
+                    lookback_block_count: min_confirmation_count.as_u64(),
+                    blocks_by_number: &blocks_by_number,
+                    fork_point,
+                    indexed_data_config: &config.indexed_data_config,
+                    policy: provider::FetchPolicy::from_rpc_policy(rpc),
+                },
             )
             .await?
         } else {
@@ -229,52 +226,54 @@ fn get_provider_added_and_removed_events(
     }
 }
 
-async fn fetch_indexed_data_for_replacement_blocks(
-    provider: &Arc<impl Provider>,
-    chain_id: &ChainId,
-    filters: &[Filter],
+struct ReplacementIndexedDataRequest<'a> {
+    chain_id: &'a ChainId,
+    filters: &'a [Filter],
     current_block_number: u64,
     lookback_block_count: u64,
-    blocks_by_number: &HashMap<u64, Block>,
+    blocks_by_number: &'a HashMap<u64, Block>,
     fork_point: i64,
-    indexed_data_config: &IndexedDataConfig,
-    rpc: &RpcPolicy,
+    indexed_data_config: &'a IndexedDataConfig,
+    policy: provider::FetchPolicy,
+}
+
+async fn fetch_indexed_data_for_replacement_blocks(
+    provider: &Arc<impl Provider>,
+    request: ReplacementIndexedDataRequest<'_>,
 ) -> Result<FetchedIndexedData, IngesterError> {
-    if indexed_data_config.requires_full_blocks() {
+    if request.indexed_data_config.requires_full_blocks() {
         let full_blocks_by_number = provider::fetch_full_blocks_for_filters_with_policy(
             provider,
-            filters,
-            current_block_number,
-            lookback_block_count,
-            rpc.max_per_chain_value() as usize,
-            rpc.requests_per_second_value(),
-            rpc.retry_attempts_value(),
-            rpc.base_backoff_ms_value(),
-            rpc.max_backoff_ms_value(),
+            request.filters,
+            request.current_block_number,
+            request.lookback_block_count,
+            request.policy,
         )
         .await?;
-        let replacement_blocks =
-            indexed_data_capture::blocks_from_fork_point(&full_blocks_by_number, fork_point);
+        let replacement_blocks = indexed_data_capture::blocks_from_fork_point(
+            &full_blocks_by_number,
+            request.fork_point,
+        );
 
         return indexed_data_capture::fetch_for_blocks(
             provider,
-            chain_id,
+            request.chain_id,
             &replacement_blocks,
-            indexed_data_config,
-            block_logs::FetchPolicy::from_rpc_policy(rpc),
+            request.indexed_data_config,
+            request.policy,
         )
         .await;
     }
 
     let replacement_blocks =
-        indexed_data_capture::blocks_from_fork_point(blocks_by_number, fork_point);
+        indexed_data_capture::blocks_from_fork_point(request.blocks_by_number, request.fork_point);
 
     indexed_data_capture::fetch_for_blocks(
         provider,
-        chain_id,
+        request.chain_id,
         &replacement_blocks,
-        indexed_data_config,
-        block_logs::FetchPolicy::from_rpc_policy(rpc),
+        request.indexed_data_config,
+        request.policy,
     )
     .await
 }

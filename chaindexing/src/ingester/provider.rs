@@ -13,6 +13,7 @@ use tokio::time::sleep;
 
 use super::filters::Filter;
 use crate::chain_reorg::IndexingFinality;
+use crate::RpcPolicy;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderError {
@@ -73,6 +74,27 @@ impl From<alloy::transports::TransportError> for ProviderError {
 
 const MAX_PROVIDER_ATTEMPTS: u32 = 5;
 const MAX_BACKOFF_SECS: u64 = 30;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FetchPolicy {
+    pub(crate) max_in_flight: usize,
+    pub(crate) requests_per_second: Option<u32>,
+    pub(crate) retry_attempts: u32,
+    pub(crate) base_backoff_ms: u64,
+    pub(crate) max_backoff_ms: u64,
+}
+
+impl FetchPolicy {
+    pub(crate) fn from_rpc_policy(rpc: &RpcPolicy) -> Self {
+        Self {
+            max_in_flight: rpc.max_per_chain_value() as usize,
+            requests_per_second: rpc.requests_per_second_value(),
+            retry_attempts: rpc.retry_attempts_value(),
+            base_backoff_ms: rpc.base_backoff_ms_value(),
+            max_backoff_ms: rpc.max_backoff_ms_value(),
+        }
+    }
+}
 
 #[crate::augmenting_std::async_trait]
 pub trait Provider: Clone + Sync + Send {
@@ -357,13 +379,9 @@ pub async fn fetch_logs_by_block_hash_with_policy(
 pub async fn fetch_call_traces_by_block_hashes_with_policy(
     provider: &Arc<impl Provider>,
     block_hashes: &[B256],
-    max_in_flight: usize,
-    requests_per_second: Option<u32>,
-    retry_attempts: u32,
-    base_backoff_ms: u64,
-    max_backoff_ms: u64,
+    policy: FetchPolicy,
 ) -> Result<Vec<(B256, Vec<serde_json::Value>)>, ProviderError> {
-    let max_in_flight = max_in_flight.max(1);
+    let max_in_flight = policy.max_in_flight.max(1);
 
     retry_provider_with_policy(
         || async {
@@ -371,7 +389,7 @@ pub async fn fetch_call_traces_by_block_hashes_with_policy(
 
             for (index, block_hash_chunk) in block_hashes.chunks(max_in_flight).enumerate() {
                 if index > 0 {
-                    throttle_requests(block_hash_chunk.len(), requests_per_second).await;
+                    throttle_requests(block_hash_chunk.len(), policy.requests_per_second).await;
                 }
 
                 let traces = try_join_all(
@@ -386,9 +404,9 @@ pub async fn fetch_call_traces_by_block_hashes_with_policy(
 
             Ok(traces_by_block_hash)
         },
-        retry_attempts,
-        base_backoff_ms,
-        max_backoff_ms,
+        policy.retry_attempts,
+        policy.base_backoff_ms,
+        policy.max_backoff_ms,
     )
     .await
 }
@@ -398,23 +416,24 @@ pub async fn fetch_blocks_for_filters_with_policy(
     filters: &[Filter],
     current_block_number: u64,
     lookback_block_count: u64,
-    max_in_flight: usize,
-    requests_per_second: Option<u32>,
-    retry_attempts: u32,
-    base_backoff_ms: u64,
-    max_backoff_ms: u64,
+    policy: FetchPolicy,
 ) -> Result<HashMap<u64, Block>, ProviderError> {
     retry_provider_with_policy(
         || async {
             let block_numbers =
                 block_numbers_for_filters(filters, current_block_number, lookback_block_count);
 
-            fetch_blocks_with_policy(provider, &block_numbers, max_in_flight, requests_per_second)
-                .await
+            fetch_blocks_with_policy(
+                provider,
+                &block_numbers,
+                policy.max_in_flight,
+                policy.requests_per_second,
+            )
+            .await
         },
-        retry_attempts,
-        base_backoff_ms,
-        max_backoff_ms,
+        policy.retry_attempts,
+        policy.base_backoff_ms,
+        policy.max_backoff_ms,
     )
     .await
 }
@@ -424,11 +443,7 @@ pub async fn fetch_full_blocks_for_filters_with_policy(
     filters: &[Filter],
     current_block_number: u64,
     lookback_block_count: u64,
-    max_in_flight: usize,
-    requests_per_second: Option<u32>,
-    retry_attempts: u32,
-    base_backoff_ms: u64,
-    max_backoff_ms: u64,
+    policy: FetchPolicy,
 ) -> Result<HashMap<u64, Block>, ProviderError> {
     retry_provider_with_policy(
         || async {
@@ -438,14 +453,14 @@ pub async fn fetch_full_blocks_for_filters_with_policy(
             fetch_full_blocks_with_policy(
                 provider,
                 &block_numbers,
-                max_in_flight,
-                requests_per_second,
+                policy.max_in_flight,
+                policy.requests_per_second,
             )
             .await
         },
-        retry_attempts,
-        base_backoff_ms,
-        max_backoff_ms,
+        policy.retry_attempts,
+        policy.base_backoff_ms,
+        policy.max_backoff_ms,
     )
     .await
 }
@@ -788,10 +803,21 @@ mod tests {
             value: RpcFilter::new().from_block(1).to_block(5),
         }];
 
-        let blocks =
-            fetch_blocks_for_filters_with_policy(&provider, &filters, 5, 0, 2, None, 5, 1, 10)
-                .await
-                .unwrap();
+        let blocks = fetch_blocks_for_filters_with_policy(
+            &provider,
+            &filters,
+            5,
+            0,
+            FetchPolicy {
+                max_in_flight: 2,
+                requests_per_second: None,
+                retry_attempts: 5,
+                base_backoff_ms: 1,
+                max_backoff_ms: 10,
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(blocks.len(), 5);
         assert!(max_observed.load(Ordering::SeqCst) <= 2);
@@ -810,10 +836,21 @@ mod tests {
             value: RpcFilter::new().from_block(1).to_block(5),
         }];
 
-        let blocks =
-            fetch_full_blocks_for_filters_with_policy(&provider, &filters, 5, 0, 2, None, 5, 1, 10)
-                .await
-                .unwrap();
+        let blocks = fetch_full_blocks_for_filters_with_policy(
+            &provider,
+            &filters,
+            5,
+            0,
+            FetchPolicy {
+                max_in_flight: 2,
+                requests_per_second: None,
+                retry_attempts: 5,
+                base_backoff_ms: 1,
+                max_backoff_ms: 10,
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(blocks.len(), 5);
         assert!(max_observed.load(Ordering::SeqCst) <= 2);
@@ -831,11 +868,13 @@ mod tests {
         let traces = fetch_call_traces_by_block_hashes_with_policy(
             &provider,
             &block_hashes,
-            2,
-            None,
-            5,
-            1,
-            10,
+            FetchPolicy {
+                max_in_flight: 2,
+                requests_per_second: None,
+                retry_attempts: 5,
+                base_backoff_ms: 1,
+                max_backoff_ms: 10,
+            },
         )
         .await
         .unwrap();
@@ -851,11 +890,13 @@ mod tests {
         let error = fetch_call_traces_by_block_hashes_with_policy(
             &provider,
             &[B256::ZERO],
-            1,
-            None,
-            1,
-            1,
-            1,
+            FetchPolicy {
+                max_in_flight: 1,
+                requests_per_second: None,
+                retry_attempts: 1,
+                base_backoff_ms: 1,
+                max_backoff_ms: 1,
+            },
         )
         .await
         .unwrap_err();
@@ -902,11 +943,13 @@ mod tests {
         let error = fetch_call_traces_by_block_hashes_with_policy(
             &provider,
             &[B256::ZERO],
-            1,
-            None,
-            5,
-            1,
-            1,
+            FetchPolicy {
+                max_in_flight: 1,
+                requests_per_second: None,
+                retry_attempts: 5,
+                base_backoff_ms: 1,
+                max_backoff_ms: 1,
+            },
         )
         .await
         .unwrap_err();

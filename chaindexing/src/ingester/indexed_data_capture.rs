@@ -7,8 +7,8 @@ use alloy::rpc::types::Block;
 use crate::indexed_data::{self, IndexedCallTrace, IndexedDataConfig, IndexedTransaction};
 use crate::ChainId;
 
-use super::block_logs::FetchPolicy;
 use super::filters::Filter;
+use super::provider::FetchPolicy;
 use super::{provider, IngesterError, Provider};
 
 pub(crate) struct FetchedIndexedData {
@@ -44,11 +44,7 @@ pub(crate) async fn fetch_for_blocks(
         let traces_by_block_hash = provider::fetch_call_traces_by_block_hashes_with_policy(
             provider,
             &block_hashes,
-            policy.max_rpc_in_flight,
-            policy.requests_per_second,
-            policy.retry_attempts,
-            policy.base_backoff_ms,
-            policy.max_backoff_ms,
+            policy,
         )
         .await?
         .into_iter()
@@ -87,10 +83,10 @@ pub(crate) fn blocks_for_filters<'a>(
     })
 }
 
-pub(crate) fn blocks_from_fork_point<'a>(
-    blocks_by_number: &'a HashMap<u64, Block>,
+pub(crate) fn blocks_from_fork_point(
+    blocks_by_number: &HashMap<u64, Block>,
     fork_point: i64,
-) -> Vec<&'a Block> {
+) -> Vec<&Block> {
     sorted_blocks_matching(blocks_by_number, |block_number| {
         i64::try_from(block_number).map(|number| number >= fork_point).unwrap_or(false)
     })
