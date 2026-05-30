@@ -39,7 +39,7 @@ impl From<DieselError> for RepoError {
             DieselError::DatabaseError(DatabaseErrorKind::ClosedConnection, _info) => {
                 RepoError::NotConnected
             }
-            any_other_error => RepoError::Unknown(any_other_error.to_string()),
+            any_other_error => RepoError::Query(any_other_error.to_string()),
         }
     }
 }
@@ -82,7 +82,7 @@ impl PostgresRepo {
         conn: &mut Conn<'a>,
         event_chain_id: &ChainId,
         reorged_block_number: i64,
-    ) {
+    ) -> Result<(), RepoError> {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
         diesel::update(chaindexing_events)
@@ -92,15 +92,17 @@ impl PostgresRepo {
             .set((status.eq("reorged"), reorg_id.eq::<Option<i64>>(None)))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
+
+        Ok(())
     }
 
     pub(crate) async fn sync_blocks<'a>(
         conn: &mut Conn<'a>,
         event_chain_id: &ChainId,
         blocks: &[ChainBlock],
-    ) -> Option<i64> {
-        let canonical_blocks = Self::canonical_blocks(conn, blocks).await;
+    ) -> Result<Option<i64>, RepoError> {
+        let canonical_blocks = Self::canonical_blocks(conn, blocks).await?;
         let fork_point = chain_blocks::find_fork_point(blocks, &canonical_blocks);
 
         if let Some(fork_point) = fork_point {
@@ -112,7 +114,7 @@ impl PostgresRepo {
             ))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
 
             sql_query(chain_blocks::mark_reorged_from_query(
                 *event_chain_id,
@@ -120,7 +122,7 @@ impl PostgresRepo {
             ))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
 
             sql_query(chain_blocks::mark_scans_reorged_from_query(
                 *event_chain_id,
@@ -128,7 +130,7 @@ impl PostgresRepo {
             ))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
 
             sql_query(indexed_data::mark_transactions_reorged_from_query(
                 *event_chain_id,
@@ -136,7 +138,7 @@ impl PostgresRepo {
             ))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
 
             sql_query(indexed_data::mark_call_traces_reorged_from_query(
                 *event_chain_id,
@@ -144,67 +146,84 @@ impl PostgresRepo {
             ))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
         }
 
         if let Some(query) = chain_blocks::upsert_blocks_query(blocks) {
-            sql_query(query).execute(conn).await.unwrap();
+            sql_query(query).execute(conn).await.map_err(RepoError::from)?;
         }
 
-        fork_point
+        Ok(fork_point)
     }
 
     pub(crate) async fn find_fork_point<'a>(
         conn: &mut Conn<'a>,
         blocks: &[ChainBlock],
-    ) -> Option<i64> {
-        let canonical_blocks = Self::canonical_blocks(conn, blocks).await;
+    ) -> Result<Option<i64>, RepoError> {
+        let canonical_blocks = Self::canonical_blocks(conn, blocks).await?;
 
-        chain_blocks::find_fork_point(blocks, &canonical_blocks)
+        Ok(chain_blocks::find_fork_point(blocks, &canonical_blocks))
     }
 
     async fn canonical_blocks<'a>(
         conn: &mut Conn<'a>,
         blocks: &[ChainBlock],
-    ) -> Vec<CanonicalBlock> {
+    ) -> Result<Vec<CanonicalBlock>, RepoError> {
         match chain_blocks::canonical_blocks_query(blocks) {
-            Some(query) => sql_query(query).load::<CanonicalBlock>(conn).await.unwrap(),
-            None => vec![],
+            Some(query) => {
+                sql_query(query).load::<CanonicalBlock>(conn).await.map_err(RepoError::from)
+            }
+            None => Ok(vec![]),
         }
     }
 
-    pub(crate) async fn create_block_scans<'a>(conn: &mut Conn<'a>, scans: &[BlockScan]) {
+    pub(crate) async fn create_block_scans<'a>(
+        conn: &mut Conn<'a>,
+        scans: &[BlockScan],
+    ) -> Result<(), RepoError> {
         if let Some(query) = chain_blocks::upsert_block_scans_query(scans) {
-            sql_query(query).execute(conn).await.unwrap();
+            sql_query(query).execute(conn).await.map_err(RepoError::from)?;
         }
+
+        Ok(())
     }
 
     pub(crate) async fn create_transactions<'a>(
         conn: &mut Conn<'a>,
         transactions: &[IndexedTransaction],
-    ) {
+    ) -> Result<(), RepoError> {
         if let Some(query) = indexed_data::upsert_transactions_query(transactions) {
-            sql_query(query).execute(conn).await.unwrap();
+            sql_query(query).execute(conn).await.map_err(RepoError::from)?;
         }
+
+        Ok(())
     }
 
-    pub(crate) async fn create_call_traces<'a>(conn: &mut Conn<'a>, traces: &[IndexedCallTrace]) {
+    pub(crate) async fn create_call_traces<'a>(
+        conn: &mut Conn<'a>,
+        traces: &[IndexedCallTrace],
+    ) -> Result<(), RepoError> {
         if let Some(query) = indexed_data::upsert_call_traces_query(traces) {
-            sql_query(query).execute(conn).await.unwrap();
+            sql_query(query).execute(conn).await.map_err(RepoError::from)?;
         }
+
+        Ok(())
     }
 
-    pub(crate) async fn try_advisory_lock<'a>(conn: &mut Conn<'a>, lock_id: i64) -> bool {
-        sql_query(format!(
+    pub(crate) async fn try_advisory_lock<'a>(
+        conn: &mut Conn<'a>,
+        lock_id: i64,
+    ) -> Result<bool, RepoError> {
+        Ok(sql_query(format!(
             "SELECT pg_try_advisory_lock({lock_id}) AS acquired"
         ))
         .load::<AdvisoryLock>(conn)
         .await
-        .unwrap()
+        .map_err(RepoError::from)?
         .into_iter()
         .next()
         .map(|lock| lock.acquired)
-        .unwrap_or(false)
+        .unwrap_or(false))
     }
 }
 
@@ -213,7 +232,7 @@ impl Repo for PostgresRepo {
     type Conn<'a> = PgPooledConn<'a>;
     type Pool = bb8::Pool<AsyncDieselConnectionManager<AsyncPgConnection>>;
 
-    async fn get_pool(&self, max_size: u32) -> Pool {
+    async fn get_pool(&self, max_size: u32) -> Result<Pool, RepoError> {
         let tls_config = self.tls_config.clone();
         let mut manager_config = ManagerConfig::<AsyncPgConnection>::default();
         manager_config.custom_setup = Box::new(move |database_url| {
@@ -226,11 +245,15 @@ impl Repo for PostgresRepo {
             manager_config,
         );
 
-        bb8::Pool::builder().max_size(max_size).build(manager).await.unwrap()
+        bb8::Pool::builder()
+            .max_size(max_size)
+            .build(manager)
+            .await
+            .map_err(|error| RepoError::Pool(error.to_string()))
     }
 
-    async fn get_conn<'a>(pool: &'a Pool) -> Conn<'a> {
-        pool.get().await.unwrap()
+    async fn get_conn<'a>(pool: &'a Pool) -> Result<Conn<'a>, RepoError> {
+        pool.get().await.map_err(|error| RepoError::Pool(error.to_string()))
     }
 
     async fn run_in_transaction<'a, F>(conn: &mut Conn<'a>, repo_ops: F) -> Result<(), RepoError>
@@ -246,11 +269,11 @@ impl Repo for PostgresRepo {
         .await
     }
 
-    async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) {
+    async fn create_events<'a>(conn: &mut Conn<'a>, events: &[Event]) -> Result<(), RepoError> {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
         if events.is_empty() {
-            return;
+            return Ok(());
         }
 
         diesel::insert_into(chaindexing_events)
@@ -266,12 +289,14 @@ impl Repo for PostgresRepo {
             .set((status.eq("canonical"), reorg_id.eq::<Option<i64>>(None)))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
+
+        Ok(())
     }
-    async fn get_all_events<'a>(conn: &mut Conn<'a>) -> Vec<Event> {
+    async fn get_all_events<'a>(conn: &mut Conn<'a>) -> Result<Vec<Event>, RepoError> {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
-        chaindexing_events.load(conn).await.unwrap()
+        chaindexing_events.load(conn).await.map_err(RepoError::from)
     }
     async fn get_events<'a>(
         conn: &mut Self::Conn<'a>,
@@ -279,7 +304,7 @@ impl Repo for PostgresRepo {
         address: String,
         from: u64,
         to: u64,
-    ) -> Vec<Event> {
+    ) -> Result<Vec<Event>, RepoError> {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
         chaindexing_events
@@ -289,9 +314,12 @@ impl Repo for PostgresRepo {
             .filter(status.eq("canonical"))
             .load(conn)
             .await
-            .unwrap()
+            .map_err(RepoError::from)
     }
-    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &[Uuid]) {
+    async fn delete_events_by_ids<'a>(
+        conn: &mut Self::Conn<'a>,
+        ids: &[Uuid],
+    ) -> Result<(), RepoError> {
         use crate::diesel::schema::chaindexing_events::dsl::*;
 
         diesel::update(chaindexing_events)
@@ -300,14 +328,16 @@ impl Repo for PostgresRepo {
             .set((status.eq("reorged"), reorg_id.eq::<Option<i64>>(None)))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
+
+        Ok(())
     }
 
     async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,
         contract_address: &ContractAddress,
         block_number: i64,
-    ) {
+    ) -> Result<(), RepoError> {
         use crate::diesel::schema::chaindexing_contract_addresses::dsl::*;
 
         diesel::update(chaindexing_contract_addresses)
@@ -315,7 +345,7 @@ impl Repo for PostgresRepo {
             .set(next_block_number_to_ingest_from.eq(block_number))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
 
         sql_query(checkpoints::upsert_query(
             contract_address.chain_id as u64,
@@ -325,35 +355,39 @@ impl Repo for PostgresRepo {
         ))
         .execute(conn)
         .await
-        .unwrap();
+        .map_err(RepoError::from)?;
+
+        Ok(())
     }
 
     async fn create_reorged_block<'a>(
         conn: &mut Self::Conn<'a>,
         reorged_block: &UnsavedReorgedBlock,
-    ) {
+    ) -> Result<(), RepoError> {
         use crate::diesel::schema::chaindexing_reorged_blocks::dsl::*;
 
         diesel::insert_into(chaindexing_reorged_blocks)
             .values(reorged_block)
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
+
+        Ok(())
     }
 
     async fn get_active_nodes<'a>(
         conn: &mut Self::Conn<'a>,
         node_election_rate_ms: u64,
-    ) -> Vec<Node> {
+    ) -> Result<Vec<Node>, RepoError> {
         use crate::diesel::schema::chaindexing_nodes::dsl::*;
 
         chaindexing_nodes
             .filter(last_active_at.gt(Node::get_min_active_at_in_secs(node_election_rate_ms)))
             .load(conn)
             .await
-            .unwrap()
+            .map_err(RepoError::from)
     }
-    async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node) {
+    async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node) -> Result<(), RepoError> {
         use crate::diesel::schema::chaindexing_nodes::dsl::*;
 
         let now = chrono::offset::Utc::now().timestamp();
@@ -363,6 +397,8 @@ impl Repo for PostgresRepo {
             .set(last_active_at.eq(now))
             .execute(conn)
             .await
-            .unwrap();
+            .map_err(RepoError::from)?;
+
+        Ok(())
     }
 }

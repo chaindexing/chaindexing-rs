@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::Event;
 use crate::{
     ChaindexingRepo, ChaindexingRepoTxnClient, ExecutesWithRawQuery, LoadsDataWithRawQuery,
 };
+use crate::{Event, RepoError};
 
 use super::{serde_map_to_string_map, to_columns_and_values, to_sql_string_literal};
 
@@ -19,7 +19,7 @@ impl StateVersions {
         chain_id: i64,
         state_table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> Vec<HashMap<String, String>> {
+    ) -> Result<Vec<HashMap<String, String>>, RepoError> {
         let query = format!(
             "SELECT * FROM {table_name} 
             WHERE chain_id = {chain_id}
@@ -27,26 +27,40 @@ impl StateVersions {
             table_name = StateVersion::table_name(state_table_name),
         );
 
-        ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(client, &query)
-            .await
+        Ok(
+            ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(
+                client, &query,
+            )
+            .await?
             .iter()
             .map(serde_map_to_string_map)
+            .collect::<Vec<_>>(),
+        )
+    }
+
+    pub fn get_ids(state_versions: &[HashMap<String, String>]) -> Result<Vec<String>, RepoError> {
+        state_versions
+            .iter()
+            .map(|state_version| {
+                state_version.get("state_version_id").cloned().ok_or_else(|| {
+                    RepoError::Decode("state version row is missing state_version_id".to_string())
+                })
+            })
             .collect()
     }
 
-    pub fn get_ids(state_versions: &[HashMap<String, String>]) -> Vec<String> {
+    pub fn get_group_ids(
+        state_versions: &[HashMap<String, String>],
+    ) -> Result<Vec<String>, RepoError> {
         state_versions
             .iter()
-            .map(|state_version| state_version.get("state_version_id").unwrap())
-            .cloned()
-            .collect()
-    }
-
-    pub fn get_group_ids(state_versions: &[HashMap<String, String>]) -> Vec<String> {
-        state_versions
-            .iter()
-            .map(|state_version| state_version.get("state_version_group_id").unwrap())
-            .cloned()
+            .map(|state_version| {
+                state_version.get("state_version_group_id").cloned().ok_or_else(|| {
+                    RepoError::Decode(
+                        "state version row is missing state_version_group_id".to_string(),
+                    )
+                })
+            })
             .collect()
     }
 
@@ -54,9 +68,9 @@ impl StateVersions {
         ids: &[String],
         state_table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) {
+    ) -> Result<(), RepoError> {
         if ids.is_empty() {
-            return;
+            return Ok(());
         }
 
         let query = format!(
@@ -66,16 +80,16 @@ impl StateVersions {
             ids = ids.join(",")
         );
 
-        ChaindexingRepo::execute_in_txn(client, &query).await;
+        ChaindexingRepo::execute_in_txn(client, &query).await
     }
 
     pub async fn get_latest<'a>(
         group_ids: &[String],
         state_table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> Vec<HashMap<String, String>> {
+    ) -> Result<Vec<HashMap<String, String>>, RepoError> {
         if group_ids.is_empty() {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let query = format!(
@@ -86,11 +100,15 @@ impl StateVersions {
             group_ids = join_sql_string_literals(group_ids)
         );
 
-        ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(client, &query)
-            .await
+        Ok(
+            ChaindexingRepo::load_data_list_in_txn::<HashMap<String, serde_json::Value>>(
+                client, &query,
+            )
+            .await?
             .iter()
             .map(serde_map_to_string_map)
-            .collect()
+            .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -109,12 +127,21 @@ impl StateVersion {
         format!("{STATE_VERSIONS_TABLE_PREFIX}{state_table_name}")
     }
 
-    pub fn was_deleted(state_version: &HashMap<String, String>) -> bool {
-        state_version.get("state_version_is_deleted").unwrap() == "true"
+    pub fn was_deleted(state_version: &HashMap<String, String>) -> Result<bool, RepoError> {
+        state_version
+            .get("state_version_is_deleted")
+            .map(|value| value == "true")
+            .ok_or_else(|| {
+                RepoError::Decode(
+                    "state version row is missing state_version_is_deleted".to_string(),
+                )
+            })
     }
 
-    pub fn get_group_id(state_version: &HashMap<String, String>) -> String {
-        state_version.get("state_version_group_id").unwrap().to_owned()
+    pub fn get_group_id(state_version: &HashMap<String, String>) -> Result<String, RepoError> {
+        state_version.get("state_version_group_id").cloned().ok_or_else(|| {
+            RepoError::Decode("state version row is missing state_version_group_id".to_string())
+        })
     }
 
     pub async fn create<'a>(
@@ -122,7 +149,7 @@ impl StateVersion {
         state_table_name: &str,
         event: &Event,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> HashMap<String, String> {
+    ) -> Result<HashMap<String, String>, RepoError> {
         let mut state_version = state.clone();
         state_version.insert(
             "state_version_group_id".to_owned(),
@@ -138,7 +165,7 @@ impl StateVersion {
         state_table_name: &str,
         event: &Event,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> HashMap<String, String> {
+    ) -> Result<HashMap<String, String>, RepoError> {
         let mut state_version = state.clone();
         state_version.extend(updates.clone());
         Self::append(&state_version, state_table_name, event, client).await
@@ -149,7 +176,7 @@ impl StateVersion {
         state_table_name: &str,
         event: &Event,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> HashMap<String, String> {
+    ) -> Result<HashMap<String, String>, RepoError> {
         let mut state_version = state.clone();
         state_version.insert("state_version_is_deleted".to_owned(), "true".to_owned());
         Self::append(&state_version, state_table_name, event, client).await
@@ -160,16 +187,18 @@ impl StateVersion {
         state_table_name: &str,
         event: &Event,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> HashMap<String, String> {
+    ) -> Result<HashMap<String, String>, RepoError> {
         let query = Self::append_query(partial_state_version, state_table_name, event);
 
-        serde_map_to_string_map(
+        Ok(serde_map_to_string_map(
             &ChaindexingRepo::load_data_in_txn::<HashMap<String, serde_json::Value>>(
                 client, &query,
             )
-            .await
-            .unwrap(),
-        )
+            .await?
+            .ok_or_else(|| {
+                RepoError::Cardinality("state version insert returned no rows".to_string())
+            })?,
+        ))
     }
 
     fn append_query(

@@ -6,7 +6,7 @@ use crate::deferred_futures::DeferredFutures;
 use crate::events::Event;
 use crate::{ChaindexingRepoClient, ChaindexingRepoTxnClient, EventParam};
 
-use super::handler_context::HandlerContext;
+use super::{handler_context::HandlerContext, HandlerResult};
 
 /// Pure handlers do not contain any side effects. They are simple reducers
 /// that derive or index states deterministically.
@@ -17,7 +17,7 @@ pub trait PureHandler: Send + Sync {
     /// `PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)`.
     /// The chain explorer's event section can also be used to infer this.
     fn abi(&self) -> &'static str;
-    async fn handle_event<'a, 'b>(&self, context: PureHandlerContext<'a, 'b>);
+    async fn handle_event<'a, 'b>(&self, context: PureHandlerContext<'a, 'b>) -> HandlerResult;
 }
 
 /// Event's context in a pure event handler

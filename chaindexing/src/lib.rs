@@ -21,6 +21,8 @@ mod handlers;
 mod indexed_data;
 mod indexer;
 mod inspection;
+mod inspection_ui;
+mod local_backend;
 mod nodes;
 mod outbox;
 mod pruning;
@@ -37,12 +39,17 @@ pub use config::{Config, OptimizationConfig};
 pub use contracts::{Contract, ContractAddress, EventAbi};
 pub use events::{Event, EventParam};
 pub use handlers::{
-    PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
-    SideEffectHandlerContext as SideEffectContext,
+    HandlerError, HandlerResult, PureHandler as EventHandler, PureHandlerContext as EventContext,
+    SideEffectHandler, SideEffectHandlerContext as SideEffectContext,
 };
 pub use indexed_data::{IndexedCallTrace, IndexedDataConfig, IndexedTransaction};
 pub use indexer::Indexer;
 pub use inspection::{InspectionQueries, InspectionQuery};
+pub use inspection_ui::{InspectionResource, InspectionUi, InspectionUiQuery};
+pub use local_backend::{
+    LocalBackendGuarantee, LocalBackendPrototypeReport, PrototypeGuarantee, PrototypeStatus,
+    SqlitePrototype,
+};
 pub use nodes::NodeHeartbeat as Heartbeat;
 pub use outbox::{
     dispatch_pending_outbox_jobs, OutboxDispatchConfig, OutboxDispatcher, OutboxFinalityWatermark,
@@ -123,6 +130,7 @@ pub(crate) type ChaindexingRepoClientMutex = Arc<Mutex<PostgresRepoClient>>;
 #[derive(Debug)]
 pub enum ChaindexingError {
     Config(ConfigError),
+    Repo(RepoError),
     Runtime(String),
 }
 
@@ -132,11 +140,20 @@ impl From<ConfigError> for ChaindexingError {
     }
 }
 
+impl From<RepoError> for ChaindexingError {
+    fn from(value: RepoError) -> Self {
+        ChaindexingError::Repo(value)
+    }
+}
+
 impl std::fmt::Display for ChaindexingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChaindexingError::Config(config_error) => {
                 write!(f, "Config error: {config_error}")
+            }
+            ChaindexingError::Repo(repo_error) => {
+                write!(f, "{repo_error}")
             }
             ChaindexingError::Runtime(error) => {
                 write!(f, "Runtime error: {error}")
@@ -145,7 +162,15 @@ impl std::fmt::Display for ChaindexingError {
     }
 }
 
-impl std::error::Error for ChaindexingError {}
+impl std::error::Error for ChaindexingError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ChaindexingError::Config(error) => Some(error),
+            ChaindexingError::Repo(error) => Some(error),
+            ChaindexingError::Runtime(_) => None,
+        }
+    }
+}
 
 /// Handle for a running Chaindexing indexer.
 ///
@@ -203,9 +228,9 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
         config.effective_handler_concurrency(),
     );
 
-    let client = config.repo.get_client().await;
-    booting::setup_nodes(config, &client).await;
-    let current_node = ChaindexingRepo::create_and_load_new_node(&client).await;
+    let client = config.repo.get_client().await?;
+    booting::setup_nodes(config, &client).await?;
+    let current_node = ChaindexingRepo::create_and_load_new_node(&client).await?;
     wait_for_non_leader_nodes_to_abort(config.get_node_election_rate_ms()).await;
 
     booting::setup(config, &client).await?;
@@ -219,8 +244,8 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
         let pool = config
             .repo
             .get_pool(config.runtime_config.limits_ref().db_connections_value())
-            .await;
-        let mut conn = ChaindexingRepo::get_conn(&pool).await;
+            .await?;
+        let mut conn = ChaindexingRepo::get_conn(&pool).await?;
         let conn = &mut conn;
 
         let mut node_tasks = NodeTasks::new(&current_node);
@@ -231,8 +256,8 @@ pub async fn start_indexing<S: Send + Sync + Clone + Debug + 'static>(
             }
 
             // Keep node active first to guarantee that at least this node is active before election
-            ChaindexingRepo::keep_node_active(conn, &current_node).await;
-            let is_leader = ChaindexingRepo::try_advisory_lock(conn, config.leader_lock_id).await;
+            ChaindexingRepo::keep_node_active(conn, &current_node).await?;
+            let is_leader = ChaindexingRepo::try_advisory_lock(conn, config.leader_lock_id).await?;
 
             node_tasks
                 .orchestrate_with_leadership(
@@ -285,7 +310,7 @@ pub async fn include_contract<'a, C: handlers::HandlerContext<'a>>(
     event_context: &C,
     contract_name: &str,
     address: &str,
-) {
+) -> Result<(), RepoError> {
     let event = event_context.get_event();
     let chain_id = event.get_chain_id();
     let start_block_number = event.get_block_number();
@@ -293,7 +318,7 @@ pub async fn include_contract<'a, C: handlers::HandlerContext<'a>>(
     let contract_address =
         UnsavedContractAddress::new(contract_name, address, &chain_id, start_block_number);
 
-    ChaindexingRepo::create_contract_address(event_context.get_client(), &contract_address).await;
+    ChaindexingRepo::create_contract_address(event_context.get_client(), &contract_address).await
 }
 
 async fn wait_for_non_leader_nodes_to_abort(node_election_rate_ms: u64) {
@@ -366,7 +391,8 @@ pub mod prelude {
     pub use crate::contracts::{Contract, ContractAddress, EventAbi};
     pub use crate::events::{Event, EventParam};
     pub use crate::handlers::{
-        PureHandler as EventHandler, PureHandlerContext as EventContext, SideEffectHandler,
+        HandlerError, HandlerResult, PureHandler as EventHandler,
+        PureHandlerContext as EventContext, SideEffectHandler,
         SideEffectHandlerContext as SideEffectContext,
     };
     pub use crate::indexer::Indexer;

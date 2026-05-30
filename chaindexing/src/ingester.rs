@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 use tokio::time::interval;
 
 use crate::contracts;
-use crate::nodes::NodeTask;
+use crate::nodes::{NodeSubtaskFailure, NodeTask};
 use crate::pruning::PruningConfig;
 use crate::states;
 use crate::streams::ContractAddressesStream;
@@ -34,10 +34,22 @@ use crate::{ExecutesWithRawQuery, HasRawQueryClient, Repo};
 
 pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> NodeTask {
     let node_task = NodeTask::new();
-    let pool = config
+    let pool = match config
         .repo
         .get_pool(config.runtime_config.limits_ref().db_connections_value())
-        .await;
+        .await
+    {
+        Ok(pool) => pool,
+        Err(error) => {
+            node_task
+                .add_named_subtask(
+                    "ingester-setup",
+                    tokio::spawn(async move { Err(NodeSubtaskFailure::from(error)) }),
+                )
+                .await;
+            return node_task;
+        }
+    };
 
     for (index, chains) in get_chunked_chains(config).into_iter().enumerate() {
         let config = config.clone();
@@ -71,8 +83,12 @@ pub async fn start<S: Sync + Send + Clone + 'static>(config: &Config<S>) -> Node
                                     continue;
                                 }
                             };
-                            let repo_client = Arc::new(Mutex::new(config.repo.get_client().await));
-                            let conn = ChaindexingRepo::get_conn(&pool).await;
+                            let repo_client = Arc::new(Mutex::new(
+                                config.repo.get_client().await.map_err(NodeSubtaskFailure::from)?,
+                            ));
+                            let conn = ChaindexingRepo::get_conn(&pool)
+                                .await
+                                .map_err(NodeSubtaskFailure::from)?;
                             let conn = Arc::new(Mutex::new(conn));
 
                             if let Err(error) = ingest_for_chain(
@@ -154,6 +170,7 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
         ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(5);
 
     while let Some(contract_addresses) = contract_addresses_stream.next().await {
+        let contract_addresses = contract_addresses?;
         let contract_addresses =
             filter_uningested_contract_addresses(&contract_addresses, target_block_number);
 
@@ -187,7 +204,7 @@ pub async fn ingest_for_chain<'a, S: Send + Sync + Clone>(
         current_block_number,
         &*repo_client.lock().await,
     )
-    .await;
+    .await?;
 
     Ok(())
 }
@@ -199,7 +216,7 @@ async fn maybe_prune<S: Send + Sync + Clone>(
     chain_id: u64,
     current_block_number: u64,
     repo_client: &ChaindexingRepoClient,
-) {
+) -> Result<(), IngesterError> {
     if let Some(pruning_config @ PruningConfig { prune_interval, .. }) = pruning_config {
         let now = Utc::now().timestamp() as u64;
         let last_pruned_at = last_pruned_at_per_chain_id.get(&chain_id).unwrap_or(&now);
@@ -207,7 +224,7 @@ async fn maybe_prune<S: Send + Sync + Clone>(
             let min_pruning_block_number =
                 pruning_config.get_min_block_number(current_block_number);
 
-            ChaindexingRepo::prune_events(repo_client, min_pruning_block_number, chain_id).await;
+            ChaindexingRepo::prune_events(repo_client, min_pruning_block_number, chain_id).await?;
 
             let state_migrations = contracts::get_state_migrations(contracts);
             let state_table_names = states::get_all_table_names(&state_migrations);
@@ -217,10 +234,12 @@ async fn maybe_prune<S: Send + Sync + Clone>(
                 min_pruning_block_number,
                 chain_id,
             )
-            .await;
+            .await?;
         }
         last_pruned_at_per_chain_id.insert(chain_id, Utc::now().timestamp() as u64);
     }
+
+    Ok(())
 }
 
 fn filter_uningested_contract_addresses(

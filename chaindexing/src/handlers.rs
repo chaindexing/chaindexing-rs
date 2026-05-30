@@ -15,8 +15,40 @@ pub use side_effect_handler::{SideEffectHandler, SideEffectHandlerContext};
 use tokio::{sync::Mutex, time::interval};
 
 use crate::nodes::NodeTask;
-use crate::Config;
 use crate::{contracts, states, HasRawQueryClient};
+use crate::{Config, RepoError};
+
+#[derive(Debug)]
+pub enum HandlerError {
+    Repo(RepoError),
+    Custom(String),
+}
+
+impl From<RepoError> for HandlerError {
+    fn from(value: RepoError) -> Self {
+        HandlerError::Repo(value)
+    }
+}
+
+impl std::fmt::Display for HandlerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HandlerError::Repo(error) => write!(f, "{error}"),
+            HandlerError::Custom(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for HandlerError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            HandlerError::Repo(error) => Some(error),
+            HandlerError::Custom(_) => None,
+        }
+    }
+}
+
+pub type HandlerResult = Result<(), HandlerError>;
 
 pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>) -> NodeTask {
     let node_task = NodeTask::new();
@@ -43,8 +75,13 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                     let mut interval =
                                         interval(Duration::from_millis(config.handler_rate_ms));
 
-                                    let repo_client =
-                                        Arc::new(Mutex::new(config.repo.get_client().await));
+                                    let repo_client = Arc::new(Mutex::new(
+                                        config
+                                            .repo
+                                            .get_client()
+                                            .await
+                                            .map_err(crate::nodes::NodeSubtaskFailure::from)?,
+                                    ));
                                     let pure_handlers =
                                         contracts::get_pure_handlers(&config.contracts);
                                     let side_effect_handlers =
@@ -63,7 +100,8 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                                             &config.shared_state,
                                             config.side_effect_finality,
                                         )
-                                        .await;
+                                        .await
+                                        .map_err(crate::nodes::NodeSubtaskFailure::from)?;
 
                                         tokio::select! {
                                             _ = interval.tick() => {}
@@ -77,7 +115,11 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                             .await;
                     }
 
-                    let mut repo_client = config.repo.get_client().await;
+                    let mut repo_client = config
+                        .repo
+                        .get_client()
+                        .await
+                        .map_err(crate::nodes::NodeSubtaskFailure::from)?;
 
                     let state_migrations = contracts::get_state_migrations(&config.contracts);
                     let state_table_names = states::get_all_table_names(&state_migrations);
@@ -89,7 +131,9 @@ pub async fn start<S: Send + Sync + Clone + Debug + 'static>(config: &Config<S>)
                             break;
                         }
 
-                        maybe_handle_chain_reorg::run(&mut repo_client, &state_table_names).await;
+                        maybe_handle_chain_reorg::run(&mut repo_client, &state_table_names)
+                            .await
+                            .map_err(crate::nodes::NodeSubtaskFailure::from)?;
 
                         tokio::select! {
                             _ = interval.tick() => {}

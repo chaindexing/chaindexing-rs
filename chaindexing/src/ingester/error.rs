@@ -4,17 +4,14 @@ use super::provider::ProviderError;
 
 #[derive(Debug)]
 pub enum IngesterError {
-    RepoConnectionError,
+    RepoError(RepoError),
     ProviderError(ProviderError),
     GenericError(String),
 }
 
 impl From<RepoError> for IngesterError {
     fn from(value: RepoError) -> Self {
-        match value {
-            RepoError::NotConnected => IngesterError::RepoConnectionError,
-            RepoError::Unknown(error) => IngesterError::GenericError(error),
-        }
+        IngesterError::RepoError(value)
     }
 }
 
@@ -27,7 +24,7 @@ impl From<ProviderError> for IngesterError {
 impl std::fmt::Display for IngesterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IngesterError::RepoConnectionError => write!(f, "repository connection error"),
+            IngesterError::RepoError(error) => write!(f, "{error}"),
             IngesterError::ProviderError(error) => write!(f, "provider error: {error}"),
             IngesterError::GenericError(error) => write!(f, "{error}"),
         }
@@ -37,8 +34,9 @@ impl std::fmt::Display for IngesterError {
 impl std::error::Error for IngesterError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            IngesterError::RepoError(error) => Some(error),
             IngesterError::ProviderError(error) => Some(error),
-            _ => None,
+            IngesterError::GenericError(_) => None,
         }
     }
 }

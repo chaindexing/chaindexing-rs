@@ -16,7 +16,7 @@ use crate::Config;
 use crate::{events, ChainId};
 use crate::{
     ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoConn, ContractAddress,
-    LoadsDataWithRawQuery, Repo,
+    LoadsDataWithRawQuery, Repo, RepoError,
 };
 
 pub async fn run<'a, S: Send + Sync + Clone>(
@@ -43,7 +43,8 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
     let filters = {
         let repo_client = repo_client.lock().await;
-        remove_already_ingested_filters(&filters, &contract_addresses, chain_id, &repo_client).await
+        remove_already_ingested_filters(&filters, &contract_addresses, chain_id, &repo_client)
+            .await?
     };
 
     if !filters.is_empty() {
@@ -100,28 +101,29 @@ pub async fn run<'a, S: Send + Sync + Clone>(
         ChaindexingRepo::run_in_transaction(&mut conn, move |conn| {
             async move {
                 if let Some(block_number) =
-                    ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await
+                    ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await?
                 {
                     let reorged_block = UnsavedReorgedBlock::new(block_number, &chain_id);
-                    ChaindexingRepo::create_reorged_block(conn, &reorged_block).await;
+                    ChaindexingRepo::create_reorged_block(conn, &reorged_block).await?;
                     ChaindexingRepo::delete_events_from_block_number(conn, &chain_id, block_number)
-                        .await;
+                        .await?;
                     rewind_next_block_numbers_to_ingest_from(
                         conn,
                         &contract_addresses,
                         block_number,
                     )
-                    .await;
+                    .await?;
 
                     return Ok(());
                 }
 
-                ChaindexingRepo::create_block_scans(conn, &block_scans).await;
-                ChaindexingRepo::create_transactions(conn, &indexed_data.transactions).await;
-                ChaindexingRepo::create_call_traces(conn, &indexed_data.call_traces).await;
-                ChaindexingRepo::create_events(conn, &events.clone()).await;
+                ChaindexingRepo::create_block_scans(conn, &block_scans).await?;
+                ChaindexingRepo::create_transactions(conn, &indexed_data.transactions).await?;
+                ChaindexingRepo::create_call_traces(conn, &indexed_data.call_traces).await?;
+                ChaindexingRepo::create_events(conn, &events.clone()).await?;
 
-                update_next_block_numbers_to_ingest_from(conn, &contract_addresses, &filters).await;
+                update_next_block_numbers_to_ingest_from(conn, &contract_addresses, &filters)
+                    .await?;
 
                 Ok(())
             }
@@ -138,19 +140,19 @@ async fn remove_already_ingested_filters(
     contract_addresses: &[ContractAddress],
     chain_id: &ChainId,
     repo_client: &ChaindexingRepoClient,
-) -> Vec<Filter> {
+) -> Result<Vec<Filter>, RepoError> {
     let current_block_filters: Vec<_> = filters
         .iter()
         .filter(|f| f.value.get_from_block() == f.value.get_to_block())
         .collect();
 
     if current_block_filters.is_empty() {
-        filters.to_owned()
+        Ok(filters.to_owned())
     } else {
         let addresses: Vec<_> = contract_addresses.iter().map(|c| c.address.clone()).collect();
 
         let latest_ingested_events =
-            ChaindexingRepo::load_latest_events(repo_client, *chain_id as u64, &addresses).await;
+            ChaindexingRepo::load_latest_events(repo_client, *chain_id as u64, &addresses).await?;
         let latest_ingested_events =
             latest_ingested_events
                 .iter()
@@ -174,11 +176,11 @@ async fn remove_already_ingested_filters(
                 stale_current_block_filters
             });
 
-        filters
+        Ok(filters
             .iter()
             .filter(|f| !already_ingested_filters.contains_key(&f.contract_address_id))
             .cloned()
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 }
 
@@ -186,22 +188,24 @@ async fn rewind_next_block_numbers_to_ingest_from<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     contract_addresses: &[ContractAddress],
     block_number: i64,
-) {
+) -> Result<(), RepoError> {
     for contract_address in contract_addresses {
         ChaindexingRepo::update_next_block_number_to_ingest_from(
             conn,
             contract_address,
             block_number,
         )
-        .await
+        .await?;
     }
+
+    Ok(())
 }
 
 async fn update_next_block_numbers_to_ingest_from<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     contract_addresses: &[ContractAddress],
     filters: &[Filter],
-) {
+) -> Result<(), RepoError> {
     let filters_by_contract_address_id = filters::group_by_contract_address_id(filters);
 
     for (contract_address, filters) in contract_addresses
@@ -216,7 +220,9 @@ async fn update_next_block_numbers_to_ingest_from<'a>(
                 contract_address,
                 next_block_number_to_ingest_from as i64,
             )
-            .await
+            .await?;
         }
     }
+
+    Ok(())
 }

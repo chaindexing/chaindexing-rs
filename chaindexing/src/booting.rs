@@ -1,14 +1,16 @@
 use crate::{
     contracts, root, ChaindexingError, ChaindexingRepo, ChaindexingRepoClient, Config, Contract,
-    ExecutesWithRawQuery, LoadsDataWithRawQuery, Migratable, RepoMigrations,
+    ExecutesWithRawQuery, LoadsDataWithRawQuery, Migratable, RepoError, RepoMigrations,
 };
 
 pub async fn setup_nodes<S: Sync + Send + Clone>(
     config: &Config<S>,
     client: &ChaindexingRepoClient,
-) {
-    ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await;
-    ChaindexingRepo::prune_nodes(client, config.max_concurrent_node_count).await;
+) -> Result<(), RepoError> {
+    ChaindexingRepo::migrate(client, ChaindexingRepo::create_nodes_migration().to_vec()).await?;
+    ChaindexingRepo::prune_nodes(client, config.max_concurrent_node_count).await?;
+
+    Ok(())
 }
 
 pub async fn setup<S: Sync + Send + Clone>(
@@ -21,7 +23,7 @@ pub async fn setup<S: Sync + Send + Clone>(
     }: &Config<S>,
     client: &ChaindexingRepoClient,
 ) -> Result<(), ChaindexingError> {
-    setup_root(client).await;
+    setup_root(client).await?;
 
     maybe_reset(
         *reset_count,
@@ -30,37 +32,39 @@ pub async fn setup<S: Sync + Send + Clone>(
         contracts,
         client,
     )
-    .await;
+    .await?;
 
-    run_internal_migrations(client).await;
-    run_user_migrations(client, contracts).await;
+    run_internal_migrations(client).await?;
+    run_user_migrations(client, contracts).await?;
 
     let contract_addresses: Vec<_> =
         contracts.clone().into_iter().flat_map(|c| c.addresses).collect();
-    ChaindexingRepo::create_contract_addresses(client, &contract_addresses).await;
+    ChaindexingRepo::create_contract_addresses(client, &contract_addresses).await?;
 
     Ok(())
 }
 
 /// Root migrations are immutable and should never really be dropped
-pub async fn setup_root(client: &ChaindexingRepoClient) {
+pub async fn setup_root(client: &ChaindexingRepoClient) -> Result<(), RepoError> {
     ChaindexingRepo::migrate(
         client,
         ChaindexingRepo::create_root_states_migration().to_vec(),
     )
-    .await;
+    .await?;
 
     ChaindexingRepo::migrate(
         client,
         ChaindexingRepo::create_contract_addresses_migration().to_vec(),
     )
-    .await;
+    .await?;
 
-    if ChaindexingRepo::load_last_root_state(client).await.is_none() {
-        ChaindexingRepo::append_root_state(client, &Default::default()).await;
+    if ChaindexingRepo::load_last_root_state(client).await?.is_none() {
+        ChaindexingRepo::append_root_state(client, &Default::default()).await?;
     }
 
-    ChaindexingRepo::prune_root_states(client, root::states::MAX_COUNT).await;
+    ChaindexingRepo::prune_root_states(client, root::states::MAX_COUNT).await?;
+
+    Ok(())
 }
 
 async fn maybe_reset<S: Send + Sync + Clone>(
@@ -69,72 +73,87 @@ async fn maybe_reset<S: Send + Sync + Clone>(
     reset_queries: &[String],
     contracts: &[Contract<S>],
     client: &ChaindexingRepoClient,
-) {
-    let mut root_state = ChaindexingRepo::load_last_root_state(client).await.unwrap();
+) -> Result<(), RepoError> {
+    let mut root_state = ChaindexingRepo::load_last_root_state(client)
+        .await?
+        .ok_or_else(|| RepoError::Cardinality("missing root state after setup".to_string()))?;
 
     let should_reset_normally = reset_count > root_state.reset_count;
     let should_reset_including_side_effects =
         reset_including_side_effects_count > root_state.reset_including_side_effects_count;
 
     if should_reset_normally {
-        reset(reset_queries, contracts, client).await;
+        reset(reset_queries, contracts, client).await?;
 
         root_state.update_reset_count(reset_count);
     }
 
     if should_reset_including_side_effects {
-        reset(reset_queries, contracts, client).await;
+        reset(reset_queries, contracts, client).await?;
 
         ChaindexingRepo::migrate(
             client,
             ChaindexingRepo::zero_next_block_number_for_side_effects_migration().to_vec(),
         )
-        .await;
+        .await?;
 
         root_state.update_reset_including_side_effects_count(reset_including_side_effects_count);
     }
 
     let reset_happened = should_reset_normally || should_reset_including_side_effects;
     if reset_happened {
-        ChaindexingRepo::append_root_state(client, &root_state).await;
+        ChaindexingRepo::append_root_state(client, &root_state).await?;
     }
+
+    Ok(())
 }
 
 async fn reset<S: Send + Sync + Clone>(
     reset_queries: &[String],
     contracts: &[Contract<S>],
     client: &ChaindexingRepoClient,
-) {
-    reset_internal_migrations(client).await;
-    reset_user_migrations(client, contracts).await;
-    run_user_reset_queries(client, reset_queries).await;
+) -> Result<(), RepoError> {
+    reset_internal_migrations(client).await?;
+    reset_user_migrations(client, contracts).await?;
+    run_user_reset_queries(client, reset_queries).await?;
+
+    Ok(())
 }
 
-pub async fn run_internal_migrations(client: &ChaindexingRepoClient) {
-    ChaindexingRepo::migrate(client, ChaindexingRepo::get_internal_migrations()).await;
+pub async fn run_internal_migrations(client: &ChaindexingRepoClient) -> Result<(), RepoError> {
+    ChaindexingRepo::migrate(client, ChaindexingRepo::get_internal_migrations()).await
 }
-async fn reset_internal_migrations(client: &ChaindexingRepoClient) {
-    ChaindexingRepo::migrate(client, ChaindexingRepo::get_reset_internal_migrations()).await;
+async fn reset_internal_migrations(client: &ChaindexingRepoClient) -> Result<(), RepoError> {
+    ChaindexingRepo::migrate(client, ChaindexingRepo::get_reset_internal_migrations()).await
 }
 
 pub async fn run_user_migrations<S: Send + Sync + Clone>(
     client: &ChaindexingRepoClient,
     contracts: &[Contract<S>],
-) {
+) -> Result<(), RepoError> {
     for state_migration in contracts::get_state_migrations(contracts) {
-        ChaindexingRepo::migrate(client, state_migration.get_migrations()).await;
+        ChaindexingRepo::migrate(client, state_migration.get_migrations()).await?;
     }
+
+    Ok(())
 }
 async fn reset_user_migrations<S: Send + Sync + Clone>(
     client: &ChaindexingRepoClient,
     contracts: &[Contract<S>],
-) {
+) -> Result<(), RepoError> {
     for state_migration in contracts::get_state_migrations(contracts) {
-        ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await;
+        ChaindexingRepo::migrate(client, state_migration.get_reset_migrations()).await?;
     }
+
+    Ok(())
 }
-async fn run_user_reset_queries(client: &ChaindexingRepoClient, reset_queries: &[String]) {
+async fn run_user_reset_queries(
+    client: &ChaindexingRepoClient,
+    reset_queries: &[String],
+) -> Result<(), RepoError> {
     for reset_query in reset_queries {
-        ChaindexingRepo::execute(client, reset_query).await;
+        ChaindexingRepo::execute(client, reset_query).await?;
     }
+
+    Ok(())
 }

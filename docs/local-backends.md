@@ -16,11 +16,30 @@ A local backend must preserve these behaviors:
   `ChainState` APIs
 - outbox leasing semantics that do not double-dispatch jobs under normal process concurrency
 
-## Evaluation Shape
+## Current SQLite Prototype
 
-SQLite is the first local backend worth evaluating because it has broad deployment support and
-transactional semantics. A serious prototype should start with a backend trait boundary that mirrors
-the Postgres operations rather than translating arbitrary SQL strings.
+SQLite is the first local backend under evaluation because it has broad deployment support and
+transactional semantics. The crate now exposes `SqlitePrototype` as an explicit, unsupported
+prototype surface for exercising local-backend guarantees without changing the production backend.
+
+The prototype includes:
+
+- SQLite-compatible internal migrations for Chaindexing's root, node, contract-address, event,
+  block, block-scan, transaction, call-trace, checkpoint, reorg, and outbox tables
+- reorg marking statements that keep canonical/reorged status transitions aligned across internal
+  tables
+- a single-writer outbox leasing query that models the Postgres lease lifecycle
+- a guarantee report through `SqlitePrototype::report()` so callers and docs can distinguish
+  proven prototype behavior from unsupported production behavior
+
+```rust
+use chaindexing::SqlitePrototype;
+
+let report = SqlitePrototype::report();
+let migrations = SqlitePrototype::internal_migrations();
+```
+
+## Evaluation Shape
 
 The prototype should prove:
 

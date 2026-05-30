@@ -17,9 +17,29 @@ use crate::{
 /// Errors from interacting the configured SQL database
 #[derive(Debug, Display)]
 pub enum RepoError {
+    #[display("repository connection error: {_0}")]
+    Connection(String),
+    #[display("repository pool error: {_0}")]
+    Pool(String),
+    #[display("repository transaction error: {_0}")]
+    Transaction(String),
+    #[display("repository query error: {_0}")]
+    Query(String),
+    #[display("repository decode error: {_0}")]
+    Decode(String),
+    #[display("repository cardinality error: {_0}")]
+    Cardinality(String),
+    #[display("repository migration error: {_0}")]
+    Migration(String),
+    #[display("repository serialization error: {_0}")]
+    Serialization(String),
+    #[display("repository not connected")]
     NotConnected,
+    #[display("repository error: {_0}")]
     Unknown(String),
 }
+
+impl std::error::Error for RepoError {}
 
 #[crate::augmenting_std::async_trait]
 pub trait Repo:
@@ -28,8 +48,8 @@ pub trait Repo:
     type Pool;
     type Conn<'a>;
 
-    async fn get_pool(&self, max_size: u32) -> Self::Pool;
-    async fn get_conn<'a>(pool: &'a Self::Pool) -> Self::Conn<'a>;
+    async fn get_pool(&self, max_size: u32) -> Result<Self::Pool, RepoError>;
+    async fn get_conn<'a>(pool: &'a Self::Pool) -> Result<Self::Conn<'a>, RepoError>;
 
     async fn run_in_transaction<'a, F>(
         conn: &mut Self::Conn<'a>,
@@ -41,33 +61,39 @@ pub trait Repo:
             + Sync
             + 'a;
 
-    async fn create_events<'a>(conn: &mut Self::Conn<'a>, events: &[Event]);
-    async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Vec<Event>;
+    async fn create_events<'a>(
+        conn: &mut Self::Conn<'a>,
+        events: &[Event],
+    ) -> Result<(), RepoError>;
+    async fn get_all_events<'a>(conn: &mut Self::Conn<'a>) -> Result<Vec<Event>, RepoError>;
     async fn get_events<'a>(
         conn: &mut Self::Conn<'a>,
         chain_id: u64,
         address: String,
         from: u64,
         to: u64,
-    ) -> Vec<Event>;
-    async fn delete_events_by_ids<'a>(conn: &mut Self::Conn<'a>, ids: &[Uuid]);
+    ) -> Result<Vec<Event>, RepoError>;
+    async fn delete_events_by_ids<'a>(
+        conn: &mut Self::Conn<'a>,
+        ids: &[Uuid],
+    ) -> Result<(), RepoError>;
 
     async fn update_next_block_number_to_ingest_from<'a>(
         conn: &mut Self::Conn<'a>,
         contract_address: &ContractAddress,
         block_number: i64,
-    );
+    ) -> Result<(), RepoError>;
 
     async fn create_reorged_block<'a>(
         conn: &mut Self::Conn<'a>,
         reorged_block: &UnsavedReorgedBlock,
-    );
+    ) -> Result<(), RepoError>;
 
     async fn get_active_nodes<'a>(
         conn: &mut Self::Conn<'a>,
         node_election_rate_ms: u64,
-    ) -> Vec<Node>;
-    async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node);
+    ) -> Result<Vec<Node>, RepoError>;
+    async fn keep_node_active<'a>(conn: &mut Self::Conn<'a>, node: &Node) -> Result<(), RepoError>;
 }
 
 #[crate::augmenting_std::async_trait]
@@ -75,69 +101,86 @@ pub trait HasRawQueryClient {
     type RawQueryClient: Send + Sync;
     type RawQueryTxnClient<'a>: Send + Sync;
 
-    async fn get_client(&self) -> Self::RawQueryClient;
+    async fn get_client(&self) -> Result<Self::RawQueryClient, RepoError>;
     async fn get_txn_client<'a>(
         client: &'a mut Self::RawQueryClient,
-    ) -> Self::RawQueryTxnClient<'a>;
+    ) -> Result<Self::RawQueryTxnClient<'a>, RepoError>;
 }
 
 #[crate::augmenting_std::async_trait]
 pub trait ExecutesWithRawQuery: HasRawQueryClient {
-    async fn execute(client: &Self::RawQueryClient, query: &str);
-    async fn execute_in_txn<'a>(client: &Self::RawQueryTxnClient<'a>, query: &str);
-    async fn commit_txns<'a>(client: Self::RawQueryTxnClient<'a>);
+    async fn execute(client: &Self::RawQueryClient, query: &str) -> Result<(), RepoError>;
+    async fn execute_in_txn<'a>(
+        client: &Self::RawQueryTxnClient<'a>,
+        query: &str,
+    ) -> Result<(), RepoError>;
+    async fn commit_txns<'a>(client: Self::RawQueryTxnClient<'a>) -> Result<(), RepoError>;
 
     async fn create_contract_address<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         contract_address: &UnsavedContractAddress,
-    );
+    ) -> Result<(), RepoError>;
 
     async fn create_contract_addresses(
         client: &Self::RawQueryClient,
         contract_addresses: &[UnsavedContractAddress],
-    );
+    ) -> Result<(), RepoError>;
 
     async fn update_next_block_number_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         address: &str,
         chain_id: u64,
         block_number: u64,
-    );
+    ) -> Result<(), RepoError>;
 
     async fn update_next_block_numbers_to_handle_from<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         chain_id: u64,
         block_number: u64,
-    );
+    ) -> Result<(), RepoError>;
 
     async fn update_next_block_number_for_side_effects<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         address: &str,
         chain_id: u64,
         block_number: u64,
-    );
+    ) -> Result<(), RepoError>;
 
     async fn update_reorged_blocks_as_handled<'a>(
         client: &Self::RawQueryTxnClient<'a>,
         reorged_block_ids: &[i32],
-    );
+    ) -> Result<(), RepoError>;
 
-    async fn append_root_state(client: &Self::RawQueryClient, new_root_state: &root::State);
-    async fn prune_events(client: &Self::RawQueryClient, min_block_number: u64, chain_id: u64);
-    async fn prune_nodes(client: &Self::RawQueryClient, retain_size: u16);
-    async fn prune_root_states(client: &Self::RawQueryClient, retain_size: u64);
+    async fn append_root_state(
+        client: &Self::RawQueryClient,
+        new_root_state: &root::State,
+    ) -> Result<(), RepoError>;
+    async fn prune_events(
+        client: &Self::RawQueryClient,
+        min_block_number: u64,
+        chain_id: u64,
+    ) -> Result<(), RepoError>;
+    async fn prune_nodes(client: &Self::RawQueryClient, retain_size: u16) -> Result<(), RepoError>;
+    async fn prune_root_states(
+        client: &Self::RawQueryClient,
+        retain_size: u64,
+    ) -> Result<(), RepoError>;
 }
 
 #[crate::augmenting_std::async_trait]
 pub trait LoadsDataWithRawQuery: HasRawQueryClient {
-    async fn create_and_load_new_node(client: &Self::RawQueryClient) -> Node;
-    async fn load_last_root_state(client: &Self::RawQueryClient) -> Option<root::State>;
+    async fn create_and_load_new_node(client: &Self::RawQueryClient) -> Result<Node, RepoError>;
+    async fn load_last_root_state(
+        client: &Self::RawQueryClient,
+    ) -> Result<Option<root::State>, RepoError>;
     async fn load_latest_events(
         client: &Self::RawQueryClient,
         chain_id: u64,
         addresses: &[String],
-    ) -> Vec<PartialEvent>;
-    async fn load_unhandled_reorged_blocks(client: &Self::RawQueryClient) -> Vec<ReorgedBlock>;
+    ) -> Result<Vec<PartialEvent>, RepoError>;
+    async fn load_unhandled_reorged_blocks(
+        client: &Self::RawQueryClient,
+    ) -> Result<Vec<ReorgedBlock>, RepoError>;
 
     async fn load_events(
         client: &Self::RawQueryClient,
@@ -145,24 +188,24 @@ pub trait LoadsDataWithRawQuery: HasRawQueryClient {
         contract_address: &str,
         from_block_number: u64,
         limit: u64,
-    ) -> Vec<Event>;
+    ) -> Result<Vec<Event>, RepoError>;
 
     async fn load_data<Data: Send + DeserializeOwned>(
         client: &Self::RawQueryClient,
         query: &str,
-    ) -> Option<Data>;
+    ) -> Result<Option<Data>, RepoError>;
     async fn load_data_in_txn<'a, Data: Send + DeserializeOwned>(
         client: &Self::RawQueryTxnClient<'a>,
         query: &str,
-    ) -> Option<Data>;
+    ) -> Result<Option<Data>, RepoError>;
     async fn load_data_list<Data: Send + DeserializeOwned>(
         conn: &Self::RawQueryClient,
         query: &str,
-    ) -> Vec<Data>;
+    ) -> Result<Vec<Data>, RepoError>;
     async fn load_data_list_in_txn<'a, Data: Send + DeserializeOwned>(
         conn: &Self::RawQueryTxnClient<'a>,
         query: &str,
-    ) -> Vec<Data>;
+    ) -> Result<Vec<Data>, RepoError>;
 }
 
 pub trait RepoMigrations: Migratable {
@@ -233,13 +276,20 @@ pub trait RepoMigrations: Migratable {
 
 #[crate::augmenting_std::async_trait]
 pub trait Migratable: ExecutesWithRawQuery + Sync + Send {
-    async fn migrate(client: &Self::RawQueryClient, migrations: Vec<impl AsRef<str> + Send + Sync>)
+    async fn migrate(
+        client: &Self::RawQueryClient,
+        migrations: Vec<impl AsRef<str> + Send + Sync>,
+    ) -> Result<(), RepoError>
     where
         Self: Sized,
     {
         for migration in migrations {
-            Self::execute(client, migration.as_ref()).await;
+            Self::execute(client, migration.as_ref())
+                .await
+                .map_err(|error| RepoError::Migration(format!("{error}")))?;
         }
+
+        Ok(())
     }
 }
 

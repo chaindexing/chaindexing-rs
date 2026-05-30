@@ -9,7 +9,7 @@ use crate::{
     ChaindexingRepo, ChaindexingRepoTxnClient, EventParam, ExecutesWithRawQuery, SideEffectFinality,
 };
 
-use super::handler_context::HandlerContext;
+use super::{handler_context::HandlerContext, HandlerResult};
 
 /// SideEffectHandlers are event handlers that help handle side-effects for events.
 /// This is useful for handling events only ONCE and can rely on a non-deterministic
@@ -29,7 +29,10 @@ pub trait SideEffectHandler: Send + Sync {
     /// `PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)`.
     /// The chain explorer's event section can also be used to infer this.
     fn abi(&self) -> &'static str;
-    async fn handle_event<'a>(&self, context: SideEffectHandlerContext<'a, Self::SharedState>);
+    async fn handle_event<'a>(
+        &self,
+        context: SideEffectHandlerContext<'a, Self::SharedState>,
+    ) -> HandlerResult;
 }
 
 /// Event's context in a side effect handler
@@ -91,13 +94,14 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
         &self,
         handler_id: &str,
         payload: &Payload,
-    ) -> OutboxReceipt {
-        let job = UnsavedOutboxJob::new(&self.event, handler_id, payload).unwrap();
+    ) -> Result<OutboxReceipt, crate::RepoError> {
+        let job = UnsavedOutboxJob::new(&self.event, handler_id, payload)
+            .map_err(|error| crate::RepoError::Serialization(error.to_string()))?;
         let receipt = job.receipt();
 
-        ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await;
+        ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await?;
 
-        receipt
+        Ok(receipt)
     }
 
     /// Enqueues a durable outbox job using the indexer's configured side-effect
@@ -106,7 +110,7 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
         &self,
         handler_id: &str,
         payload: &Payload,
-    ) -> OutboxReceipt {
+    ) -> Result<OutboxReceipt, crate::RepoError> {
         self.enqueue_outbox_with_finality(handler_id, payload, self.side_effect_finality)
             .await
     }
@@ -118,19 +122,19 @@ impl<'a, SharedState: Sync + Send + Clone> SideEffectHandlerContext<'a, SharedSt
         handler_id: &str,
         payload: &Payload,
         required_finality: SideEffectFinality,
-    ) -> OutboxReceipt {
+    ) -> Result<OutboxReceipt, crate::RepoError> {
         let job = UnsavedOutboxJob::new_with_finality(
             &self.event,
             handler_id,
             payload,
             required_finality,
         )
-        .unwrap();
+        .map_err(|error| crate::RepoError::Serialization(error.to_string()))?;
         let receipt = job.receipt();
 
-        ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await;
+        ChaindexingRepo::execute_in_txn(self.repo_client, &job.insert_query()).await?;
 
-        receipt
+        Ok(receipt)
     }
 }
 

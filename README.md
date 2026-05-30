@@ -75,7 +75,7 @@ Handle the contract event that changes that state:
 
 ```rust
 use chaindexing::states::{ContractState, Filters, Updates};
-use chaindexing::{EventContext, EventHandler};
+use chaindexing::{EventContext, EventHandler, HandlerResult};
 
 use crate::states::Nft;
 
@@ -86,7 +86,7 @@ impl EventHandler for TransferHandler {
     fn abi(&self) -> &'static str {
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
     }
-    async fn handle_event<'a, 'b>(&self, context: EventContext<'a, 'b>) {
+    async fn handle_event<'a, 'b>(&self, context: EventContext<'a, 'b>) -> HandlerResult {
         let event_params = context.get_event_params();
 
         let _from = event_params.get_address_string("from");
@@ -94,18 +94,20 @@ impl EventHandler for TransferHandler {
         let token_id = event_params.get_u32("tokenId");
 
         if let Some(existing_nft) =
-            Nft::read_one(&Filters::new("token_id", token_id), &context).await
+            Nft::read_one(&Filters::new("token_id", token_id), &context).await?
         {
             let updates = Updates::new("owner_address", &to);
-            existing_nft.update(&updates, &context).await;
+            existing_nft.update(&updates, &context).await?;
         } else {
             let new_nft = Nft {
                 token_id,
                 owner_address: to,
             };
 
-            new_nft.create(&context).await;
+            new_nft.create(&context).await?;
         }
+
+        Ok(())
     }
 }
 ```
@@ -295,7 +297,7 @@ Compatibility setters like `.blocks_per_batch(...)`, `.ingestion_rate_ms(...)`,
 Example side-effect outbox usage:
 
 ```rust
-use chaindexing::{SideEffectContext, SideEffectHandler};
+use chaindexing::{HandlerResult, SideEffectContext, SideEffectHandler};
 
 pub struct TransferSideEffectHandler;
 
@@ -307,12 +309,15 @@ impl SideEffectHandler for TransferSideEffectHandler {
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
     }
 
-    async fn handle_event<'a>(&self, context: SideEffectContext<'a, Self::SharedState>) {
+    async fn handle_event<'a>(
+        &self,
+        context: SideEffectContext<'a, Self::SharedState>,
+    ) -> HandlerResult {
         let token_id = context.get_event_params().get_u32("tokenId");
 
         context
             .enqueue_outbox("nft-transfer-notification", &format!("token {token_id} moved"))
-            .await;
+            .await?;
 
         // For workflows that should honor the indexer's side-effect finality policy:
         context
@@ -320,7 +325,9 @@ impl SideEffectHandler for TransferSideEffectHandler {
                 "nft-transfer-webhook",
                 &format!("token {token_id} moved"),
             )
-            .await;
+            .await?;
+
+        Ok(())
     }
 }
 ```
@@ -347,7 +354,7 @@ async fn dispatch_outbox(
     latest_block_number: u64,
     safe_block_number: u64,
     finalized_block_number: u64,
-) -> usize {
+) -> Result<usize, chaindexing::RepoError> {
     dispatch_pending_outbox_jobs(
         &std::env::var("DATABASE_URL").unwrap(),
         &Dispatcher,
@@ -372,7 +379,7 @@ Application code can read indexed state directly from Postgres:
 use chaindexing::states::{ContractState, Filters};
 use chaindexing::ChainId;
 
-async fn read_nft() -> Option<Nft> {
+async fn read_nft() -> Result<Option<Nft>, chaindexing::RepoError> {
     Nft::read_one_from_postgres(
         &std::env::var("DATABASE_URL").unwrap(),
         &ChainId::Mainnet,
@@ -397,8 +404,8 @@ async fn read_nft() -> Option<Nft> {
 | Durable side-effect dispatch | Supported through `chaindexing_outbox`; dispatch is intentionally at-least-once. |
 | Raw transactions | Supported as opt-in full JSON-RPC transaction payload indexing with `.raw_transactions()` or `Config::with_raw_transaction_indexing()`. |
 | Call traces | Supported as opt-in `debug_traceBlockByHash`/callTracer indexing with `.call_traces()` or `Config::with_call_trace_indexing()`, subject to RPC provider trace support. |
-| Inspection queries | Supported through `InspectionQueries` for canonical events, blocks, transactions, call traces, and recent reorgs. |
-| SQLite or non-Postgres backends | Not supported yet; Postgres is the production backend. Evaluation criteria are documented in [Local Backend Evaluation](docs/local-backends.md). |
+| Inspection queries and UI | Supported through `InspectionQueries` and the packaged `chaindexing-inspect` read-only UI for canonical events, blocks, transactions, call traces, and recent reorgs. |
+| SQLite or non-Postgres backends | Experimental SQLite prototype APIs are available for guarantee testing; Postgres remains the supported production backend. Evaluation criteria are documented in [Local Backend Evaluation](docs/local-backends.md). |
 
 ## Production Limits
 
@@ -414,13 +421,13 @@ for these limits:
 - **RPC provider limits:** `max_in_flight`, `max_per_chain`, and optional `requests_per_second` express provider pressure. Public endpoints often cap block ranges and requests per second.
 - **Deep backfills:** Indexing hundreds of millions of historical blocks has not been fully optimized. Prefer `RuntimeConfig::backfill()` with explicit limits, or start closer to the present block.
 - **Trace provider availability:** Call trace indexing depends on provider debug/trace APIs. Many hosted RPC endpoints disable `debug_traceBlockByHash` or rate-limit it separately from normal log/block calls.
-- **Typed diagnostics:** Provider setup, missing blocks, unsupported provider capabilities, and ingestion provider failures now carry typed errors. Some older repository paths still surface database failures through legacy panic paths and should continue moving toward `Result`-returning APIs.
+- **Typed diagnostics:** Provider setup, missing blocks, unsupported provider capabilities, ingestion provider failures, and repository failures now carry typed errors. Legacy event parameter accessors still panic on wrong caller assumptions; use them only after validating the ABI shape.
 
 ## Roadmap
 
-- Convert remaining legacy repository panic paths into typed `Result` errors.
-- Add a packaged minimal UI on top of the read-only inspection queries.
-- Prototype SQLite or another local backend against the documented Postgres behavior guarantees.
+- Harden the SQLite prototype into a supported backend only after it passes the same behavioral suite as Postgres.
+- Expand the packaged inspection UI with saved query presets and export flows while keeping writes out of scope.
+- Continue reducing legacy caller-assumption panics in non-repository helpers where a typed error API is practical.
 
 ## Contributing
 

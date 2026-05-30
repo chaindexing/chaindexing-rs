@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chaindexing Inspect</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f8fa;
+        color: #171a1f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      header {
+        border-bottom: 1px solid #d8dde6;
+        background: #ffffff;
+      }
+
+      .shell {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 64px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .status {
+        min-width: 160px;
+        color: #4d5968;
+        font-size: 13px;
+        text-align: right;
+      }
+
+      main {
+        padding: 22px 0 36px;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(170px, 1.2fr) minmax(110px, 0.8fr) minmax(150px, 0.9fr) minmax(110px, 0.7fr) auto;
+        gap: 12px;
+        align-items: end;
+        margin-bottom: 18px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: #3d4652;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      select,
+      input,
+      button {
+        height: 38px;
+        border: 1px solid #c8d0da;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #171a1f;
+        font: inherit;
+        font-size: 14px;
+      }
+
+      select,
+      input {
+        width: 100%;
+        padding: 0 10px;
+      }
+
+      button {
+        min-width: 96px;
+        padding: 0 14px;
+        border-color: #1f6feb;
+        background: #1f6feb;
+        color: #ffffff;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        border-color: #99a4b3;
+        background: #99a4b3;
+        cursor: wait;
+      }
+
+      .table-wrap {
+        overflow: auto;
+        border: 1px solid #d8dde6;
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      table {
+        width: 100%;
+        min-width: 760px;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        max-width: 360px;
+        padding: 10px 12px;
+        border-bottom: 1px solid #e7ebf0;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #eef2f7;
+        color: #2b3340;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      td {
+        color: #242b36;
+        overflow-wrap: anywhere;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .empty {
+        display: grid;
+        place-items: center;
+        min-height: 220px;
+        color: #637083;
+        font-size: 14px;
+      }
+
+      .error {
+        margin-bottom: 14px;
+        padding: 10px 12px;
+        border: 1px solid #df8b8b;
+        border-radius: 6px;
+        background: #fff3f3;
+        color: #8f1d1d;
+        font-size: 13px;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100vw - 20px, 1180px);
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+          justify-content: center;
+          gap: 6px;
+          min-height: 74px;
+        }
+
+        .status {
+          min-width: 0;
+          text-align: left;
+        }
+
+        .toolbar {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .toolbar button {
+          grid-column: 1 / -1;
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="shell topbar">
+        <h1>Chaindexing Inspect</h1>
+        <div class="status" id="status">Ready</div>
+      </div>
+    </header>
+    <main class="shell">
+      <form class="toolbar" id="toolbar">
+        <label>
+          Dataset
+          <select id="resource" name="resource">
+            <option value="events">Events</option>
+            <option value="blocks">Blocks</option>
+            <option value="transactions">Transactions</option>
+            <option value="call-traces">Call traces</option>
+            <option value="reorgs">Reorgs</option>
+          </select>
+        </label>
+        <label>
+          Chain ID
+          <input id="chain-id" name="chain_id" inputmode="numeric" pattern="[0-9]*" value="1">
+        </label>
+        <label>
+          From block
+          <input id="from-block" name="from_block_number" inputmode="numeric" pattern="[0-9]*" value="0">
+        </label>
+        <label>
+          Limit
+          <input id="limit" name="limit" inputmode="numeric" pattern="[0-9]*" value="100">
+        </label>
+        <button id="refresh" type="submit">Refresh</button>
+      </form>
+      <div class="error hidden" id="error"></div>
+      <div class="table-wrap" id="table-wrap">
+        <div class="empty" id="empty">No rows loaded</div>
+        <table class="hidden" id="table">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </main>
+    <script>
+      const toolbar = document.getElementById("toolbar");
+      const resourceInput = document.getElementById("resource");
+      const chainIdInput = document.getElementById("chain-id");
+      const fromBlockInput = document.getElementById("from-block");
+      const limitInput = document.getElementById("limit");
+      const refreshButton = document.getElementById("refresh");
+      const statusNode = document.getElementById("status");
+      const errorNode = document.getElementById("error");
+      const table = document.getElementById("table");
+      const thead = document.getElementById("thead");
+      const tbody = document.getElementById("tbody");
+      const empty = document.getElementById("empty");
+
+      function text(value) {
+        if (value === null || value === undefined) {
+          return "";
+        }
+        if (typeof value === "object") {
+          return JSON.stringify(value);
+        }
+        return String(value);
+      }
+
+      function columnsFor(rows) {
+        const columns = [];
+        const seen = new Set();
+        for (const row of rows) {
+          for (const key of Object.keys(row)) {
+            if (!seen.has(key)) {
+              seen.add(key);
+              columns.push(key);
+            }
+          }
+        }
+        return columns;
+      }
+
+      function renderRows(rows) {
+        thead.textContent = "";
+        tbody.textContent = "";
+
+        if (!rows.length) {
+          table.classList.add("hidden");
+          empty.classList.remove("hidden");
+          empty.textContent = "No rows";
+          return;
+        }
+
+        const columns = columnsFor(rows);
+        const headerRow = document.createElement("tr");
+        for (const column of columns) {
+          const th = document.createElement("th");
+          th.textContent = column;
+          headerRow.appendChild(th);
+        }
+        thead.appendChild(headerRow);
+
+        for (const row of rows) {
+          const tr = document.createElement("tr");
+          for (const column of columns) {
+            const td = document.createElement("td");
+            const code = document.createElement("code");
+            code.textContent = text(row[column]);
+            td.appendChild(code);
+            tr.appendChild(td);
+          }
+          tbody.appendChild(tr);
+        }
+
+        empty.classList.add("hidden");
+        table.classList.remove("hidden");
+      }
+
+      async function loadRows() {
+        const resource = resourceInput.value;
+        const params = new URLSearchParams({
+          chain_id: chainIdInput.value || "1",
+          from_block_number: fromBlockInput.value || "0",
+          limit: limitInput.value || "100"
+        });
+
+        refreshButton.disabled = true;
+        statusNode.textContent = "Loading";
+        errorNode.classList.add("hidden");
+        errorNode.textContent = "";
+
+        try {
+          const response = await fetch(`/api/${resource}?${params.toString()}`);
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || `HTTP ${response.status}`);
+          }
+
+          renderRows(payload.rows || []);
+          statusNode.textContent = `${(payload.rows || []).length} rows`;
+        } catch (error) {
+          table.classList.add("hidden");
+          empty.classList.remove("hidden");
+          empty.textContent = "Query failed";
+          errorNode.textContent = error.message;
+          errorNode.classList.remove("hidden");
+          statusNode.textContent = "Error";
+        } finally {
+          refreshButton.disabled = false;
+        }
+      }
+
+      toolbar.addEventListener("submit", event => {
+        event.preventDefault();
+        loadRows();
+      });
+    </script>
+  </body>
+</html>

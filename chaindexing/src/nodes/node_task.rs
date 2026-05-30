@@ -23,6 +23,32 @@ pub(crate) struct NodeSubtaskFailure {
     pub(crate) message: String,
 }
 
+impl NodeSubtaskFailure {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl From<crate::RepoError> for NodeSubtaskFailure {
+    fn from(value: crate::RepoError) -> Self {
+        Self::new(value.to_string())
+    }
+}
+
+impl From<crate::handlers::HandlerError> for NodeSubtaskFailure {
+    fn from(value: crate::handlers::HandlerError) -> Self {
+        Self::new(value.to_string())
+    }
+}
+
+impl From<crate::ingester::IngesterError> for NodeSubtaskFailure {
+    fn from(value: crate::ingester::IngesterError) -> Self {
+        Self::new(value.to_string())
+    }
+}
+
 impl std::fmt::Display for NodeTaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

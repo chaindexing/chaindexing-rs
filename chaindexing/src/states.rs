@@ -53,6 +53,7 @@ pub use updates::Updates;
 
 use crate::{
     ChaindexingRepo, ChaindexingRepoClient, ChaindexingRepoTxnClient, ExecutesWithRawQuery,
+    RepoError,
 };
 
 pub use chain_state::ChainState;
@@ -67,16 +68,18 @@ pub(crate) async fn backtrack_states<'a>(
     chain_id: i64,
     block_number: i64,
     client: &ChaindexingRepoTxnClient<'a>,
-) {
+) -> Result<(), RepoError> {
     for table_name in table_names {
-        let state_versions = StateVersions::get(block_number, chain_id, table_name, client).await;
+        let state_versions = StateVersions::get(block_number, chain_id, table_name, client).await?;
 
-        let state_version_ids = StateVersions::get_ids(&state_versions);
-        StateVersions::delete_by_ids(&state_version_ids, table_name, client).await;
+        let state_version_ids = StateVersions::get_ids(&state_versions)?;
+        StateVersions::delete_by_ids(&state_version_ids, table_name, client).await?;
 
-        let state_version_group_ids = StateVersions::get_group_ids(&state_versions);
-        StateViews::refresh(&state_version_group_ids, table_name, client).await;
+        let state_version_group_ids = StateVersions::get_group_ids(&state_versions)?;
+        StateViews::refresh(&state_version_group_ids, table_name, client).await?;
     }
+
+    Ok(())
 }
 
 pub(crate) async fn prune_state_versions(
@@ -84,7 +87,7 @@ pub(crate) async fn prune_state_versions(
     client: &ChaindexingRepoClient,
     min_block_number: u64,
     chain_id: u64,
-) {
+) -> Result<(), RepoError> {
     for table_name in table_names {
         let state_version_table_name = StateVersion::table_name(table_name);
 
@@ -98,8 +101,10 @@ pub(crate) async fn prune_state_versions(
             "
             ),
         )
-        .await;
+        .await?;
     }
+
+    Ok(())
 }
 
 pub(crate) fn get_all_table_names(state_migrations: &[Arc<dyn StateMigrations>]) -> Vec<String> {

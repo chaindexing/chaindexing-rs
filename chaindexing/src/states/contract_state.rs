@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::handlers::{HandlerContext, PureHandlerContext};
-use crate::{ChainId, ChaindexingRepoTxnClient, Event};
+use crate::{ChainId, ChaindexingRepoTxnClient, Event, RepoError};
 
 use super::filters::Filters;
 use super::state;
@@ -22,17 +22,23 @@ pub trait ContractState:
     fn table_name() -> &'static str;
 
     /// Inserts state in the state's table
-    async fn create<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
-        state::create(Self::table_name(), &state::to_view(self), context).await;
+    async fn create<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) -> Result<(), RepoError> {
+        state::create(Self::table_name(), &state::to_view(self)?, context).await
     }
 
-    /// Returns a single state matching filters. Panics if there are multiple.
-    async fn read_one<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Option<Self> {
-        Self::read_many(filters, context).await.first().cloned()
+    /// Returns a single state matching filters.
+    async fn read_one<'a, C: HandlerContext<'a>>(
+        filters: &Filters,
+        context: &C,
+    ) -> Result<Option<Self>, RepoError> {
+        Ok(Self::read_many(filters, context).await?.first().cloned())
     }
 
     /// Returns states matching filters
-    async fn read_many<'a, C: HandlerContext<'a>>(filters: &Filters, context: &C) -> Vec<Self> {
+    async fn read_many<'a, C: HandlerContext<'a>>(
+        filters: &Filters,
+        context: &C,
+    ) -> Result<Vec<Self>, RepoError> {
         read_many(filters, context, Self::table_name()).await
     }
 
@@ -42,11 +48,13 @@ pub trait ContractState:
         chain_id: &ChainId,
         contract_address: &str,
         filters: &Filters,
-    ) -> Option<Self> {
-        Self::read_many_from_postgres(postgres_url, chain_id, contract_address, filters)
-            .await
-            .first()
-            .cloned()
+    ) -> Result<Option<Self>, RepoError> {
+        Ok(
+            Self::read_many_from_postgres(postgres_url, chain_id, contract_address, filters)
+                .await?
+                .first()
+                .cloned(),
+        )
     }
 
     /// Returns states from Postgres outside a handler context.
@@ -55,7 +63,7 @@ pub trait ContractState:
         chain_id: &ChainId,
         contract_address: &str,
         filters: &Filters,
-    ) -> Vec<Self> {
+    ) -> Result<Vec<Self>, RepoError> {
         let mut filters = filters.values();
         filters.insert("chain_id".to_string(), (*chain_id as i64).to_string());
         filters.insert(
@@ -67,32 +75,36 @@ pub trait ContractState:
     }
 
     /// Updates state with the specified updates
-    async fn update<'a, 'b>(&self, updates: &Updates, context: &PureHandlerContext<'a, 'b>) {
+    async fn update<'a, 'b>(
+        &self,
+        updates: &Updates,
+        context: &PureHandlerContext<'a, 'b>,
+    ) -> Result<(), RepoError> {
         let event = &context.event;
         let client = context.repo_client;
 
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(table_name, client, event).await;
+        let state_view = self.to_complete_view(table_name, client, event).await?;
 
         let latest_state_version =
-            StateVersion::update(&state_view, &updates.values, table_name, event, client).await;
-        StateView::refresh(&latest_state_version, table_name, client).await;
+            StateVersion::update(&state_view, &updates.values, table_name, event, client).await?;
+        StateView::refresh(&latest_state_version, table_name, client).await
     }
 
     /// Deletes state from the state's table
-    async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) {
+    async fn delete<'a, 'b>(&self, context: &PureHandlerContext<'a, 'b>) -> Result<(), RepoError> {
         let event = &context.event;
         let client = context.repo_client;
 
         let table_name = Self::table_name();
-        let state_view = self.to_complete_view(table_name, client, event).await;
+        let state_view = self.to_complete_view(table_name, client, event).await?;
 
         let latest_state_version =
-            StateVersion::delete(&state_view, table_name, event, client).await;
-        StateView::refresh(&latest_state_version, table_name, client).await;
+            StateVersion::delete(&state_view, table_name, event, client).await?;
+        StateView::refresh(&latest_state_version, table_name, client).await
     }
 
-    fn to_view(&self) -> HashMap<String, String> {
+    fn to_view(&self) -> Result<HashMap<String, String>, RepoError> {
         state::to_view(self)
     }
 
@@ -101,8 +113,8 @@ pub trait ContractState:
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
         event: &Event,
-    ) -> HashMap<String, String> {
-        let mut state_view = self.to_view();
+    ) -> Result<HashMap<String, String>, RepoError> {
+        let mut state_view = self.to_view()?;
         state_view.insert("chain_id".to_string(), event.chain_id.to_string());
         state_view.insert(
             "contract_address".to_string(),

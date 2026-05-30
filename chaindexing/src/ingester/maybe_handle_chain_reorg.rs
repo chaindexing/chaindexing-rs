@@ -12,6 +12,7 @@ use crate::events::{self, Event};
 use crate::Config;
 use crate::{
     ChainId, ChaindexingRepo, ChaindexingRepoConn, ContractAddress, IndexedDataConfig, Repo,
+    RepoError,
 };
 
 use super::block_logs;
@@ -44,7 +45,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
     if !filters.is_empty() {
         let already_ingested_events = {
             let mut conn = conn.lock().await;
-            get_already_ingested_events(&mut conn, chain_id, &filters).await
+            get_already_ingested_events(&mut conn, chain_id, &filters).await?
         };
         let rpc = config.runtime_config.rpc_ref();
         let blocks_by_number = provider::fetch_blocks_for_filters_with_policy(
@@ -78,7 +79,7 @@ pub async fn run<'a, S: Send + Sync + Clone>(
 
         let block_fork_point = if config.indexed_data_config.enabled() && !chain_blocks.is_empty() {
             let mut conn = conn.lock().await;
-            ChaindexingRepo::find_fork_point(&mut conn, &chain_blocks).await
+            ChaindexingRepo::find_fork_point(&mut conn, &chain_blocks).await?
         } else {
             None
         };
@@ -122,13 +123,13 @@ async fn get_already_ingested_events<'a>(
     conn: &mut ChaindexingRepoConn<'a>,
     chain_id: &ChainId,
     filters: &[Filter],
-) -> Vec<Event> {
+) -> Result<Vec<Event>, RepoError> {
     let mut already_ingested_events = vec![];
     for filter in filters {
         let from_block = filter.value.get_from_block().unwrap();
         let to_block = filter.value.get_to_block().unwrap();
 
-        let mut events = ChaindexingRepo::get_events(
+        let events = ChaindexingRepo::get_events(
             conn,
             *chain_id as u64,
             filter.address.to_owned(),
@@ -136,10 +137,11 @@ async fn get_already_ingested_events<'a>(
             to_block,
         )
         .await;
+        let mut events = events?;
         already_ingested_events.append(&mut events);
     }
 
-    already_ingested_events
+    Ok(already_ingested_events)
 }
 
 async fn handle_chain_reorg<'a>(
@@ -155,7 +157,7 @@ async fn handle_chain_reorg<'a>(
     ChaindexingRepo::run_in_transaction(conn, move |conn| {
         async move {
             let block_reorg_number =
-                ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await;
+                ChaindexingRepo::sync_blocks(conn, &chain_id, &chain_blocks).await?;
             let event_reorg_number =
                 added_and_removed_events.as_ref().map(|(added_events, removed_events)| {
                     get_earliest_block_number(added_events, removed_events)
@@ -171,7 +173,7 @@ async fn handle_chain_reorg<'a>(
             };
 
             let new_reorged_block = UnsavedReorgedBlock::new(earliest_block_number, &chain_id);
-            ChaindexingRepo::create_reorged_block(conn, &new_reorged_block).await;
+            ChaindexingRepo::create_reorged_block(conn, &new_reorged_block).await?;
 
             let (added_events, removed_events) = added_and_removed_events.unwrap_or_default();
             if block_reorg_number.is_some() {
@@ -180,16 +182,16 @@ async fn handle_chain_reorg<'a>(
                     &chain_id,
                     earliest_block_number,
                 )
-                .await;
+                .await?;
             } else {
                 let event_ids: Vec<_> = removed_events.iter().map(|e| e.id).collect();
-                ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await;
+                ChaindexingRepo::delete_events_by_ids(conn, &event_ids).await?;
             }
 
-            ChaindexingRepo::create_block_scans(conn, &block_scans).await;
-            ChaindexingRepo::create_transactions(conn, &indexed_data.transactions).await;
-            ChaindexingRepo::create_call_traces(conn, &indexed_data.call_traces).await;
-            ChaindexingRepo::create_events(conn, &added_events).await;
+            ChaindexingRepo::create_block_scans(conn, &block_scans).await?;
+            ChaindexingRepo::create_transactions(conn, &indexed_data.transactions).await?;
+            ChaindexingRepo::create_call_traces(conn, &indexed_data.call_traces).await?;
+            ChaindexingRepo::create_events(conn, &added_events).await?;
 
             Ok(())
         }

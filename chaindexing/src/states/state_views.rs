@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ChaindexingRepo, ChaindexingRepoTxnClient};
+use crate::{ChaindexingRepo, ChaindexingRepoTxnClient, RepoError};
 use crate::{ExecutesWithRawQuery, LoadsDataWithRawQuery};
 
 use super::state_versions::{StateVersion, StateVersions, STATE_VERSIONS_UNIQUE_FIELDS};
@@ -15,13 +15,15 @@ impl StateViews {
         state_version_group_ids: &[String],
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) {
+    ) -> Result<(), RepoError> {
         let latest_state_versions =
-            StateVersions::get_latest(state_version_group_ids, table_name, client).await;
+            StateVersions::get_latest(state_version_group_ids, table_name, client).await?;
 
         for latest_state_version in latest_state_versions {
-            StateView::refresh(&latest_state_version, table_name, client).await
+            StateView::refresh(&latest_state_version, table_name, client).await?;
         }
+
+        Ok(())
     }
 }
 
@@ -32,36 +34,40 @@ impl StateView {
         state_view: &HashMap<String, String>,
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) -> HashMap<String, String> {
+    ) -> Result<HashMap<String, String>, RepoError> {
         let query = format!(
             "SELECT * FROM {table_name} WHERE {filters}",
             filters = to_and_filters(state_view),
         );
 
-        serde_map_to_string_map(
+        Ok(serde_map_to_string_map(
             &ChaindexingRepo::load_data_in_txn::<HashMap<String, serde_json::Value>>(
                 client, &query,
             )
-            .await
-            .unwrap(),
-        )
+            .await?
+            .ok_or_else(|| {
+                RepoError::Cardinality("state view lookup returned no rows".to_string())
+            })?,
+        ))
     }
 
     pub async fn refresh<'a>(
         latest_state_version: &HashMap<String, String>,
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) {
-        let state_version_group_id = StateVersion::get_group_id(latest_state_version);
+    ) -> Result<(), RepoError> {
+        let state_version_group_id = StateVersion::get_group_id(latest_state_version)?;
 
-        if StateVersion::was_deleted(latest_state_version) {
-            Self::delete(&state_version_group_id, table_name, client).await;
+        if StateVersion::was_deleted(latest_state_version)? {
+            Self::delete(&state_version_group_id, table_name, client).await?;
         } else {
             let new_state_view = Self::from_latest_state_version(latest_state_version);
 
-            Self::delete(&state_version_group_id, table_name, client).await;
-            Self::create(&new_state_view, table_name, client).await;
+            Self::delete(&state_version_group_id, table_name, client).await?;
+            Self::create(&new_state_view, table_name, client).await?;
         }
+
+        Ok(())
     }
 
     fn from_latest_state_version(
@@ -78,12 +84,12 @@ impl StateView {
         state_version_group_id: &str,
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) {
+    ) -> Result<(), RepoError> {
         ChaindexingRepo::execute_in_txn(
             client,
             &Self::delete_query(state_version_group_id, table_name),
         )
-        .await;
+        .await
     }
 
     fn delete_query(state_version_group_id: &str, table_name: &str) -> String {
@@ -97,9 +103,9 @@ impl StateView {
         new_state_view: &HashMap<String, String>,
         table_name: &str,
         client: &ChaindexingRepoTxnClient<'a>,
-    ) {
+    ) -> Result<(), RepoError> {
         ChaindexingRepo::execute_in_txn(client, &Self::create_query(new_state_view, table_name))
-            .await;
+            .await
     }
 
     fn create_query(new_state_view: &HashMap<String, String>, table_name: &str) -> String {

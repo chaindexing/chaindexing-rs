@@ -11,7 +11,7 @@ use chaindexing::{SideEffectContext, SideEffectFinality};
 
 context
     .enqueue_outbox_with_configured_finality("transfer-webhook", &payload)
-    .await;
+    .await?;
 ```
 
 You can also override finality per job:
@@ -25,13 +25,13 @@ context
         &payload,
         SideEffectFinality::Safe,
     )
-    .await;
+    .await?;
 ```
 
 For low-risk or fully idempotent effects, `enqueue_outbox` uses immediate eligibility:
 
 ```rust
-context.enqueue_outbox("cache-refresh", &payload).await;
+context.enqueue_outbox("cache-refresh", &payload).await?;
 ```
 
 ## Dispatch Jobs
@@ -52,7 +52,7 @@ let config = OutboxDispatchConfig::default().with_finality_watermark(
     },
 );
 
-dispatch_pending_outbox_jobs(&database_url, &dispatcher, config).await;
+let dispatched = dispatch_pending_outbox_jobs(&database_url, &dispatcher, config).await?;
 ```
 
 Jobs whose `required_finality` is not satisfied remain pending. Pending or dispatching

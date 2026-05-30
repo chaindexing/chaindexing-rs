@@ -141,6 +141,7 @@ impl<S: Send + Sync + Clone> Contract<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handlers::HandlerResult;
     use crate::handlers::PureHandlerContext;
     use crate::handlers::SideEffectHandlerContext;
 
@@ -155,7 +156,12 @@ mod tests {
             TRANSFER_ABI
         }
 
-        async fn handle_event<'a, 'b>(&self, _context: PureHandlerContext<'a, 'b>) {}
+        async fn handle_event<'a, 'b>(
+            &self,
+            _context: PureHandlerContext<'a, 'b>,
+        ) -> HandlerResult {
+            Ok(())
+        }
     }
 
     struct TransferSideEffectHandler;
@@ -171,7 +177,8 @@ mod tests {
         async fn handle_event<'a>(
             &self,
             _context: SideEffectHandlerContext<'a, Self::SharedState>,
-        ) {
+        ) -> HandlerResult {
+            Ok(())
         }
     }
 

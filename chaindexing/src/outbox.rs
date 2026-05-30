@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::{
-    Event, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo,
+    Event, ExecutesWithRawQuery, HasRawQueryClient, LoadsDataWithRawQuery, PostgresRepo, RepoError,
     SideEffectFinality,
 };
 
@@ -193,29 +193,30 @@ pub async fn dispatch_pending_outbox_jobs<Dispatcher: OutboxDispatcher + ?Sized>
     postgres_url: &str,
     dispatcher: &Dispatcher,
     config: OutboxDispatchConfig,
-) -> usize {
+) -> Result<usize, RepoError> {
     let repo = PostgresRepo::new(postgres_url);
-    let client = repo.get_client().await;
-    PostgresRepo::execute(&client, &cancel_reorged_pending_jobs_query()).await;
-    PostgresRepo::execute(&client, &dead_letter_expired_jobs_query(config)).await;
+    let client = repo.get_client().await?;
+    PostgresRepo::execute(&client, &cancel_reorged_pending_jobs_query()).await?;
+    PostgresRepo::execute(&client, &dead_letter_expired_jobs_query(config)).await?;
 
     let lease_token = uuid::Uuid::new_v4();
     let jobs: Vec<LeasedOutboxJob> =
-        PostgresRepo::load_data_list(&client, &lease_pending_jobs_query(config, lease_token)).await;
+        PostgresRepo::load_data_list(&client, &lease_pending_jobs_query(config, lease_token))
+            .await?;
     let dispatched_count = jobs.len();
 
     for job in jobs {
         let dispatcher_job = OutboxJob::from(&job);
 
         match dispatcher.dispatch(dispatcher_job).await {
-            Ok(()) => PostgresRepo::execute(&client, &mark_delivered_query(&job)).await,
+            Ok(()) => PostgresRepo::execute(&client, &mark_delivered_query(&job)).await?,
             Err(error) => {
-                PostgresRepo::execute(&client, &mark_failed_query(&job, &error, config)).await
+                PostgresRepo::execute(&client, &mark_failed_query(&job, &error, config)).await?
             }
         }
     }
 
-    dispatched_count
+    Ok(dispatched_count)
 }
 
 fn cancel_reorged_pending_jobs_query() -> String {

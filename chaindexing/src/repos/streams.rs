@@ -15,15 +15,20 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use crate::checkpoints;
-use crate::{ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery};
+use crate::{
+    ChaindexingRepo, ChaindexingRepoClient, ContractAddress, LoadsDataWithRawQuery, RepoError,
+};
 
 type DataStream = Vec<ContractAddress>;
+type BoundsFuture = Pin<Box<dyn Future<Output = Result<(i64, i64), RepoError>> + Send>>;
+type DataStreamFuture = Pin<Box<dyn Future<Output = Result<DataStream, RepoError>> + Send>>;
 
 enum ContractAddressesStreamState {
     GetFromAndTo,
-    PollFromAndToFuture(Pin<Box<dyn Future<Output = (i64, i64)> + Send>>),
+    PollFromAndToFuture(BoundsFuture),
     GetDataStreamFuture((i64, i64)),
-    PollDataStreamFuture((Pin<Box<dyn Future<Output = DataStream> + Send>>, i64, i64)),
+    PollDataStreamFuture((DataStreamFuture, i64, i64)),
+    Done,
 }
 
 pin_project!(
@@ -67,7 +72,7 @@ fn next_chunk_bounds(from: i64, to: i64, chunk_size: i64) -> Option<(i64, i64, i
 }
 
 impl Stream for ContractAddressesStream {
-    type Item = DataStream;
+    type Item = Result<DataStream, RepoError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
@@ -99,7 +104,7 @@ impl Stream for ContractAddressesStream {
                                 );
 
                                 let min_or_max: Option<MinOrMax> =
-                                    ChaindexingRepo::load_data(&client, &query).await;
+                                    ChaindexingRepo::load_data(&client, &query).await?;
 
                                 min_or_max.and_then(|mm| mm.min).unwrap_or(0)
                             }
@@ -115,13 +120,13 @@ impl Stream for ContractAddressesStream {
                                 );
 
                                 let min_or_max: Option<MinOrMax> =
-                                    ChaindexingRepo::load_data(&client, &query).await;
+                                    ChaindexingRepo::load_data(&client, &query).await?;
 
                                 min_or_max.and_then(|mm| mm.max).unwrap_or(0)
                             }
                         };
 
-                        (from, to)
+                        Ok((from, to))
                     }
                     .boxed(),
                 );
@@ -131,7 +136,13 @@ impl Stream for ContractAddressesStream {
             }
             ContractAddressesStreamState::PollFromAndToFuture(from_and_to_future) => {
                 let (from, to): (i64, i64) =
-                    futures_util::ready!(from_and_to_future.as_mut().poll(cx));
+                    match futures_util::ready!(from_and_to_future.as_mut().poll(cx)) {
+                        Ok(bounds) => bounds,
+                        Err(error) => {
+                            *this.state = ContractAddressesStreamState::Done;
+                            return Poll::Ready(Some(Err(error)));
+                        }
+                    };
 
                 *this.state = ContractAddressesStreamState::GetDataStreamFuture((from, to));
 
@@ -155,9 +166,9 @@ impl Stream for ContractAddressesStream {
                         );
 
                         let addresses: Vec<ContractAddress> =
-                            ChaindexingRepo::load_data_list(&client, &query).await;
+                            ChaindexingRepo::load_data_list(&client, &query).await?;
 
-                        addresses
+                        Ok(addresses)
                     }
                     .boxed();
 
@@ -179,14 +190,22 @@ impl Stream for ContractAddressesStream {
                 next_from,
                 to,
             )) => {
-                let streamed_data = futures_util::ready!(data_stream_future.as_mut().poll(cx));
+                let streamed_data = match futures_util::ready!(data_stream_future.as_mut().poll(cx))
+                {
+                    Ok(streamed_data) => streamed_data,
+                    Err(error) => {
+                        *this.state = ContractAddressesStreamState::Done;
+                        return Poll::Ready(Some(Err(error)));
+                    }
+                };
 
                 *this.state = ContractAddressesStreamState::GetDataStreamFuture((*next_from, *to));
 
                 cx.waker().wake_by_ref();
 
-                Poll::Ready(Some(streamed_data))
+                Poll::Ready(Some(Ok(streamed_data)))
             }
+            ContractAddressesStreamState::Done => Poll::Ready(None),
         }
     }
 }

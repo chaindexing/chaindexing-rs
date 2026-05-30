@@ -491,7 +491,7 @@ impl<SharedState: Sync + Send + Clone> Config<SharedState> {
 mod tests {
     use super::*;
     use crate::handlers::PureHandlerContext;
-    use crate::{ChainId, EventHandler, RpcPolicy, RuntimeConfig, RuntimeLimits};
+    use crate::{ChainId, EventHandler, HandlerResult, RpcPolicy, RuntimeConfig, RuntimeLimits};
 
     struct TestHandler(&'static str);
 
@@ -501,7 +501,12 @@ mod tests {
             self.0
         }
 
-        async fn handle_event<'a, 'b>(&self, _context: PureHandlerContext<'a, 'b>) {}
+        async fn handle_event<'a, 'b>(
+            &self,
+            _context: PureHandlerContext<'a, 'b>,
+        ) -> HandlerResult {
+            Ok(())
+        }
     }
 
     fn repo() -> ChaindexingRepo {

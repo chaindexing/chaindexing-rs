@@ -62,13 +62,30 @@ inspection without hand-writing common table scans:
 ```rust
 use chaindexing::{ChaindexingRepo, InspectionQueries, InspectionQuery, LoadsDataWithRawQuery};
 
-let query = InspectionQuery::new(1).from_block_number(18_000_000).limit(100);
-let rows: Vec<serde_json::Value> = ChaindexingRepo::load_data_list(
-    &repo_client,
-    &InspectionQueries::canonical_transactions(query),
-)
-.await;
+async fn load_recent_transactions(
+    repo_client: &tokio_postgres::Client,
+) -> Result<Vec<serde_json::Value>, chaindexing::RepoError> {
+    let query = InspectionQuery::new(1).from_block_number(18_000_000).limit(100);
+
+    ChaindexingRepo::load_data_list(
+        repo_client,
+        &InspectionQueries::canonical_transactions(query),
+    )
+    .await
+}
 ```
 
 These helpers are intentionally query builders rather than a server. They keep the core library
-Postgres-first while leaving room for a thin local or hosted inspection UI.
+Postgres-first while leaving room for thin local or hosted inspection surfaces.
+
+## Packaged Inspection UI
+
+The crate also ships a minimal read-only UI over the same inspection queries:
+
+```sh
+DATABASE_URL=postgres://user:pass@localhost:5432/app \
+  cargo run -p chaindexing --bin chaindexing-inspect
+```
+
+By default it listens on `127.0.0.1:8787`. Set `CHAINDEXING_INSPECT_ADDR` to bind a different local
+address. The UI exposes only `GET` routes and uses the status-scoped canonical queries above.

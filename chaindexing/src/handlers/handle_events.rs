@@ -11,6 +11,7 @@ use crate::{ChaindexingRepo, ChaindexingRepoClientMutex};
 
 use super::pure_handler::{PureHandler, PureHandlerContext};
 use super::side_effect_handler::{SideEffectHandler, SideEffectHandlerContext};
+use super::HandlerResult;
 
 pub async fn run<S: Send + Sync + Clone + Debug>(
     pure_handlers: &HashMap<contracts::HandlerKey, Arc<dyn PureHandler>>,
@@ -22,12 +23,13 @@ pub async fn run<S: Send + Sync + Clone + Debug>(
     repo_client: &ChaindexingRepoClientMutex,
     shared_state: &Option<Arc<Mutex<S>>>,
     side_effect_finality: SideEffectFinality,
-) {
+) -> HandlerResult {
     for chain_id in chain_ids {
         let mut contract_addresses_stream =
             ContractAddressesStream::new(repo_client, *chain_id as i64).with_chunk_size(200);
 
         while let Some(contract_addresses) = contract_addresses_stream.next().await {
+            let contract_addresses = contract_addresses?;
             for contract_address in contract_addresses {
                 let from_block_number = contract_address.next_block_number_to_handle_from as u64;
 
@@ -42,10 +44,10 @@ pub async fn run<S: Send + Sync + Clone + Debug>(
                     from_block_number,
                     blocks_per_batch,
                 )
-                .await;
+                .await?;
 
                 // ChainStates which include ContractState have to be handled orderly
-                let txn_client = ChaindexingRepo::get_txn_client(&mut client).await;
+                let txn_client = ChaindexingRepo::get_txn_client(&mut client).await?;
 
                 for event in &events {
                     let handler_key = contracts::handler_key(&event.contract_name, event.get_abi());
@@ -59,7 +61,7 @@ pub async fn run<S: Send + Sync + Clone + Debug>(
                             let handler_context = PureHandlerContext::from_txn(event, &txn_client)
                                 .with_is_at_block_tail(is_at_block_tail);
 
-                            handler.handle_event(handler_context).await;
+                            handler.handle_event(handler_context).await?;
                         }
                     }
 
@@ -75,7 +77,7 @@ pub async fn run<S: Send + Sync + Clone + Debug>(
                                 )
                                 .with_is_at_block_tail(is_at_block_tail);
 
-                                handler.handle_event(handler_context).await;
+                                handler.handle_event(handler_context).await?;
                             }
                         }
                     }
@@ -90,7 +92,7 @@ pub async fn run<S: Send + Sync + Clone + Debug>(
                         *chain_id,
                         next_block_number_to_handle_from,
                     )
-                    .await;
+                    .await?;
 
                     if next_block_number_to_handle_from
                         > contract_address.next_block_number_for_side_effects as u64
@@ -101,14 +103,16 @@ pub async fn run<S: Send + Sync + Clone + Debug>(
                             *chain_id,
                             next_block_number_to_handle_from,
                         )
-                        .await;
+                        .await?;
                     }
                 }
 
-                ChaindexingRepo::commit_txns(txn_client).await;
+                ChaindexingRepo::commit_txns(txn_client).await?;
             }
         }
     }
+
+    Ok(())
 }
 
 fn event_is_at_block_tail(event_block_number: u64, next_block_number_to_ingest_from: i64) -> bool {
