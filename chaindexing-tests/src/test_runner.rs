@@ -7,15 +7,19 @@ use dotenvy::dotenv;
 use std::env;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::OnceCell;
 
 const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
 const ALLOW_DB_TEST_SKIP_ENV: &str = "ALLOW_DB_TEST_SKIP";
 
 // Global counter for generating unique test data across all threads
 static GLOBAL_TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+static TEST_DB_SETUP: OnceCell<()> = OnceCell::const_new();
 
 pub async fn get_pool() -> ChaindexingRepoPool {
-    new_repo().get_pool(1).await
+    setup_test_database_if_requested().await;
+
+    new_repo().get_pool(1).await.expect("test database pool")
 }
 
 pub fn has_test_database() -> bool {
@@ -80,15 +84,9 @@ where
         return;
     }
 
-    let mut conn = ChaindexingRepo::get_conn(pool).await;
+    setup_test_database_if_requested().await;
 
-    if should_setup_test_db() {
-        db::setup();
-
-        let repo_client = new_repo().get_client().await;
-        chaindexing::booting::setup_root(&repo_client).await;
-        chaindexing::booting::run_internal_migrations(&repo_client).await;
-    }
+    let mut conn = ChaindexingRepo::get_conn(pool).await.expect("test database connection");
 
     // Use test transaction for automatic rollback and isolation
     conn.begin_test_transaction().await.unwrap();
@@ -105,18 +103,9 @@ where
         return;
     }
 
-    let repo_client = new_repo().get_client().await;
+    setup_test_database_if_requested().await;
 
-    if should_setup_test_db() {
-        db::setup();
-
-        chaindexing::booting::setup_root(&repo_client).await;
-        chaindexing::booting::run_internal_migrations(&repo_client).await;
-
-        // Skip cleanup since we now have proper unique data generation
-        // cleanup_test_data(&repo_client).await;
-    }
-
+    let repo_client = new_repo().get_client().await.expect("test database client");
     test_fn(repo_client).await;
 }
 
@@ -130,15 +119,10 @@ where
         return;
     }
 
-    let repo_client = new_repo().get_client().await;
+    setup_test_database_if_requested().await;
+
+    let repo_client = new_repo().get_client().await.expect("test database client");
     let unique_suffix = generate_unique_test_suffix();
-
-    if should_setup_test_db() {
-        db::setup();
-
-        chaindexing::booting::setup_root(&repo_client).await;
-        chaindexing::booting::run_internal_migrations(&repo_client).await;
-    }
 
     test_fn(repo_client, unique_suffix).await;
 }
@@ -151,6 +135,24 @@ fn should_setup_test_db() -> bool {
     dotenv().ok();
 
     env::var("SETUP_TEST_DB").is_ok()
+}
+
+pub async fn setup_test_database_if_requested() {
+    if !should_setup_test_db() {
+        return;
+    }
+
+    TEST_DB_SETUP
+        .get_or_init(|| async {
+            db::setup();
+
+            let repo_client = new_repo().get_client().await.expect("test database client");
+            chaindexing::booting::setup_root(&repo_client).await.expect("setup root tables");
+            chaindexing::booting::run_internal_migrations(&repo_client)
+                .await
+                .expect("setup internal tables");
+        })
+        .await;
 }
 
 #[cfg(test)]

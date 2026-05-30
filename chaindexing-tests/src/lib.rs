@@ -17,11 +17,16 @@ pub async fn find_contract_address_by_contract_name(
     chain_id: &ChainId,
 ) -> Option<ContractAddress> {
     let mut contract_addresses_stream = ContractAddressesStream::new(repo_client, *chain_id as i64);
-    contract_addresses_stream
-        .next()
-        .await
-        .iter()
-        .flatten()
-        .find(|ca| ca.contract_name == contract_name)
-        .cloned()
+
+    while let Some(contract_addresses) = contract_addresses_stream.next().await {
+        if let Some(contract_address) = contract_addresses
+            .ok()?
+            .into_iter()
+            .find(|ca| ca.contract_name == contract_name)
+        {
+            return Some(contract_address);
+        }
+    }
+
+    None
 }

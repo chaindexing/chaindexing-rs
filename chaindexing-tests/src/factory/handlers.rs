@@ -1,4 +1,4 @@
-use chaindexing::{EventContext, EventHandler};
+use chaindexing::{EventContext, EventHandler, HandlerResult};
 
 pub struct TransferTestHandler;
 
@@ -7,7 +7,9 @@ impl EventHandler for TransferTestHandler {
     fn abi(&self) -> &'static str {
         "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
     }
-    async fn handle_event<'a, 'b>(&self, _context: EventContext<'a, 'b>) {}
+    async fn handle_event<'a, 'b>(&self, _context: EventContext<'a, 'b>) -> HandlerResult {
+        Ok(())
+    }
 }
 
 pub struct ApprovalForAllTestHandler;
@@ -17,5 +19,7 @@ impl EventHandler for ApprovalForAllTestHandler {
     fn abi(&self) -> &'static str {
         "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)"
     }
-    async fn handle_event<'a, 'b>(&self, _context: EventContext<'a, 'b>) {}
+    async fn handle_event<'a, 'b>(&self, _context: EventContext<'a, 'b>) -> HandlerResult {
+        Ok(())
+    }
 }

@@ -6,7 +6,10 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::db::database_url;
-    use crate::factory::{bayc_contract, BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER};
+    use crate::factory::{
+        bayc_contract, bayc_contract_with_address_seed, BAYC_CONTRACT_ADDRESS,
+        BAYC_CONTRACT_START_BLOCK_NUMBER,
+    };
     use crate::{
         find_contract_address_by_contract_name, provider_with_empty_logs,
         provider_with_filter_stubber, provider_with_logs, test_runner,
@@ -34,7 +37,8 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |mut conn| async move {
-            let repo_client = test_runner::new_repo().get_client().await;
+            let repo_client =
+                test_runner::new_repo().get_client().await.expect("test database client");
             let bayc_contract = bayc_contract("BoredApeYachtClub-9", "01");
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
@@ -47,10 +51,12 @@ mod tests {
             let contract_address = contract_address.to_lowercase();
             assert!(ChaindexingRepo::get_all_events(&mut conn)
                 .await
+                .expect("load events")
                 .iter()
                 .all(|event| event.contract_address != contract_address));
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
@@ -66,7 +72,8 @@ mod tests {
             .unwrap();
 
             let mut conn = conn.lock().await;
-            let ingested_events = ChaindexingRepo::get_all_events(&mut conn).await;
+            let ingested_events =
+                ChaindexingRepo::get_all_events(&mut conn).await.expect("load ingested events");
             let event = ingested_events
                 .iter()
                 .find(|event| event.contract_address == contract_address)
@@ -84,10 +91,13 @@ mod tests {
 
         test_runner::run_test_with_txn(|repo_client, suffix| async move {
             let repo = test_runner::new_repo();
-            let pool = repo.get_pool(1).await;
-            let conn = ChaindexingRepo::get_conn(&pool).await;
+            let pool = repo.get_pool(1).await.expect("test database pool");
+            let conn = ChaindexingRepo::get_conn(&pool).await.expect("test database connection");
 
-            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-scans-{suffix}"), "90");
+            let bayc_contract = bayc_contract_with_address_seed(
+                &format!("BoredApeYachtClub-scans-{suffix}"),
+                &format!("scans-{suffix}"),
+            );
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
@@ -100,7 +110,8 @@ mod tests {
             ));
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
@@ -125,6 +136,7 @@ mod tests {
                 ),
             )
             .await
+            .unwrap()
             .unwrap();
 
             assert!(count.count > 0);
@@ -191,9 +203,12 @@ mod tests {
             }
 
             let repo = test_runner::new_repo();
-            let pool = repo.get_pool(1).await;
-            let conn = ChaindexingRepo::get_conn(&pool).await;
-            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-raw-tx-{suffix}"), "91");
+            let pool = repo.get_pool(1).await.expect("test database pool");
+            let conn = ChaindexingRepo::get_conn(&pool).await.expect("test database connection");
+            let bayc_contract = bayc_contract_with_address_seed(
+                &format!("BoredApeYachtClub-raw-tx-{suffix}"),
+                &format!("raw-tx-{suffix}"),
+            );
             let config = Config::new(PostgresRepo::new(&database_url()))
                 .add_contract(bayc_contract.clone())
                 .with_min_confirmation_count(0)
@@ -201,7 +216,8 @@ mod tests {
                 .with_raw_transaction_indexing();
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
@@ -227,6 +243,7 @@ mod tests {
                    AND status = 'canonical'",
             )
             .await
+            .unwrap()
             .unwrap();
 
             assert!(count.count > 0);
@@ -281,10 +298,12 @@ mod tests {
             }
 
             let repo = test_runner::new_repo();
-            let pool = repo.get_pool(1).await;
-            let conn = ChaindexingRepo::get_conn(&pool).await;
-            let bayc_contract =
-                bayc_contract(&format!("BoredApeYachtClub-call-trace-{suffix}"), "92");
+            let pool = repo.get_pool(1).await.expect("test database pool");
+            let conn = ChaindexingRepo::get_conn(&pool).await.expect("test database connection");
+            let bayc_contract = bayc_contract_with_address_seed(
+                &format!("BoredApeYachtClub-call-trace-{suffix}"),
+                &format!("call-trace-{suffix}"),
+            );
             let config = Config::new(PostgresRepo::new(&database_url()))
                 .add_contract(bayc_contract.clone())
                 .with_min_confirmation_count(0)
@@ -292,7 +311,8 @@ mod tests {
                 .with_call_trace_indexing();
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));
@@ -319,6 +339,7 @@ mod tests {
                    AND status = 'canonical'",
             )
             .await
+            .unwrap()
             .unwrap();
 
             assert!(count.count > 0);
@@ -335,13 +356,15 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let repo_client = test_runner::new_repo().get_client().await;
+            let repo_client =
+                test_runner::new_repo().get_client().await.expect("test database client");
             let bayc_contract = bayc_contract("BoredApeYachtClub-10", "02");
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
             let provider = Arc::new(provider_with_filter_stubber!(
                 BAYC_CONTRACT_ADDRESS,
                 |filter: &Filter| {
@@ -376,10 +399,13 @@ mod tests {
 
         test_runner::run_test_with_txn(|repo_client, suffix| async move {
             let repo = test_runner::new_repo();
-            let pool = repo.get_pool(1).await;
-            let conn = ChaindexingRepo::get_conn(&pool).await;
+            let pool = repo.get_pool(1).await.expect("test database pool");
+            let conn = ChaindexingRepo::get_conn(&pool).await.expect("test database connection");
 
-            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-8-{suffix}"), "03");
+            let bayc_contract = bayc_contract_with_address_seed(
+                &format!("BoredApeYachtClub-8-{suffix}"),
+                &format!("batch-{suffix}"),
+            );
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
@@ -389,7 +415,8 @@ mod tests {
             let provider = Arc::new(provider_with_logs!(contract_address, CURRENT_BLOCK_NUMBER));
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             let conn = Arc::new(Mutex::new(conn));
             let blocks_per_batch = 10;
@@ -432,17 +459,21 @@ mod tests {
 
         test_runner::run_test_with_txn(|repo_client, suffix| async move {
             let repo = test_runner::new_repo();
-            let pool = repo.get_pool(1).await;
-            let conn = ChaindexingRepo::get_conn(&pool).await;
+            let pool = repo.get_pool(1).await.expect("test database pool");
+            let conn = ChaindexingRepo::get_conn(&pool).await.expect("test database connection");
 
-            let bayc_contract = bayc_contract(&format!("BoredApeYachtClub-12-{suffix}"), "12");
+            let bayc_contract = bayc_contract_with_address_seed(
+                &format!("BoredApeYachtClub-12-{suffix}"),
+                &format!("continue-{suffix}"),
+            );
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
 
             let contract_address = bayc_contract.addresses.first().cloned().unwrap();
             let contract_address = &contract_address.address;
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             static CURRENT_BLOCK_NUMBER: u32 = BAYC_CONTRACT_START_BLOCK_NUMBER + 50;
             const BLOCKS_PER_BATCH: u64 = 10;
@@ -502,7 +533,8 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let repo_client = test_runner::new_repo().get_client().await;
+            let repo_client =
+                test_runner::new_repo().get_client().await.expect("test database client");
             let config: Config<()> = Config::new(PostgresRepo::new(&database_url()));
 
             #[derive(Clone)]
@@ -556,7 +588,8 @@ mod tests {
         let pool = test_runner::get_pool().await;
 
         test_runner::run_test(&pool, |conn| async move {
-            let repo_client = test_runner::new_repo().get_client().await;
+            let repo_client =
+                test_runner::new_repo().get_client().await.expect("test database client");
             let bayc_contract = bayc_contract("BoredApeYachtClub-11", "04");
             let config =
                 Config::new(PostgresRepo::new(&database_url())).add_contract(bayc_contract.clone());
@@ -564,7 +597,8 @@ mod tests {
             let provider = Arc::new(provider_with_empty_logs!(BAYC_CONTRACT_ADDRESS));
 
             ChaindexingRepo::create_contract_addresses(&repo_client, &bayc_contract.addresses)
-                .await;
+                .await
+                .expect("create contract addresses");
 
             let conn = Arc::new(Mutex::new(conn));
             let repo_client = Arc::new(Mutex::new(repo_client));

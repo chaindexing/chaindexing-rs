@@ -229,11 +229,10 @@ impl DefaultMigration {
             },
         );
 
-        migration
+        let normalized = migration
             .split(',')
             .fold(vec![], |mut unique_migration_tokens, migration_token| {
-                let migration_token_field =
-                    migration_token.split_ascii_whitespace().next().unwrap();
+                let migration_token_field = migration_column_name(migration_token);
 
                 match repeating_state_fields
                     .iter()
@@ -254,8 +253,27 @@ impl DefaultMigration {
 
                 unique_migration_tokens
             })
-            .join(",")
+            .join(",");
+
+        if migration.trim_end().ends_with(')') && !normalized.trim_end().ends_with(')') {
+            format!("{normalized})")
+        } else {
+            normalized
+        }
     }
+}
+
+fn migration_column_name(migration_token: &str) -> &str {
+    migration_token
+        .trim()
+        .rsplit('(')
+        .next()
+        .unwrap_or(migration_token)
+        .trim()
+        .trim_start_matches('(')
+        .split_ascii_whitespace()
+        .next()
+        .unwrap_or("")
 }
 
 /// Represents the idempotent database migrations required before
@@ -544,6 +562,34 @@ mod contract_state_migrations_get_migration_test {
         }
     }
 
+    #[test]
+    fn duplicate_default_fields_keep_generated_create_tables_parseable() {
+        let contract_state = TestStateWithDefaultFields;
+        let migrations = contract_state.get_migrations();
+
+        let create_table_migrations: Vec<_> =
+            migrations.iter().filter(|m| m.contains("CREATE TABLE")).collect();
+        assert_eq!(create_table_migrations.len(), 2);
+
+        for migration in create_table_migrations {
+            assert!(parse_create_table(migration).is_some(), "{migration}");
+            let fields = extract_table_fields(migration, false);
+
+            assert_eq!(
+                fields.iter().filter(|field| field.as_str() == "transaction_hash").count(),
+                1
+            );
+            assert_eq!(
+                fields.iter().filter(|field| field.as_str() == "log_index").count(),
+                1
+            );
+            assert_eq!(
+                fields.iter().filter(|field| field.as_str() == "block_number").count(),
+                1
+            );
+        }
+    }
+
     struct TestState;
 
     impl StateMigrations for TestState {
@@ -583,6 +629,20 @@ mod contract_state_migrations_get_migration_test {
                       id SERIAL PRIMARY KEY,
                       token_id INTEGER NOT NULL,
                       json_field JSON DEFAULT '{}',
+                  )"]
+        }
+    }
+
+    struct TestStateWithDefaultFields;
+
+    impl StateMigrations for TestStateWithDefaultFields {
+        fn migrations(&self) -> &'static [&'static str] {
+            &["CREATE TABLE IF NOT EXISTS harness_transfers (
+                      transaction_hash TEXT NOT NULL,
+                      log_index INTEGER NOT NULL,
+                      from_address TEXT NOT NULL,
+                      to_address TEXT NOT NULL,
+                      block_number BIGINT NOT NULL
                   )"]
         }
     }

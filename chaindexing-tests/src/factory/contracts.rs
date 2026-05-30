@@ -27,3 +27,14 @@ pub fn bayc_contract(name: &str, two_digit_nonce: &str) -> Contract<()> {
             17773490,
         )
 }
+
+pub fn bayc_contract_with_address_seed(name: &str, seed: &str) -> Contract<()> {
+    Contract::new(name)
+        .add_event_handler(TransferTestHandler)
+        .add_event_handler(ApprovalForAllTestHandler)
+        .add_address(
+            &contract_address_for_seed(seed),
+            &ChainId::Mainnet,
+            17773490,
+        )
+}

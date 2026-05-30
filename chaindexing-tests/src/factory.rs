@@ -4,8 +4,8 @@ mod handlers;
 mod providers;
 
 pub use contracts::{
-    bayc_contract, contract_address_for_seed, BAYC_CONTRACT_ADDRESS,
-    BAYC_CONTRACT_START_BLOCK_NUMBER,
+    bayc_contract, bayc_contract_with_address_seed, contract_address_for_seed,
+    BAYC_CONTRACT_ADDRESS, BAYC_CONTRACT_START_BLOCK_NUMBER,
 };
 pub use events::{transfer_event_with_contract, unique_transfer_event_with_contract};
 pub use handlers::{ApprovalForAllTestHandler, TransferTestHandler};

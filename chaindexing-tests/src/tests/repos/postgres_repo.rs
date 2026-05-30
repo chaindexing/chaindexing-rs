@@ -22,7 +22,9 @@ mod create_contract_addresses {
                 &chain_id,
                 start_block_number,
             )];
-            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses).await;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses)
+                .await
+                .expect("create contract addresses");
 
             let repo_client = Arc::new(Mutex::new(repo_client));
             let contract_address =
@@ -58,7 +60,9 @@ mod create_contract_addresses {
                 &chain_id,
                 start_block_number,
             )];
-            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses).await;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses)
+                .await
+                .expect("create contract addresses");
 
             let repo_client = Arc::new(Mutex::new(repo_client));
             let contract_address =
@@ -91,7 +95,9 @@ mod create_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses).await;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses)
+                .await
+                .expect("create contract addresses");
 
             let updated_contract_address = UnsavedContractAddress::new(
                 "updated-contract-name-3",
@@ -101,7 +107,9 @@ mod create_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses).await;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses)
+                .await
+                .expect("create contract addresses");
 
             let repo_client = Arc::new(Mutex::new(repo_client));
 
@@ -138,7 +146,9 @@ mod create_contract_addresses {
             );
 
             let contract_addresses = vec![initial_contract_address];
-            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses).await;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses)
+                .await
+                .expect("create contract addresses");
 
             let updated_contract_address_start_block_number = 2000;
             let updated_contract_address = UnsavedContractAddress::new(
@@ -149,7 +159,9 @@ mod create_contract_addresses {
             );
             let contract_addresses = vec![updated_contract_address];
 
-            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses).await;
+            ChaindexingRepo::create_contract_addresses(&repo_client, &contract_addresses)
+                .await
+                .expect("create contract addresses");
 
             let repo_client = Arc::new(Mutex::new(repo_client));
 

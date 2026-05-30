@@ -1,5 +1,6 @@
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
+use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use dotenvy::dotenv;
 use std::env;
 
@@ -38,9 +39,11 @@ fn get_db_name_and_raw_url(url: &str) -> (String, String) {
 
 #[allow(clippy::uninlined_format_args)]
 fn create_database(db_name: &str, conn: &mut PgConnection) {
-    diesel::sql_query(format!(r#"CREATE DATABASE "{}""#, db_name))
-        .execute(conn)
-        .unwrap();
+    match diesel::sql_query(format!(r#"CREATE DATABASE "{}""#, db_name)).execute(conn) {
+        Ok(_) => {}
+        Err(DieselError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {}
+        Err(error) => panic!("Error creating test database {db_name}: {error}"),
+    }
 }
 
 #[allow(clippy::uninlined_format_args)]

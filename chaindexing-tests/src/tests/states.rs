@@ -6,10 +6,18 @@ mod tests {
     use chaindexing::states::{Filters, Updates};
     use chaindexing::{ChaindexingRepo, EventContext, HasRawQueryClient};
     use tokio::sync::Mutex;
+    use tokio::sync::OnceCell;
 
     use super::*;
     use crate::factory::{bayc_contract, unique_transfer_event_with_contract};
     use crate::test_runner;
+
+    static STATE_TABLE_SETUP: OnceCell<()> = OnceCell::const_new();
+
+    async fn setup_state_tables() {
+        test_runner::setup_test_database_if_requested().await;
+        STATE_TABLE_SETUP.get_or_init(|| async { super::setup().await }).await;
+    }
 
     /// Generate a unique token ID for this test to avoid conflicts
     fn generate_unique_token_id() -> i32 {
@@ -37,25 +45,32 @@ mod tests {
         if test_runner::skip_without_test_database() {
             return;
         }
+        setup_state_tables().await;
 
         let bayc_contract =
             bayc_contract("BoredApeYachtClub-1", "09").add_state_migrations(NftMigrations);
-        let mut repo_client = test_runner::new_repo().get_client().await;
-        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
+        let mut repo_client =
+            test_runner::new_repo().get_client().await.expect("test database client");
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client)
+            .await
+            .expect("test transaction");
         let event_context: EventContext<'_, '_> = EventContext::new(
             &unique_transfer_event_with_contract(bayc_contract),
             &repo_txn_client,
-            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_client().await.expect("test database client"),
+            )),
             &DeferredFutures::new(),
         );
 
         let token_id = generate_unique_token_id();
         let new_state = Nft { token_id };
 
-        new_state.create(&event_context).await;
+        new_state.create(&event_context).await.unwrap();
 
         let returned_state = Nft::read_one(&Filters::new("token_id", token_id), &event_context)
             .await
+            .unwrap()
             .unwrap();
 
         assert_eq!(new_state, returned_state);
@@ -66,17 +81,23 @@ mod tests {
         if test_runner::skip_without_test_database() {
             return;
         }
+        setup_state_tables().await;
 
         let bayc_contract =
             bayc_contract("BoredApeYachtClub-2", "07").add_state_migrations(NftMigrations);
-        let mut repo_client = test_runner::new_repo().get_client().await;
-        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
+        let mut repo_client =
+            test_runner::new_repo().get_client().await.expect("test database client");
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client)
+            .await
+            .expect("test transaction");
 
         // Create first event context for the create operation
         let create_event_context: EventContext<'_, '_> = EventContext::new(
             &unique_transfer_event_with_contract(bayc_contract.clone()),
             &repo_txn_client,
-            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_client().await.expect("test database client"),
+            )),
             &DeferredFutures::new(),
         );
 
@@ -86,13 +107,15 @@ mod tests {
         let new_state = Nft {
             token_id: initial_token_id,
         };
-        new_state.create(&create_event_context).await;
+        new_state.create(&create_event_context).await.unwrap();
 
         // Create second event context for the update operation with different blockchain metadata
         let update_event_context: EventContext<'_, '_> = EventContext::new(
             &unique_transfer_event_with_contract(bayc_contract),
             &repo_txn_client,
-            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_client().await.expect("test database client"),
+            )),
             &DeferredFutures::new(),
         );
 
@@ -101,20 +124,23 @@ mod tests {
                 &Updates::new("token_id", updated_token_id),
                 &update_event_context,
             )
-            .await;
+            .await
+            .unwrap();
 
         let initial_state = Nft::read_one(
             &Filters::new("token_id", initial_token_id),
             &create_event_context,
         )
-        .await;
+        .await
+        .unwrap();
         assert_eq!(initial_state, None);
 
         let updated_state = Nft::read_one(
             &Filters::new("token_id", updated_token_id),
             &create_event_context,
         )
-        .await;
+        .await
+        .unwrap();
         assert!(updated_state.is_some());
     }
 
@@ -123,35 +149,45 @@ mod tests {
         if test_runner::skip_without_test_database() {
             return;
         }
+        setup_state_tables().await;
 
         let bayc_contract =
             bayc_contract("BoredApeYachtClub-3", "05").add_state_migrations(NftMigrations);
-        let mut repo_client = test_runner::new_repo().get_client().await;
-        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client).await;
+        let mut repo_client =
+            test_runner::new_repo().get_client().await.expect("test database client");
+        let repo_txn_client = ChaindexingRepo::get_txn_client(&mut repo_client)
+            .await
+            .expect("test transaction");
 
         // Create first event context for the create operation
         let create_event_context: EventContext<'_, '_> = EventContext::new(
             &unique_transfer_event_with_contract(bayc_contract.clone()),
             &repo_txn_client,
-            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_client().await.expect("test database client"),
+            )),
             &DeferredFutures::new(),
         );
 
         let token_id = generate_unique_token_id();
         let new_state = Nft { token_id };
-        new_state.create(&create_event_context).await;
+        new_state.create(&create_event_context).await.unwrap();
 
         // Create second event context for the delete operation with different blockchain metadata
         let delete_event_context: EventContext<'_, '_> = EventContext::new(
             &unique_transfer_event_with_contract(bayc_contract),
             &repo_txn_client,
-            &Arc::new(Mutex::new(test_runner::new_repo().get_client().await)),
+            &Arc::new(Mutex::new(
+                test_runner::new_repo().get_client().await.expect("test database client"),
+            )),
             &DeferredFutures::new(),
         );
 
-        new_state.delete(&delete_event_context).await;
+        new_state.delete(&delete_event_context).await.unwrap();
 
-        let state = Nft::read_one(&Filters::new("token_id", token_id), &create_event_context).await;
+        let state = Nft::read_one(&Filters::new("token_id", token_id), &create_event_context)
+            .await
+            .unwrap();
         assert_eq!(state, None);
     }
 }
@@ -166,6 +202,7 @@ use crate::{factory::bayc_contract, test_runner};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(crate = "chaindexing::augmenting_std::serde")]
+#[allow(dead_code)]
 struct Nft {
     token_id: i32,
 }
@@ -185,6 +222,8 @@ impl StateMigrations for NftMigrations {
 pub async fn setup() {
     let bayc_contract =
         bayc_contract("BoredApeYachtClub", "06").add_state_migrations(NftMigrations);
-    let repo_client = test_runner::new_repo().get_client().await;
-    chaindexing::booting::run_user_migrations(&repo_client, &[bayc_contract]).await;
+    let repo_client = test_runner::new_repo().get_client().await.expect("test database client");
+    chaindexing::booting::run_user_migrations(&repo_client, &[bayc_contract])
+        .await
+        .expect("run user migrations");
 }
