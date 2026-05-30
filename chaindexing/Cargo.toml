@@ -71,4 +71,4 @@ sqlparser = "0.62"
 chaindexing-macros = { path = "../chaindexing-macros", version = "0.1.80" }
 
 [dev-dependencies]
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
