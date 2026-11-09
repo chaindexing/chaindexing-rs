@@ -67,7 +67,7 @@ tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 futures-core = { version = "0.3", features = ["alloc"] }
 futures-util = "0.3"
-sqlparser = "0.62"
+sqlparser = "0.64"
 chaindexing-macros = { path = "../chaindexing-macros", version = "0.1.80" }
 
 [dev-dependencies]
